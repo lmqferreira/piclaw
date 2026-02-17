@@ -75,9 +75,10 @@ export class WhatsAppChannel {
         const shouldReconnect = reason !== DisconnectReason.loggedOut;
         if (shouldReconnect) {
           console.log("[whatsapp] Disconnected, reconnecting...");
-          this.connectInternal().catch((err) => {
+          const pending = onFirstOpen; onFirstOpen = undefined;
+          this.connectInternal(pending).catch((err) => {
             console.error("[whatsapp] Reconnect failed, retrying in 5s:", err);
-            setTimeout(() => this.connectInternal().catch(console.error), 5000);
+            setTimeout(() => this.connectInternal(pending).catch(console.error), 5000);
           });
         } else {
           console.log("[whatsapp] Logged out. Re-authenticate to continue.");
