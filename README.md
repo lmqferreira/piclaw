@@ -161,6 +161,20 @@ PUSHOVER_PRIORITY=0                  # Optional — -2 (silent) to 2 (emergency)
 PUSHOVER_SOUND=pushover              # Optional — notification sound
 ```
 
+Or store them in the persistent config file at `/workspace/.piclaw/config.json`:
+
+```json
+{
+  "pushover": {
+    "appToken": "your-app-token",
+    "userKey": "your-user-key",
+    "device": "myphone",
+    "priority": 0,
+    "sound": "pushover"
+  }
+}
+```
+
 When both `PUSHOVER_APP_TOKEN` and `PUSHOVER_USER_KEY` are set, the channel activates
 automatically. Messages longer than 1024 characters are truncated (Pushover API limit).
 
