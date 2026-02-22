@@ -348,6 +348,42 @@ export class WebChannel {
     let thoughtBuffer = "";
     let draftBuffer = "";
 
+    const formatToolTitle = (toolName: string, args: unknown): string => {
+      if (!args || typeof args !== "object") return toolName;
+      const record = args as Record<string, unknown>;
+      let detail: string | null = null;
+
+      const command = record.command;
+      if (typeof command === "string") detail = command;
+
+      if (!detail && Array.isArray(record.commands)) {
+        detail = record.commands.filter((item) => typeof item === "string").join(" && ");
+      }
+
+      const path = record.path;
+      if (!detail && typeof path === "string") detail = path;
+
+      if (!detail && Array.isArray(record.paths)) {
+        detail = record.paths.filter((item) => typeof item === "string").join(", ");
+      }
+
+      const filename = record.fileName || record.filename || record.file;
+      if (!detail && typeof filename === "string") detail = filename;
+
+      const url = record.url;
+      if (!detail && typeof url === "string") detail = url;
+
+      const query = record.query;
+      if (!detail && typeof query === "string") detail = query;
+
+      if (!detail) return toolName;
+
+      const normalized = detail.replace(/\s+/g, " ").trim();
+      const maxLen = 120;
+      const clipped = normalized.length > maxLen ? `${normalized.slice(0, maxLen)}…` : normalized;
+      return `${toolName}: ${clipped}`;
+    };
+
     this.broadcastEvent("agent_status", {
       thread_id: threadId,
       agent_id: agentId,
@@ -405,7 +441,7 @@ export class WebChannel {
             thread_id: threadId,
             agent_id: agentId,
             type: "tool_call",
-            title: event.toolName,
+            title: formatToolTitle(event.toolName, event.args),
           });
         }
 
@@ -414,7 +450,7 @@ export class WebChannel {
             thread_id: threadId,
             agent_id: agentId,
             type: "tool_status",
-            title: event.toolName,
+            title: formatToolTitle(event.toolName, event.args),
             status: "Working...",
           });
         }
@@ -424,7 +460,7 @@ export class WebChannel {
             thread_id: threadId,
             agent_id: agentId,
             type: "tool_status",
-            title: event.toolName,
+            title: formatToolTitle(event.toolName, event.args),
             status: event.isError ? "Failed" : "Done",
           });
         }
