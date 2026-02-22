@@ -7,6 +7,9 @@ const URL_REGEX = /(https?:\/\/[^\s<>"{}|\\^`\[\]]+)/g;
 // Hashtag regex
 const HASHTAG_REGEX = /#(\w+)/g;
 
+const DEFAULT_AGENT_NAME = 'PiClaw';
+const AGENT_AVATAR_URL = '/static/icon-192.png';
+
 // Configure marked for safe rendering
 if (window.marked) {
     marked.setOptions({
@@ -203,8 +206,8 @@ function useTimestampRefresh(intervalMs = 30000) {
  * Returns object with { letter, color }
  */
 function getAvatarInfo(name) {
-    if (!name) name = 'Agent';
-    const letter = name.charAt(0).toUpperCase();
+    const resolvedName = name || DEFAULT_AGENT_NAME;
+    const letter = resolvedName.charAt(0).toUpperCase();
     
     // Generate a consistent color based on the letter
     const colors = [
@@ -239,14 +242,16 @@ function getAvatarInfo(name) {
     // Use char code to pick a color consistently
     const index = letter.charCodeAt(0) % colors.length;
     const color = colors[index];
+    const normalized = resolvedName.trim().toLowerCase();
+    const image = (normalized === DEFAULT_AGENT_NAME.toLowerCase() || normalized === 'pi') ? AGENT_AVATAR_URL : null;
     
-    return { letter, color };
+    return { letter, color, image };
 }
 
 function getAgentName(agentId, agents) {
-    if (!agentId) return 'Agent';
+    if (!agentId) return DEFAULT_AGENT_NAME;
     const name = agents[agentId]?.name || agentId;
-    return name ? name.charAt(0).toUpperCase() + name.slice(1) : 'Agent';
+    return name ? name.charAt(0).toUpperCase() + name.slice(1) : DEFAULT_AGENT_NAME;
 }
 
 /**
@@ -596,7 +601,7 @@ function Post({ post, onClick, onHashtagClick, agentName, onDelete }) {
     
     const data = post.data;
     const isAgent = data.type === 'agent_response';
-    const displayName = isAgent ? (agentName || 'Agent') : 'You';
+    const displayName = isAgent ? (agentName || DEFAULT_AGENT_NAME) : 'You';
     
     // Get avatar info based on the name
     const avatarInfo = isAgent ? getAvatarInfo(agentName) : getAvatarInfo('You');
@@ -689,8 +694,8 @@ function Post({ post, onClick, onHashtagClick, agentName, onDelete }) {
     
     return html`
         <div id=${`post-${post.id}`} class="post ${isAgent ? 'agent-post' : ''}" onClick=${onClick}>
-            <div class="post-avatar ${isAgent ? 'agent-avatar' : ''}" style="background-color: ${avatarInfo.color}">
-                ${avatarInfo.letter}
+            <div class="post-avatar ${isAgent ? 'agent-avatar' : ''} ${avatarInfo.image ? 'has-image' : ''}" style="background-color: ${avatarInfo.color}">
+                ${avatarInfo.image ? html`<img src=${avatarInfo.image} alt=${displayName} />` : avatarInfo.letter}
             </div>
             <div class="post-body">
                 <button

@@ -28,6 +28,7 @@ const DEFAULT_CHAT_JID = "web:default";
 const DEFAULT_AGENT_ID = "default";
 const STATE_KEY = "last_agent_timestamp_web";
 const STATIC_DIR = resolve(import.meta.dir, "..", "..", "web", "static");
+const DOCS_DIR = resolve(import.meta.dir, "..", "..", "docs");
 
 const encoder = new TextEncoder();
 
@@ -118,6 +119,11 @@ export class WebChannel {
     if (pathname.startsWith("/static/")) {
       const rel = pathname.replace("/static/", "");
       return this.serveStatic(rel);
+    }
+
+    if (pathname.startsWith("/docs/")) {
+      const rel = pathname.replace("/docs/", "");
+      return this.serveDocsStatic(rel);
     }
 
     if (pathname === "/sse/stream") {
@@ -462,6 +468,21 @@ export class WebChannel {
   private async serveStatic(relPath: string): Promise<Response> {
     const filePath = resolve(STATIC_DIR, relPath);
     if (!filePath.startsWith(STATIC_DIR)) return this.json({ error: "Not found" }, 404);
+
+    const file = Bun.file(filePath);
+    if (!(await file.exists())) return this.json({ error: "Not found" }, 404);
+
+    const contentType = MIME_TYPES[extname(filePath)] || "application/octet-stream";
+    return new Response(file, {
+      headers: {
+        "Content-Type": contentType,
+      },
+    });
+  }
+
+  private async serveDocsStatic(relPath: string): Promise<Response> {
+    const filePath = resolve(DOCS_DIR, relPath);
+    if (!filePath.startsWith(DOCS_DIR)) return this.json({ error: "Not found" }, 404);
 
     const file = Bun.file(filePath);
     if (!(await file.exists())) return this.json({ error: "Not found" }, 404);

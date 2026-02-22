@@ -178,6 +178,7 @@ Skills are on-demand capabilities invoked via `/skill:name`:
 **Project** (shipped with workspace at `.pi/skills/`):
 - `/skill:setup` — Initialize a new project
 - `/skill:debug` — Diagnose container/environment issues
+- `/skill:reload` — Hot-restart piclaw after code changes
 
 Add your own to `.pi/skills/<name>/SKILL.md` (project) or `~/.pi/agent/skills/<name>/SKILL.md` (global).
 

@@ -3,7 +3,7 @@ import { readEnvFile } from "./env.js";
 
 const envConfig = readEnvFile(["ASSISTANT_NAME", "PUSHOVER_APP_TOKEN", "PUSHOVER_USER_KEY", "PUSHOVER_DEVICE", "PUSHOVER_PRIORITY", "PUSHOVER_SOUND"]);
 
-export const ASSISTANT_NAME = process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || "pi";
+export const ASSISTANT_NAME = process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || "PiClaw";
 export const POLL_INTERVAL = 2000;
 export const SCHEDULER_POLL_INTERVAL = 60000;
 
