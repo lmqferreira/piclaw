@@ -902,20 +902,43 @@ function Timeline({ posts, hasMore, onLoadMore, onPostClick, onHashtagClick, emp
  * Agent status indicator
  */
 function AgentStatus({ status, draft, plan, thought, pendingRequest }) {
-    if (!status && !draft && !plan && !thought && !pendingRequest) return null;
-
     const THOUGHT_MAX_LINES = 8;
     const DRAFT_MAX_LINES = 8;
 
-    const truncateLines = (text, maxLines) => {
-        const value = (text || '').replace(/\r\n/g, '\n');
-        if (!value) return { text: '', omitted: 0 };
-        const lines = value.split('\n');
-        if (lines.length <= maxLines) return { text: value, omitted: 0 };
-        const kept = lines.slice(0, maxLines);
-        const omitted = lines.length - maxLines;
-        return { text: kept.join('\n'), omitted };
+    const normalizePreview = (value) => {
+        if (!value) return { text: '', totalLines: 0 };
+        if (typeof value === 'string') {
+            const text = value;
+            const totalLines = text ? text.replace(/\r\n/g, '\n').split('\n').length : 0;
+            return { text, totalLines };
+        }
+        const text = value.text || '';
+        const totalLines = Number.isFinite(value.totalLines)
+            ? value.totalLines
+            : (text ? text.replace(/\r\n/g, '\n').split('\n').length : 0);
+        return { text, totalLines };
     };
+
+    const truncateLines = (text, maxLines, totalLinesOverride) => {
+        const value = (text || '').replace(/\r\n/g, '\n');
+        if (!value) {
+            const totalLines = Number.isFinite(totalLinesOverride) ? totalLinesOverride : 0;
+            return { text: '', omitted: 0, totalLines, visibleLines: 0 };
+        }
+        const lines = value.split('\n');
+        const totalLines = Number.isFinite(totalLinesOverride) ? totalLinesOverride : lines.length;
+        const visibleLines = Math.min(lines.length, maxLines);
+        const clipped = lines.length > maxLines ? lines.slice(0, maxLines).join('\n') : value;
+        const omitted = Math.max(totalLines - visibleLines, 0);
+        return { text: clipped, omitted, totalLines, visibleLines };
+    };
+
+    const thoughtInfo = normalizePreview(thought);
+    const draftInfo = normalizePreview(draft);
+    const hasThought = Boolean(thoughtInfo.text) || thoughtInfo.totalLines > 0;
+    const hasDraft = Boolean(draftInfo.text) || draftInfo.totalLines > 0;
+
+    if (!status && !hasDraft && !plan && !hasThought && !pendingRequest) return null;
     
     let content = '';
     const title = status?.title;
@@ -950,8 +973,8 @@ function AgentStatus({ status, draft, plan, thought, pendingRequest }) {
                     />
                 </div>
             `}
-            ${thought && (() => {
-                const truncated = truncateLines(thought, THOUGHT_MAX_LINES);
+            ${hasThought && (() => {
+                const truncated = truncateLines(thoughtInfo.text, THOUGHT_MAX_LINES, thoughtInfo.totalLines);
                 return html`
                     <div class="agent-thinking">
                         <div class="agent-thinking-title thought">Thoughts</div>
@@ -965,8 +988,8 @@ function AgentStatus({ status, draft, plan, thought, pendingRequest }) {
                     </div>
                 `;
             })()}
-            ${draft && (() => {
-                const truncated = truncateLines(draft, DRAFT_MAX_LINES);
+            ${hasDraft && (() => {
+                const truncated = truncateLines(draftInfo.text, DRAFT_MAX_LINES, draftInfo.totalLines);
                 return html`
                     <div class="agent-thinking">
                         <div class="agent-thinking-title thought">Draft</div>
@@ -1135,9 +1158,9 @@ function App() {
     const [searchQuery, setSearchQuery] = useState(null);
     const [searchOpen, setSearchOpen] = useState(false);
     const [agentStatus, setAgentStatus] = useState(null);
-    const [agentDraft, setAgentDraft] = useState('');
+    const [agentDraft, setAgentDraft] = useState({ text: '', totalLines: 0 });
     const [agentPlan, setAgentPlan] = useState('');
-    const [agentThought, setAgentThought] = useState('');
+    const [agentThought, setAgentThought] = useState({ text: '', totalLines: 0 });
     const [pendingRequest, setPendingRequest] = useState(null);
     const [agents, setAgents] = useState({});
     const hasConnectedOnceRef = useRef(false);
@@ -1156,10 +1179,6 @@ function App() {
     useEffect(() => {
         hasMoreRef.current = hasMore;
     }, [hasMore]);
-
-    useEffect(() => {
-        loadMoreRef.current = loadMore;
-    }, [loadMore]);
 
     // Scroll to bottom of timeline (column-reverse: bottom is scrollTop=0)
     const scrollToBottom = useCallback(() => {
@@ -1189,9 +1208,9 @@ function App() {
         setConnectionStatus(status);
         if (status !== 'connected') {
             setAgentStatus(null);
-            setAgentDraft('');
+            setAgentDraft({ text: '', totalLines: 0 });
             setAgentPlan('');
-            setAgentThought('');
+            setAgentThought({ text: '', totalLines: 0 });
             setPendingRequest(null);
             return;
         }
@@ -1227,6 +1246,10 @@ function App() {
             console.error('Failed to load more posts:', error);
         }
     }, [posts, timelineRef]);
+
+    useEffect(() => {
+        loadMoreRef.current = loadMore;
+    }, [loadMore]);
     
     // Handle hashtag click
     const handleHashtagClick = useCallback(async (hashtag) => {
@@ -1354,9 +1377,9 @@ function App() {
                 // Handle agent status updates
                 if (eventType === 'connected') {
                     setAgentStatus(null);
-                    setAgentDraft('');
+                    setAgentDraft({ text: '', totalLines: 0 });
                     setAgentPlan('');
-                    setAgentThought('');
+                    setAgentThought({ text: '', totalLines: 0 });
                     setPendingRequest(null);
                     return;
                 }
@@ -1365,14 +1388,14 @@ function App() {
                     console.log('Agent status:', data);
                     if (data.type === 'done' || data.type === 'error') {
                         setAgentStatus(null);
-                        setAgentDraft('');
+                        setAgentDraft({ text: '', totalLines: 0 });
                         setAgentPlan('');
-                        setAgentThought('');
+                        setAgentThought({ text: '', totalLines: 0 });
                     } else {
                         if (data.type === 'thinking') {
-                            setAgentDraft('');
+                            setAgentDraft({ text: '', totalLines: 0 });
                             setAgentPlan('');
-                            setAgentThought('');
+                            setAgentThought({ text: '', totalLines: 0 });
                         }
                         setAgentStatus(data);
                     }
@@ -1382,20 +1405,25 @@ function App() {
                 if (eventType === 'agent_draft') {
                     const text = data.text || '';
                     const mode = data.mode || (data.kind === 'plan' ? 'replace' : 'append');
+                    const inferredTotal = Number.isFinite(data.total_lines)
+                        ? data.total_lines
+                        : (text ? text.replace(/\r\n/g, '\n').split('\n').length : 0);
 
                     if (data.kind === 'plan') {
                         if (mode === 'replace') setAgentPlan(text);
                         else setAgentPlan((prev) => (prev || '') + text);
                     } else {
-                        if (mode === 'replace') setAgentDraft(text);
-                        else setAgentDraft((prev) => (prev || '') + text);
+                        setAgentDraft({ text, totalLines: inferredTotal });
                     }
                     return;
                 }
                 
                 if (eventType === 'agent_thought') {
-                    // Thoughts tend to be sent as snapshots.
-                    setAgentThought(data.text || '');
+                    const text = data.text || '';
+                    const inferredTotal = Number.isFinite(data.total_lines)
+                        ? data.total_lines
+                        : (text ? text.replace(/\r\n/g, '\n').split('\n').length : 0);
+                    setAgentThought({ text, totalLines: inferredTotal });
                     return;
                 }
                 

@@ -729,6 +729,13 @@ body {
     cursor: zoom-in;
 }
 
+.post-content img[alt="token-chart"] {
+    width: 100%;
+    max-width: 720px;
+    border: 1px solid var(--border-color);
+    background: transparent;
+}
+
 /* Hashtags */
 .hashtag {
     color: var(--accent-color);
