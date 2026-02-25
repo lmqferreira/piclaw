@@ -23,6 +23,7 @@ export class AgentPool {
     settingsManager = SettingsManager.create(WORKSPACE_DIR, getAgentDir());
     logsDir = join(WORKSPACE_DIR, "logs");
     createSession;
+    sessionBinder;
     constructor(options = {}) {
         this.createSession = options.createSession;
         this.authStorage = AuthStorage.create();
@@ -30,6 +31,19 @@ export class AgentPool {
         mkdirSync(SESSIONS_DIR, { recursive: true });
         mkdirSync(this.logsDir, { recursive: true });
         this.cleanupTimer = setInterval(() => this.evictIdle(), CLEANUP_INTERVAL);
+    }
+    setSessionBinder(binder) {
+        this.sessionBinder = binder;
+        if (!binder)
+            return;
+        for (const [jid, entry] of this.pool) {
+            try {
+                void binder(entry.session, jid);
+            }
+            catch (err) {
+                console.error(`[agent-pool] Failed to bind session ${jid}:`, err);
+            }
+        }
     }
     /** Run a prompt against the persistent session for `chatJid`. */
     async runAgent(prompt, chatJid, options = {}) {
@@ -91,6 +105,109 @@ export class AgentPool {
         const session = await this.getOrCreate(chatJid);
         return applyControlCommand(session, this.modelRegistry, command);
     }
+    /** Execute a raw slash command in the AgentSession (extension commands).
+     * Returns an AgentControlResult-like object with status/message.
+     * This runs session.prompt(rawText) and collects emitted messages (assistant and custom)
+     * to produce a text result suitable for returning to the web UI.
+     */
+    async applySlashCommand(chatJid, rawText) {
+        const startTime = Date.now();
+        try {
+            const session = await this.getOrCreate(chatJid);
+            console.log(`[agent-pool] Executing slash command for ${chatJid}: ${rawText}`);
+            // Collect textual output from events (both streaming deltas and final message_end)
+            let assistantBuffer = "";
+            const customBuffers = [];
+            const capturedMessages = [];
+            const extractTextFromContent = (content) => {
+                if (!content)
+                    return "";
+                if (typeof content === "string")
+                    return content;
+                if (Array.isArray(content)) {
+                    return content
+                        .filter((b) => b && b.type === "text")
+                        .map((b) => b.text)
+                        .join("") || "";
+                }
+                return "";
+            };
+            const onEvent = (event) => {
+                try {
+                    if (event.type === "message_update") {
+                        const me = event.assistantMessageEvent;
+                        if (me && me.type === "text_delta") {
+                            assistantBuffer += me.delta || "";
+                        }
+                    }
+                    if (event.type === "message_end") {
+                        const msg = event.message;
+                        const text = extractTextFromContent(msg.content);
+                        if (text) {
+                            capturedMessages.push({
+                                role: msg.role,
+                                text,
+                                customType: msg.customType,
+                            });
+                        }
+                        if (msg.role === "assistant") {
+                            // Prefer final assistant text when available
+                            assistantBuffer = text || assistantBuffer;
+                        }
+                        else if (msg.role === "custom" || msg.role === "toolResult" || msg.role === "user") {
+                            if (text)
+                                customBuffers.push(text);
+                        }
+                        else {
+                            if (text)
+                                customBuffers.push(text);
+                        }
+                    }
+                }
+                catch (err) {
+                    // ignore
+                }
+            };
+            const unsub = session.subscribe(onEvent);
+            // Timeout handling (mirror runAgent behaviour)
+            let timedOut = false;
+            const timeoutId = setTimeout(async () => {
+                timedOut = true;
+                console.error(`[agent-pool] Slash command timeout after ${AGENT_TIMEOUT}ms for ${chatJid}`);
+                try {
+                    await session.abort();
+                }
+                catch { }
+                ;
+            }, AGENT_TIMEOUT);
+            try {
+                // Set chat context env for skills
+                process.env.PICLAW_CHAT_JID = chatJid;
+                process.env.PICLAW_CHANNEL = detectChannel(chatJid);
+                // Execute the raw slash command via session.prompt so extension commands run
+                await session.prompt(rawText);
+            }
+            finally {
+                clearTimeout(timeoutId);
+                unsub();
+            }
+            if (timedOut) {
+                return { status: "error", message: `Timed out after ${AGENT_TIMEOUT}ms` };
+            }
+            // Prefer assistant buffer, otherwise custom buffers joined
+            const finalText = (assistantBuffer && assistantBuffer.trim())
+                ? assistantBuffer.trim()
+                : customBuffers.join("\n\n").trim();
+            const message = finalText || capturedMessages.map((m) => m.text).join("\n\n").trim();
+            console.log(`[agent-pool] Slash command completed in ${Date.now() - startTime}ms (${message.length} chars)`);
+            return { status: "success", message, messages: capturedMessages };
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            console.error(`[agent-pool] Slash command error for ${chatJid}:`, message);
+            return { status: "error", message };
+        }
+    }
     /** Gracefully shut down all sessions. */
     async shutdown() {
         if (this.cleanupTimer) {
@@ -122,6 +239,14 @@ export class AgentPool {
         if (this.createSession) {
             const session = await this.createSession(chatJid, chatSessionDir);
             this.pool.set(chatJid, { session, lastUsed: Date.now() });
+            if (this.sessionBinder) {
+                try {
+                    await this.sessionBinder(session, chatJid);
+                }
+                catch (err) {
+                    console.error(`[agent-pool] Failed to bind session ${chatJid}:`, err);
+                }
+            }
             console.log(`[agent-pool] Session ready for ${chatJid} (pool size: ${this.pool.size})`);
             return session;
         }
@@ -142,6 +267,14 @@ export class AgentPool {
             sessionManager: SessionManager.continueRecent(WORKSPACE_DIR, chatSessionDir),
         });
         this.pool.set(chatJid, { session, lastUsed: Date.now() });
+        if (this.sessionBinder) {
+            try {
+                await this.sessionBinder(session, chatJid);
+            }
+            catch (err) {
+                console.error(`[agent-pool] Failed to bind session ${chatJid}:`, err);
+            }
+        }
         console.log(`[agent-pool] Session ready for ${chatJid} (pool size: ${this.pool.size})`);
         return session;
     }

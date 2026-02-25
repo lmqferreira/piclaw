@@ -258,42 +258,6 @@ export class SSEClient {
         this.eventSource.addEventListener('agent_thought', (e) => {
             this.onEvent('agent_thought', JSON.parse(e.data));
         });
-
-        this.eventSource.addEventListener('extension_ui_request', (e) => {
-            this.onEvent('extension_ui_request', JSON.parse(e.data));
-        });
-
-        this.eventSource.addEventListener('extension_ui_notify', (e) => {
-            this.onEvent('extension_ui_notify', JSON.parse(e.data));
-        });
-
-        this.eventSource.addEventListener('extension_ui_title', (e) => {
-            this.onEvent('extension_ui_title', JSON.parse(e.data));
-        });
-
-        this.eventSource.addEventListener('extension_ui_status', (e) => {
-            this.onEvent('extension_ui_status', JSON.parse(e.data));
-        });
-
-        this.eventSource.addEventListener('extension_ui_timeout', (e) => {
-            this.onEvent('extension_ui_timeout', JSON.parse(e.data));
-        });
-
-        this.eventSource.addEventListener('extension_ui_error', (e) => {
-            this.onEvent('extension_ui_error', JSON.parse(e.data));
-        });
-
-        this.eventSource.addEventListener('extension_ui_working', (e) => {
-            this.onEvent('extension_ui_working', JSON.parse(e.data));
-        });
-
-        this.eventSource.addEventListener('extension_ui_widget', (e) => {
-            this.onEvent('extension_ui_widget', JSON.parse(e.data));
-        });
-
-        this.eventSource.addEventListener('extension_ui_editor_text', (e) => {
-            this.onEvent('extension_ui_editor_text', JSON.parse(e.data));
-        });
     }
     
     scheduleReconnect() {
