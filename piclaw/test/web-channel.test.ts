@@ -75,3 +75,42 @@ test("web channel can create a post", async () => {
   const json = await res.json();
   expect(json.data.content).toBe("hi");
 });
+
+test("web channel handles /model command without queueing agent", async () => {
+  const ws = getTestWorkspace();
+  restoreEnv = setEnv({ PICLAW_WORKSPACE: ws.workspace, PICLAW_STORE: ws.store, PICLAW_DATA: ws.data });
+
+  const db = await import("../src/db.js");
+  db.initDatabase();
+  db.storeChatMetadata("web:default", new Date().toISOString(), "Web");
+
+  let queued = false;
+  let commandHandled = false;
+
+  const webMod = await import("../src/channels/web.js");
+  const web = new (webMod.WebChannel as any)({
+    queue: { enqueue: () => { queued = true; } },
+    agentPool: {
+      runAgent: async () => ({ status: "success", result: "ok" }),
+      applyControlCommand: async () => {
+        commandHandled = true;
+        return { status: "success", message: "Model set to openai/gpt-test." };
+      },
+    },
+  });
+
+  const req = new Request("http://test/agent/default/message", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content: "/model openai/gpt-test" }),
+  });
+
+  const res = await (web as any).handleRequest(req);
+  expect(res.status).toBe(201);
+  expect(commandHandled).toBe(true);
+  expect(queued).toBe(false);
+
+  const timeline = db.getTimeline("web:default", 10);
+  expect(timeline.length).toBeGreaterThanOrEqual(2);
+  expect(timeline[timeline.length - 1].data.content).toContain("Model set to openai/gpt-test.");
+});

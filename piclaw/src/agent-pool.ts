@@ -11,6 +11,7 @@ import {
   SessionManager,
   SettingsManager,
 } from "@mariozechner/pi-coding-agent";
+import { applyControlCommand, type AgentControlCommand, type AgentControlResult } from "./agent-control.js";
 import { AGENT_TIMEOUT, DATA_DIR, SESSIONS_DIR, WORKSPACE_DIR } from "./config.js";
 import { detectChannel } from "./router.js";
 
@@ -26,6 +27,7 @@ export interface RunAgentOptions {
 
 export interface AgentPoolOptions {
   createSession?: (chatJid: string, sessionDir: string) => Promise<AgentSession>;
+  modelRegistry?: ModelRegistry;
 }
 
 interface PoolEntry {
@@ -49,14 +51,16 @@ export class AgentPool {
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
   // Shared across all sessions (expensive to create, safe to reuse)
-  private authStorage = AuthStorage.create();
-  private modelRegistry = new ModelRegistry(this.authStorage);
+  private authStorage: AuthStorage;
+  private modelRegistry: ModelRegistry;
   private settingsManager = SettingsManager.create(WORKSPACE_DIR, getAgentDir());
   private logsDir = join(WORKSPACE_DIR, "logs");
   private createSession?: AgentPoolOptions["createSession"];
 
   constructor(options: AgentPoolOptions = {}) {
     this.createSession = options.createSession;
+    this.authStorage = AuthStorage.create();
+    this.modelRegistry = options.modelRegistry ?? new ModelRegistry(this.authStorage);
     mkdirSync(SESSIONS_DIR, { recursive: true });
     mkdirSync(this.logsDir, { recursive: true });
     this.cleanupTimer = setInterval(() => this.evictIdle(), CLEANUP_INTERVAL);
@@ -124,6 +128,11 @@ export class AgentPool {
       console.error(`[agent-pool] Error for ${chatJid}:`, errorMsg);
       return { status: "error", result: null, error: errorMsg };
     }
+  }
+
+  async applyControlCommand(chatJid: string, command: AgentControlCommand): Promise<AgentControlResult> {
+    const session = await this.getOrCreate(chatJid);
+    return applyControlCommand(session, this.modelRegistry, command);
   }
 
   /** Gracefully shut down all sessions. */
