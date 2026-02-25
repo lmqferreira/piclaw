@@ -8,9 +8,14 @@ const modelSimple = { provider: "anthropic", id: "claude-test", reasoning: false
 class StubSession {
   model: any = modelReasoning;
   thinkingLevel: ThinkingLevel = "low";
+  reloadCalls = 0;
 
   async setModel(model: any) {
     this.model = model;
+  }
+
+  async reload() {
+    this.reloadCalls += 1;
   }
 
   setThinkingLevel(level: ThinkingLevel) {
@@ -48,6 +53,8 @@ test("parseControlCommand parses model and thinking commands", () => {
 
 test("applyControlCommand switches model and thinking level", async () => {
   const session = new StubSession();
+  session.model = modelSimple;
+  session.thinkingLevel = "off";
 
   const modelResult = await applyControlCommand(session as any, registry, {
     type: "model",
@@ -59,6 +66,7 @@ test("applyControlCommand switches model and thinking level", async () => {
   expect(modelResult.status).toBe("success");
   expect(session.model).toBe(modelReasoning);
   expect(modelResult.message).toContain("openai/gpt-test");
+  expect(session.reloadCalls).toBe(1);
 
   const thinkingResult = await applyControlCommand(session as any, registry, {
     type: "thinking",
@@ -68,6 +76,7 @@ test("applyControlCommand switches model and thinking level", async () => {
 
   expect(thinkingResult.status).toBe("success");
   expect(session.thinkingLevel).toBe("high");
+  expect(session.reloadCalls).toBe(2);
 });
 
 test("applyControlCommand reports unsupported thinking", async () => {

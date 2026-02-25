@@ -159,11 +159,28 @@ export async function applyControlCommand(
       selected = matches[0];
     }
 
+    const previousModel = session.model;
     try {
       await session.setModel(selected);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return { status: "error", message };
+    }
+
+    const modelChanged =
+      !previousModel ||
+      previousModel.provider !== selected.provider ||
+      previousModel.id !== selected.id;
+    if (modelChanged) {
+      try {
+        await session.reload();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          status: "error",
+          message: `Model set to ${selected.provider}/${selected.id}, but reload failed: ${message}`,
+        };
+      }
     }
 
     const thinkingNote = session.supportsThinking()
@@ -185,9 +202,19 @@ export async function applyControlCommand(
 
   const requestedRaw = command.level?.toLowerCase() || "";
   if (!requestedRaw) {
+    const available = session.getAvailableThinkingLevels();
+    const modelLabel = session.model ? `${session.model.provider}/${session.model.id}` : "unknown";
+    const lines = [
+      `Current model: ${modelLabel}.`,
+      `Current thinking level: ${session.thinkingLevel}.`,
+      `Available thinking levels: ${available.join(", ")}.`,
+    ];
+    if (!session.supportsThinking()) {
+      lines.push("Thinking is off for this model.");
+    }
     return {
-      status: "error",
-      message: `Usage: /thinking <${THINKING_LEVELS.join("|")}>.`,
+      status: "success",
+      message: lines.join("\n"),
     };
   }
 
@@ -199,6 +226,7 @@ export async function applyControlCommand(
     };
   }
 
+  const previousLevel = session.thinkingLevel;
   session.setThinkingLevel(requestedRaw as ThinkingLevel);
   const applied = session.thinkingLevel;
 
@@ -210,6 +238,18 @@ export async function applyControlCommand(
   }
 
   const note = applied !== requestedRaw ? ` (requested ${requestedRaw})` : "";
+  if (applied !== previousLevel) {
+    try {
+      await session.reload();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return {
+        status: "error",
+        message: `Thinking level set to ${applied}${note}, but reload failed: ${message}`,
+      };
+    }
+  }
+
   return {
     status: "success",
     message: `Thinking level set to ${applied}${note}.`,
