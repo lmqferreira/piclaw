@@ -2,7 +2,7 @@ import { mkdirSync } from "fs";
 import { join } from "path";
 import makeWASocket, { Browsers, DisconnectReason, makeCacheableSignalKeyStore, useMultiFileAuthState, } from "@whiskeysockets/baileys";
 import qrcode from "qrcode-terminal";
-import { ASSISTANT_NAME, STORE_DIR } from "../config.js";
+import { ASSISTANT_NAME, STORE_DIR, WHATSAPP_PHONE } from "../config.js";
 // Minimal pino-compatible logger for baileys (it requires one)
 const silentLogger = {
     level: "silent",
@@ -20,8 +20,12 @@ export class WhatsAppChannel {
     outgoingQueue = [];
     flushing = false;
     opts;
+    pairingRequested = false;
     constructor(opts) {
-        this.opts = opts;
+        this.opts = {
+            ...opts,
+            phoneNumber: opts.phoneNumber || (WHATSAPP_PHONE || undefined),
+        };
     }
     async connect() {
         return new Promise((resolve, reject) => {
@@ -39,7 +43,10 @@ export class WhatsAppChannel {
         });
         this.sock.ev.on("connection.update", (update) => {
             const { connection, lastDisconnect, qr } = update;
-            if (qr) {
+            if (connection === "open" && this.opts.phoneNumber && !state.creds.registered) {
+                this.requestPairingCode().catch((err) => console.error("[whatsapp] Failed to request pairing code:", err));
+            }
+            if (qr && !this.opts.phoneNumber) {
                 qrcode.generate(qr, { small: true }, (code) => {
                     console.log("\n" + code);
                     console.log("[whatsapp] Scan the QR code above to authenticate\n");
@@ -47,6 +54,7 @@ export class WhatsAppChannel {
             }
             if (connection === "close") {
                 this.connected = false;
+                this.pairingRequested = false;
                 const reason = lastDisconnect?.error?.output?.statusCode;
                 const shouldReconnect = reason !== DisconnectReason.loggedOut;
                 if (shouldReconnect) {
@@ -146,6 +154,21 @@ export class WhatsAppChannel {
         }
         finally {
             this.flushing = false;
+        }
+    }
+    async requestPairingCode() {
+        if (!this.opts.phoneNumber || this.pairingRequested)
+            return;
+        this.pairingRequested = true;
+        try {
+            const code = await this.sock.requestPairingCode(this.opts.phoneNumber);
+            console.log("[whatsapp] Pairing code requested");
+            if (code)
+                this.opts.onPairingCode?.(code);
+        }
+        catch (err) {
+            this.pairingRequested = false;
+            throw err;
         }
     }
 }

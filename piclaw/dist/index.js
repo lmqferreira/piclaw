@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { mkdirSync, existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
-import { ASSISTANT_NAME, DATA_DIR, POLL_INTERVAL, PUSHOVER_APP_TOKEN, PUSHOVER_DEVICE, PUSHOVER_PRIORITY, PUSHOVER_SOUND, PUSHOVER_USER_KEY, STORE_DIR, TRIGGER_PATTERN, WORKSPACE_DIR, TOOL_OUTPUT_RETENTION_DAYS, TOOL_OUTPUT_CLEANUP_INTERVAL_MS } from "./config.js";
+import { ASSISTANT_NAME, DATA_DIR, POLL_INTERVAL, PUSHOVER_APP_TOKEN, PUSHOVER_DEVICE, PUSHOVER_PRIORITY, PUSHOVER_SOUND, PUSHOVER_USER_KEY, STORE_DIR, TRIGGER_PATTERN, WORKSPACE_DIR, TOOL_OUTPUT_RETENTION_DAYS, TOOL_OUTPUT_CLEANUP_INTERVAL_MS, WHATSAPP_PHONE } from "./config.js";
 import { initDatabase, getMessagesSince, getNewMessages, getRouterState, setRouterState, storeMessage, storeChatMetadata } from "./db.js";
 import { AgentPool } from "./agent-pool.js";
 import { AgentQueue } from "./queue.js";
@@ -211,6 +211,23 @@ async function main() {
     }
     whatsapp = new WhatsAppChannel({
         chatJids: () => chatJids,
+        phoneNumber: WHATSAPP_PHONE || undefined,
+        onPairingCode: (code) => {
+            try {
+                const ipcDir = join(DATA_DIR, "ipc", "messages");
+                mkdirSync(ipcDir, { recursive: true });
+                const payload = {
+                    type: "message",
+                    chatJid: "web:default",
+                    text: code,
+                };
+                const filePath = join(ipcDir, `pairing-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.json`);
+                writeFileSync(filePath, JSON.stringify(payload));
+            }
+            catch (err) {
+                console.error("[whatsapp] Failed to write pairing code IPC message:", err);
+            }
+        },
         onMessage: (chatJid, msg) => {
             // Auto-register self-chat
             if (!chatJids.has(chatJid) && msg.is_from_me) {
