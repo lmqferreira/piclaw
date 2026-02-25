@@ -10,7 +10,7 @@ import makeWASocket, {
 } from "@whiskeysockets/baileys";
 import qrcode from "qrcode-terminal";
 
-import { ASSISTANT_NAME, STORE_DIR } from "../config.js";
+import { ASSISTANT_NAME, STORE_DIR, WHATSAPP_PHONE } from "../config.js";
 import type { NewMessage, OnChatMetadata, OnInboundMessage } from "../types.js";
 
 // Minimal pino-compatible logger for baileys (it requires one)
@@ -29,6 +29,8 @@ export interface WhatsAppChannelOpts {
   onMessage: OnInboundMessage;
   onChatMetadata: OnChatMetadata;
   chatJids: () => Set<string>;
+  phoneNumber?: string;
+  onPairingCode?: (code: string) => void;
 }
 
 export class WhatsAppChannel {
@@ -37,9 +39,13 @@ export class WhatsAppChannel {
   private outgoingQueue: Array<{ jid: string; text: string }> = [];
   private flushing = false;
   private opts: WhatsAppChannelOpts;
+  private pairingRequested = false;
 
   constructor(opts: WhatsAppChannelOpts) {
-    this.opts = opts;
+    this.opts = {
+      ...opts,
+      phoneNumber: opts.phoneNumber || (WHATSAPP_PHONE || undefined),
+    };
   }
 
   async connect(): Promise<void> {
@@ -62,7 +68,13 @@ export class WhatsAppChannel {
     this.sock.ev.on("connection.update", (update) => {
       const { connection, lastDisconnect, qr } = update;
 
-      if (qr) {
+      if (connection === "open" && this.opts.phoneNumber && !state.creds.registered) {
+        this.requestPairingCode().catch((err) =>
+          console.error("[whatsapp] Failed to request pairing code:", err)
+        );
+      }
+
+      if (qr && !this.opts.phoneNumber) {
         qrcode.generate(qr, { small: true }, (code: string) => {
           console.log("\n" + code);
           console.log("[whatsapp] Scan the QR code above to authenticate\n");
@@ -71,6 +83,7 @@ export class WhatsAppChannel {
 
       if (connection === "close") {
         this.connected = false;
+        this.pairingRequested = false;
         const reason = (lastDisconnect?.error as any)?.output?.statusCode;
         const shouldReconnect = reason !== DisconnectReason.loggedOut;
         if (shouldReconnect) {
@@ -165,5 +178,18 @@ export class WhatsAppChannel {
         await this.sock.sendMessage(item.jid, { text: item.text });
       }
     } finally { this.flushing = false; }
+  }
+
+  private async requestPairingCode(): Promise<void> {
+    if (!this.opts.phoneNumber || this.pairingRequested) return;
+    this.pairingRequested = true;
+    try {
+      const code = await this.sock.requestPairingCode(this.opts.phoneNumber);
+      console.log("[whatsapp] Pairing code requested");
+      if (code) this.opts.onPairingCode?.(code);
+    } catch (err) {
+      this.pairingRequested = false;
+      throw err;
+    }
   }
 }

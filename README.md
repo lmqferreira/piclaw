@@ -126,6 +126,26 @@ memory:
 piclaw                                    # scan QR code to connect WhatsApp
 ```
 
+### WhatsApp pairing code (optional)
+
+In server/container environments, QR pairing can fail. If you set a phone number,
+piclaw requests a pairing code instead of showing a QR. The code is sent to the
+web UI via IPC.
+
+Set the phone number as digits only (country code + number, no + or spaces):
+
+```bash
+WHATSAPP_PHONE=1234567890
+```
+
+You can also set it in `/workspace/.piclaw/config.json`:
+
+```json
+{
+  "whatsappPhone": "1234567890"
+}
+```
+
 > **Note:** Piclaw does not require any API keys directly. LLM provider, model, and
 > credentials are all configured through pi's own settings (`~/.pi/agent/settings.json`).
 > Run `pi` interactively once to set your provider, or edit the settings file directly:

@@ -2,7 +2,7 @@ import { readFileSync } from "fs";
 import { resolve } from "path";
 import { readEnvFile } from "./env.js";
 
-const envConfig = readEnvFile(["ASSISTANT_NAME", "PUSHOVER_APP_TOKEN", "PUSHOVER_USER_KEY", "PUSHOVER_DEVICE", "PUSHOVER_PRIORITY", "PUSHOVER_SOUND"]);
+const envConfig = readEnvFile(["ASSISTANT_NAME", "PUSHOVER_APP_TOKEN", "PUSHOVER_USER_KEY", "PUSHOVER_DEVICE", "PUSHOVER_PRIORITY", "PUSHOVER_SOUND", "WHATSAPP_PHONE"]);
 
 function readJsonConfig(filePath: string): Record<string, unknown> {
   try {
@@ -58,6 +58,7 @@ const configUserKey = pickString(pushoverConfig, ["userKey", "user_key", "PUSHOV
 const configDevice = pickString(pushoverConfig, ["device", "PUSHOVER_DEVICE"]);
 const configSound = pickString(pushoverConfig, ["sound", "PUSHOVER_SOUND"]);
 const configPriority = pickNumber(pushoverConfig, ["priority", "PUSHOVER_PRIORITY"]);
+const configWhatsappPhone = pickString(piclawConfig, ["whatsappPhone", "whatsapp_phone", "WHATSAPP_PHONE"]);
 
 export const AGENT_TIMEOUT = parseInt(process.env.AGENT_TIMEOUT || "600000", 10); // 10min default
 export const IPC_POLL_INTERVAL = 1000;
@@ -110,6 +111,8 @@ export const TOOL_OUTPUT_CLEANUP_INTERVAL_MS = parseInt(
   process.env.PICLAW_TOOL_OUTPUT_CLEANUP_INTERVAL_MS || String(12 * 60 * 60 * 1000),
   10
 );
+
+export const WHATSAPP_PHONE = process.env.WHATSAPP_PHONE || envConfig.WHATSAPP_PHONE || configWhatsappPhone || "";
 
 // Pushover notification channel
 export const PUSHOVER_APP_TOKEN = process.env.PUSHOVER_APP_TOKEN || envConfig.PUSHOVER_APP_TOKEN || configAppToken || "";
