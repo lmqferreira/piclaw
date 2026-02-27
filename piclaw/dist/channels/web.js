@@ -488,6 +488,18 @@ export class WebChannel {
             markCommandHandled();
             return this.json({ user_message: interaction, thread_id: data.thread_id ?? interaction.id, command: cmdResult }, 201);
         }
+        const steerResult = await this.agentPool.queueStreamingMessage(DEFAULT_CHAT_JID, data.content, "steer");
+        if (steerResult.queued) {
+            markCommandHandled();
+            return this.json({
+                user_message: interaction,
+                thread_id: data.thread_id ?? interaction.id,
+                queued: "steer",
+            }, 201);
+        }
+        if (steerResult.error) {
+            console.warn(`[web] Failed to queue steering message: ${steerResult.error}`);
+        }
         this.queue.enqueue(async () => {
             await this.processChat(DEFAULT_CHAT_JID, agentId);
         }, `chat:${DEFAULT_CHAT_JID}`);

@@ -24,6 +24,103 @@ function formatShellBlock(command, output, meta = []) {
     }
     return ["```", ...lines, "```"].join("\n");
 }
+function formatCompactNumber(value) {
+    if (!Number.isFinite(value))
+        return String(value);
+    const abs = Math.abs(value);
+    const format = (divisor, suffix) => {
+        const raw = (value / divisor).toFixed(1);
+        const trimmed = raw.endsWith(".0") ? raw.slice(0, -2) : raw;
+        return `${trimmed}${suffix}`;
+    };
+    if (abs >= 1_000_000_000)
+        return format(1_000_000_000, "B");
+    if (abs >= 1_000_000)
+        return format(1_000_000, "M");
+    if (abs >= 1_000)
+        return format(1_000, "K");
+    return String(value);
+}
+function formatCurrency(value) {
+    if (!Number.isFinite(value))
+        return String(value);
+    if (value === 0)
+        return "$0";
+    if (Math.abs(value) < 0.01)
+        return `$${value.toFixed(4)}`;
+    return `$${value.toFixed(2)}`;
+}
+function parseToggle(value) {
+    if (!value)
+        return undefined;
+    const normalized = value.trim().toLowerCase();
+    if (["on", "true", "yes", "1", "enable", "enabled"].includes(normalized))
+        return true;
+    if (["off", "false", "no", "0", "disable", "disabled"].includes(normalized))
+        return false;
+    return undefined;
+}
+function parseQueueMode(value) {
+    if (!value)
+        return undefined;
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "all")
+        return "all";
+    if (["one", "one-at-a-time", "one_at_a_time", "single"].includes(normalized))
+        return "one-at-a-time";
+    return undefined;
+}
+function truncateText(text, maxLength) {
+    if (text.length <= maxLength)
+        return text;
+    return `${text.slice(0, Math.max(0, maxLength - 1))}…`;
+}
+function extractTextFromContent(content) {
+    if (!content)
+        return "";
+    if (typeof content === "string")
+        return content;
+    if (Array.isArray(content)) {
+        return content
+            .filter((b) => b && b.type === "text")
+            .map((b) => b.text)
+            .join("");
+    }
+    return "";
+}
+async function runPromptAndCapture(session, text) {
+    let assistantBuffer = "";
+    const customBuffers = [];
+    const onEvent = (event) => {
+        if (event.type === "message_update") {
+            const me = event.assistantMessageEvent;
+            if (me && me.type === "text_delta") {
+                assistantBuffer += me.delta || "";
+            }
+        }
+        if (event.type === "message_end") {
+            const msg = event.message;
+            const text = extractTextFromContent(msg.content);
+            if (msg.role === "assistant") {
+                assistantBuffer = text || assistantBuffer;
+            }
+            else if (text) {
+                customBuffers.push(text);
+            }
+        }
+    };
+    const unsub = session.subscribe(onEvent);
+    try {
+        await session.prompt(text);
+    }
+    finally {
+        unsub();
+    }
+    const finalText = (assistantBuffer && assistantBuffer.trim())
+        ? assistantBuffer.trim()
+        : customBuffers.join("\n\n").trim();
+    return finalText || "(no output)";
+}
 function stripTrigger(text, triggerPattern) {
     if (!triggerPattern)
         return text.trim();
@@ -39,7 +136,8 @@ export function parseControlCommand(text, triggerPattern) {
         return null;
     const [command, ...rest] = cleaned.split(/\s+/);
     const args = rest.join(" ").trim();
-    if (command.toLowerCase() === "/model") {
+    const commandLower = command.toLowerCase();
+    if (commandLower === "/model") {
         const tokens = args.split(/\s+/).filter(Boolean);
         if (tokens.length === 0) {
             return { type: "model", raw: cleaned };
@@ -69,7 +167,7 @@ export function parseControlCommand(text, triggerPattern) {
             raw: cleaned,
         };
     }
-    if (command.toLowerCase() === "/thinking") {
+    if (commandLower === "/thinking") {
         const level = args.split(/\s+/).filter(Boolean)[0];
         return {
             type: "thinking",
@@ -77,21 +175,143 @@ export function parseControlCommand(text, triggerPattern) {
             raw: cleaned,
         };
     }
-    if (command.toLowerCase() === "/commands") {
+    if (commandLower === "/commands") {
         return {
             type: "commands",
             raw: cleaned,
         };
     }
-    if (command.toLowerCase() === "/restart") {
+    if (commandLower === "/restart") {
         return {
             type: "restart",
             raw: cleaned,
         };
     }
-    if (command.toLowerCase() === "/shell") {
+    if (commandLower === "/shell") {
         return {
             type: "shell",
+            command: args || undefined,
+            raw: cleaned,
+        };
+    }
+    if (commandLower === "/queue") {
+        return {
+            type: "queue",
+            message: args || undefined,
+            raw: cleaned,
+        };
+    }
+    if (commandLower === "/state") {
+        return { type: "state", raw: cleaned };
+    }
+    if (commandLower === "/stats") {
+        return { type: "stats", raw: cleaned };
+    }
+    if (commandLower === "/context") {
+        return { type: "context", raw: cleaned };
+    }
+    if (commandLower === "/last") {
+        return { type: "last", raw: cleaned };
+    }
+    if (commandLower === "/compact") {
+        return {
+            type: "compact",
+            instructions: args || undefined,
+            raw: cleaned,
+        };
+    }
+    if (commandLower === "/auto-compact") {
+        return {
+            type: "auto_compact",
+            enabled: parseToggle(args),
+            raw: cleaned,
+        };
+    }
+    if (commandLower === "/auto-retry") {
+        return {
+            type: "auto_retry",
+            enabled: parseToggle(args),
+            raw: cleaned,
+        };
+    }
+    if (commandLower === "/abort") {
+        return { type: "abort", raw: cleaned };
+    }
+    if (commandLower === "/abort-retry") {
+        return { type: "abort_retry", raw: cleaned };
+    }
+    if (commandLower === "/abort-bash") {
+        return { type: "abort_bash", raw: cleaned };
+    }
+    if (commandLower === "/cycle-model") {
+        const dirRaw = args.toLowerCase();
+        const direction = ["back", "backward", "prev", "previous"].includes(dirRaw)
+            ? "backward"
+            : "forward";
+        return {
+            type: "cycle_model",
+            direction,
+            raw: cleaned,
+        };
+    }
+    if (commandLower === "/cycle-thinking") {
+        return { type: "cycle_thinking", raw: cleaned };
+    }
+    if (commandLower === "/steering-mode") {
+        return {
+            type: "steering_mode",
+            mode: parseQueueMode(args),
+            raw: cleaned,
+        };
+    }
+    if (commandLower === "/followup-mode") {
+        return {
+            type: "followup_mode",
+            mode: parseQueueMode(args),
+            raw: cleaned,
+        };
+    }
+    if (commandLower === "/session-name") {
+        return {
+            type: "session_name",
+            name: args || undefined,
+            raw: cleaned,
+        };
+    }
+    if (commandLower === "/new-session") {
+        return {
+            type: "new_session",
+            parent: args || undefined,
+            raw: cleaned,
+        };
+    }
+    if (commandLower === "/switch-session") {
+        return {
+            type: "switch_session",
+            path: args || undefined,
+            raw: cleaned,
+        };
+    }
+    if (commandLower === "/fork") {
+        return {
+            type: "fork",
+            entryId: args || undefined,
+            raw: cleaned,
+        };
+    }
+    if (commandLower === "/forks") {
+        return { type: "forks", raw: cleaned };
+    }
+    if (commandLower === "/export-html") {
+        return {
+            type: "export_html",
+            path: args || undefined,
+            raw: cleaned,
+        };
+    }
+    if (commandLower === "/bash") {
+        return {
+            type: "bash",
             command: args || undefined,
             raw: cleaned,
         };
@@ -190,6 +410,326 @@ export async function applyControlCommand(session, modelRegistry, command) {
             message: formatShellBlock(rawCommand, output, meta),
         };
     }
+    if (command.type === "bash") {
+        const rawCommand = command.command?.trim();
+        if (!rawCommand) {
+            return {
+                status: "error",
+                message: "Usage: /bash <command>",
+            };
+        }
+        try {
+            const bashOps = createTrackedBashOperations();
+            const result = await session.executeBash(rawCommand, undefined, { operations: bashOps });
+            const meta = [];
+            if (result.cancelled)
+                meta.push("(cancelled)");
+            if (result.truncated)
+                meta.push("(output truncated)");
+            if (result.exitCode !== undefined && result.exitCode !== null) {
+                meta.push(`(exit code ${result.exitCode})`);
+            }
+            if (result.fullOutputPath)
+                meta.push(`(full output: ${result.fullOutputPath})`);
+            const isSuccess = !result.cancelled && (result.exitCode === undefined || result.exitCode === null || result.exitCode === 0);
+            return {
+                status: isSuccess ? "success" : "error",
+                message: formatShellBlock(rawCommand, result.output ?? "", meta),
+            };
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            return { status: "error", message };
+        }
+    }
+    if (command.type === "queue") {
+        const queuedText = command.message?.trim();
+        if (!queuedText) {
+            return {
+                status: "error",
+                message: "Usage: /queue <message>",
+            };
+        }
+        if (session.isStreaming) {
+            try {
+                await session.prompt(queuedText, { streamingBehavior: "followUp" });
+            }
+            catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                return { status: "error", message };
+            }
+            return {
+                status: "success",
+                message: "Queued as a follow-up after the current response.",
+            };
+        }
+        try {
+            const response = await runPromptAndCapture(session, queuedText);
+            return { status: "success", message: response };
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            return { status: "error", message };
+        }
+    }
+    if (command.type === "state") {
+        const modelLabel = session.model ? `${session.model.provider}/${session.model.id}` : "none";
+        const steeringCount = session.getSteeringMessages().length;
+        const followUpCount = session.getFollowUpMessages().length;
+        const lines = [
+            `Model: ${modelLabel}`,
+            `Thinking level: ${session.thinkingLevel}${session.supportsThinking() ? "" : " (thinking off)"}`,
+            `Streaming: ${session.isStreaming ? "yes" : "no"}`,
+            `Compacting: ${session.isCompacting ? "yes" : "no"}`,
+            `Retrying: ${session.isRetrying ? "yes" : "no"}`,
+            `Auto-compaction: ${session.autoCompactionEnabled ? "on" : "off"}`,
+            `Auto-retry: ${session.autoRetryEnabled ? "on" : "off"}`,
+            `Steering mode: ${session.steeringMode}`,
+            `Follow-up mode: ${session.followUpMode}`,
+            `Pending messages: ${session.pendingMessageCount} (steer ${steeringCount}, follow-up ${followUpCount})`,
+            `Session id: ${session.sessionId}`,
+            `Session name: ${session.sessionName || "none"}`,
+            `Session file: ${session.sessionFile || "none"}`,
+        ];
+        return { status: "success", message: lines.join("\n") };
+    }
+    if (command.type === "stats") {
+        const stats = session.getSessionStats();
+        const tokens = stats.tokens;
+        const lines = [
+            "Session stats:",
+            `• Messages: ${stats.userMessages} user, ${stats.assistantMessages} assistant, ${stats.toolResults} tool results (${stats.totalMessages} total)`,
+            `• Tool calls: ${stats.toolCalls}`,
+            `• Tokens: input ${formatCompactNumber(tokens.input)}, output ${formatCompactNumber(tokens.output)}, cache read ${formatCompactNumber(tokens.cacheRead)}, cache write ${formatCompactNumber(tokens.cacheWrite)}, total ${formatCompactNumber(tokens.total)}`,
+            `• Cost: ${formatCurrency(stats.cost)}`,
+        ];
+        return { status: "success", message: lines.join("\n") };
+    }
+    if (command.type === "context") {
+        const usage = session.getContextUsage();
+        if (!usage) {
+            return { status: "error", message: "Context usage unavailable (no model configured)." };
+        }
+        if (usage.tokens === null) {
+            return {
+                status: "success",
+                message: `Context usage: unknown. Context window: ${formatCompactNumber(usage.contextWindow)}.`,
+            };
+        }
+        const percent = usage.percent ?? (usage.tokens / usage.contextWindow) * 100;
+        return {
+            status: "success",
+            message: `Context usage: ${formatCompactNumber(usage.tokens)} / ${formatCompactNumber(usage.contextWindow)} (${percent.toFixed(1)}%).`,
+        };
+    }
+    if (command.type === "last") {
+        const last = session.getLastAssistantText();
+        if (!last) {
+            return { status: "error", message: "No assistant messages yet." };
+        }
+        return { status: "success", message: `Last assistant response:\n\n${last}` };
+    }
+    if (command.type === "compact") {
+        try {
+            const result = await session.compact(command.instructions?.trim() || undefined);
+            const lines = [
+                "Compaction complete.",
+                `Tokens before: ${formatCompactNumber(result.tokensBefore)}`,
+                `First kept entry: ${result.firstKeptEntryId}`,
+                "Summary:",
+                result.summary,
+            ];
+            return { status: "success", message: lines.join("\n") };
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            return { status: "error", message };
+        }
+    }
+    if (command.type === "auto_compact") {
+        const hasArgs = command.raw.trim().split(/\s+/).length > 1;
+        if (command.enabled === undefined) {
+            if (hasArgs) {
+                return { status: "error", message: "Usage: /auto-compact on|off" };
+            }
+            return {
+                status: "success",
+                message: `Auto-compaction is ${session.autoCompactionEnabled ? "on" : "off"}.`,
+            };
+        }
+        session.setAutoCompactionEnabled(command.enabled);
+        return {
+            status: "success",
+            message: `Auto-compaction turned ${command.enabled ? "on" : "off"}.`,
+        };
+    }
+    if (command.type === "auto_retry") {
+        const hasArgs = command.raw.trim().split(/\s+/).length > 1;
+        if (command.enabled === undefined) {
+            if (hasArgs) {
+                return { status: "error", message: "Usage: /auto-retry on|off" };
+            }
+            return {
+                status: "success",
+                message: `Auto-retry is ${session.autoRetryEnabled ? "on" : "off"}.`,
+            };
+        }
+        session.setAutoRetryEnabled(command.enabled);
+        return {
+            status: "success",
+            message: `Auto-retry turned ${command.enabled ? "on" : "off"}.`,
+        };
+    }
+    if (command.type === "abort") {
+        try {
+            await session.abort();
+            return { status: "success", message: "Aborted current response." };
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            return { status: "error", message };
+        }
+    }
+    if (command.type === "abort_retry") {
+        session.abortRetry();
+        return { status: "success", message: "Retry aborted." };
+    }
+    if (command.type === "abort_bash") {
+        if (!session.isBashRunning) {
+            return { status: "success", message: "No bash command is running." };
+        }
+        session.abortBash();
+        return { status: "success", message: "Bash command aborted." };
+    }
+    if (command.type === "cycle_model") {
+        try {
+            const result = await session.cycleModel(command.direction);
+            if (!result) {
+                return { status: "success", message: "Only one model is available to cycle." };
+            }
+            const label = `${result.model.provider}/${result.model.id}`;
+            const scope = result.isScoped ? "scoped" : "available";
+            return {
+                status: "success",
+                message: `Model set to ${label} (cycle: ${scope}). Thinking level: ${result.thinkingLevel}.`,
+            };
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            return { status: "error", message };
+        }
+    }
+    if (command.type === "cycle_thinking") {
+        const previous = session.thinkingLevel;
+        const level = session.cycleThinkingLevel();
+        if (!level) {
+            return { status: "error", message: "Current model does not support thinking levels." };
+        }
+        if (level !== previous) {
+            try {
+                await session.reload();
+            }
+            catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                return {
+                    status: "error",
+                    message: `Thinking level set to ${level}, but reload failed: ${message}`,
+                };
+            }
+        }
+        return { status: "success", message: `Thinking level set to ${level}.` };
+    }
+    if (command.type === "steering_mode") {
+        const hasArgs = command.raw.trim().split(/\s+/).length > 1;
+        if (!command.mode) {
+            if (hasArgs) {
+                return { status: "error", message: "Usage: /steering-mode all|one" };
+            }
+            return { status: "success", message: `Steering mode: ${session.steeringMode}.` };
+        }
+        session.setSteeringMode(command.mode);
+        return { status: "success", message: `Steering mode set to ${command.mode}.` };
+    }
+    if (command.type === "followup_mode") {
+        const hasArgs = command.raw.trim().split(/\s+/).length > 1;
+        if (!command.mode) {
+            if (hasArgs) {
+                return { status: "error", message: "Usage: /followup-mode all|one" };
+            }
+            return { status: "success", message: `Follow-up mode: ${session.followUpMode}.` };
+        }
+        session.setFollowUpMode(command.mode);
+        return { status: "success", message: `Follow-up mode set to ${command.mode}.` };
+    }
+    if (command.type === "session_name") {
+        if (!command.name) {
+            return {
+                status: "success",
+                message: `Session name: ${session.sessionName || "none"}.`,
+            };
+        }
+        const name = command.name.trim();
+        const normalized = name.toLowerCase();
+        if (["clear", "none", "off"].includes(normalized)) {
+            session.setSessionName("");
+            return { status: "success", message: "Session name cleared." };
+        }
+        session.setSessionName(name);
+        return { status: "success", message: `Session name set to "${name}".` };
+    }
+    if (command.type === "new_session") {
+        const ok = await session.newSession(command.parent ? { parentSession: command.parent } : undefined);
+        if (!ok) {
+            return { status: "error", message: "New session cancelled." };
+        }
+        return { status: "success", message: "Started a new session." };
+    }
+    if (command.type === "switch_session") {
+        if (!command.path) {
+            return { status: "error", message: "Usage: /switch-session <path>" };
+        }
+        const ok = await session.switchSession(command.path.trim());
+        if (!ok) {
+            return { status: "error", message: "Switch session cancelled." };
+        }
+        return { status: "success", message: `Switched to session: ${command.path.trim()}.` };
+    }
+    if (command.type === "fork") {
+        if (!command.entryId) {
+            return { status: "error", message: "Usage: /fork <entryId>" };
+        }
+        try {
+            const result = await session.fork(command.entryId.trim());
+            if (result.cancelled) {
+                return { status: "error", message: "Fork cancelled." };
+            }
+            const selected = result.selectedText ? `Selected text:\n${result.selectedText}` : "Fork created.";
+            return { status: "success", message: selected };
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            return { status: "error", message };
+        }
+    }
+    if (command.type === "forks") {
+        const messages = session.getUserMessagesForForking();
+        if (messages.length === 0) {
+            return { status: "success", message: "No user messages available for forking." };
+        }
+        const lines = ["Forkable messages:", ...messages.map((msg) => `• ${msg.entryId}: ${truncateText(msg.text, 120)}`)];
+        return { status: "success", message: lines.join("\n") };
+    }
+    if (command.type === "export_html") {
+        try {
+            const outputPath = command.path?.trim() || undefined;
+            const path = await session.exportToHtml(outputPath);
+            return { status: "success", message: `Exported session to ${path}.` };
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            return { status: "error", message };
+        }
+    }
     if (command.type === "model") {
         modelRegistry.refresh();
         if (!command.modelId) {
@@ -285,9 +825,31 @@ export async function applyControlCommand(session, modelRegistry, command) {
             lines.push(`• ${name}${suffix}`);
         };
         addLine("/model", "Select model or list available models");
+        addLine("/cycle-model", "Cycle to the next available model");
         addLine("/thinking", "Show or set thinking level");
-        addLine("/restart", "Restart the agent and stop subprocesses");
+        addLine("/cycle-thinking", "Cycle thinking level");
+        addLine("/state", "Show current session state");
+        addLine("/stats", "Show session token and cost stats");
+        addLine("/context", "Show context window usage");
+        addLine("/last", "Show last assistant response");
+        addLine("/compact", "Manually compact the session");
+        addLine("/auto-compact", "Toggle auto-compaction");
+        addLine("/auto-retry", "Toggle auto-retry");
+        addLine("/abort", "Abort the current response");
+        addLine("/abort-retry", "Abort retry backoff");
+        addLine("/abort-bash", "Abort running bash command");
         addLine("/shell", "Run a shell command and return output");
+        addLine("/bash", "Run a shell command and add output to context");
+        addLine("/queue", "Queue a follow-up message");
+        addLine("/steering-mode", "Set steering mode (all|one)");
+        addLine("/followup-mode", "Set follow-up mode (all|one)");
+        addLine("/session-name", "Set or show the session name");
+        addLine("/new-session", "Start a new session");
+        addLine("/switch-session", "Switch to a session file");
+        addLine("/fork", "Fork from a previous message");
+        addLine("/forks", "List forkable messages");
+        addLine("/export-html", "Export session to HTML");
+        addLine("/restart", "Restart the agent and stop subprocesses");
         addLine("/commands", "List available commands");
         const extensionRunner = session.extensionRunner;
         if (extensionRunner) {
