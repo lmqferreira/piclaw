@@ -40,6 +40,60 @@ function decodeEntitiesDeep(text, maxDepth = 2) {
     return current;
 }
 
+function extractMermaidBlocks(text) {
+    if (!text) return { text: '', blocks: [] };
+    const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const lines = normalized.split('\n');
+    const blocks = [];
+    const output = [];
+    let inMermaid = false;
+    let current = [];
+
+    for (const line of lines) {
+        if (!inMermaid && line.trim().match(/^```mermaid\s*$/i)) {
+            inMermaid = true;
+            current = [];
+            continue;
+        }
+        if (inMermaid && line.trim().match(/^```\s*$/)) {
+            const idx = blocks.length;
+            blocks.push(current.join('\n'));
+            output.push(`@@MERMAID_BLOCK_${idx}@@`);
+            inMermaid = false;
+            current = [];
+            continue;
+        }
+        if (inMermaid) {
+            current.push(line);
+        } else {
+            output.push(line);
+        }
+    }
+
+    if (inMermaid) {
+        output.push('```mermaid');
+        output.push(...current);
+    }
+
+    return { text: output.join('\n'), blocks };
+}
+
+function decodeMermaidBlock(text) {
+    if (!text) return text;
+    return decodeEntitiesDeep(text, 5);
+}
+
+function injectMermaidBlocks(html, blocks) {
+    if (!html || !blocks || blocks.length === 0) return html;
+    return html.replace(/@@MERMAID_BLOCK_(\d+)@@/g, (match, idxStr) => {
+        const idx = Number(idxStr);
+        const raw = blocks[idx] ?? '';
+        const decoded = decodeMermaidBlock(raw);
+        const encoded = btoa(unescape(encodeURIComponent(decoded)));
+        return `<div class="mermaid-container" data-mermaid="${encoded}"><div class="mermaid-loading">Loading diagram...</div></div>`;
+    });
+}
+
 const ALLOWED_HTML_TAGS = new Set([
     'strong',
     'em',
@@ -128,9 +182,11 @@ function renderMath(html_content) {
  */
 function renderMarkdown(text, onHashtagClick) {
     if (!text) return '';
-    
+
+    const { text: stripped, blocks: mermaidBlocks } = extractMermaidBlocks(text);
+
     // Decode HTML entities first (in case content has encoded entities)
-    const decoded = decodeEntitiesDeep(text, 2);
+    const decoded = decodeEntitiesDeep(stripped, 2);
     const normalized = normalizeHtmlCodeTags(decoded);
     const escaped = normalized
         .replace(/</g, '&lt;')
@@ -141,26 +197,18 @@ function renderMarkdown(text, onHashtagClick) {
     let html_content = window.marked
         ? marked.parse(safeHtml, { headerIds: false, mangle: false })
         : safeHtml.replace(/\n/g, '<br>');
-    
+
     html_content = decodeCodeEntities(html_content);
 
     // Render math expressions
     html_content = renderMath(html_content);
-    
+
     // Process hashtags without breaking links
     html_content = linkifyHashtagsInHtml(html_content);
-    
-    // Mark mermaid code blocks for async rendering
-    // They appear as <pre><code class="language-mermaid">...</code></pre>
-    html_content = html_content.replace(
-        /<pre><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/g,
-        (match, code) => {
-            const decoded = decodeEntitiesDeep(code.trim(), 3);
-            const encoded = btoa(unescape(encodeURIComponent(decoded)));
-            return `<div class="mermaid-container" data-mermaid="${encoded}"><div class="mermaid-loading">Loading diagram...</div></div>`;
-        }
-    );
-    
+
+    // Inject Mermaid blocks after markdown processing to avoid double-encoding
+    html_content = injectMermaidBlocks(html_content, mermaidBlocks);
+
     return html_content;
 }
 
