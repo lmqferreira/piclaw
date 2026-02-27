@@ -105,7 +105,24 @@ export class AgentPool {
     }
     async applyControlCommand(chatJid, command) {
         const session = await this.getOrCreate(chatJid);
+        process.env.PICLAW_CHAT_JID = chatJid;
+        process.env.PICLAW_CHANNEL = detectChannel(chatJid);
         return applyControlCommand(session, this.modelRegistry, command);
+    }
+    async queueStreamingMessage(chatJid, text, behavior) {
+        const session = await this.getOrCreate(chatJid);
+        if (!session.isStreaming)
+            return { queued: false };
+        process.env.PICLAW_CHAT_JID = chatJid;
+        process.env.PICLAW_CHANNEL = detectChannel(chatJid);
+        try {
+            await session.prompt(text, { streamingBehavior: behavior });
+            return { queued: true };
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            return { queued: false, error: message };
+        }
     }
     /** Execute a raw slash command in the AgentSession (extension commands).
      * Returns an AgentControlResult-like object with status/message.
