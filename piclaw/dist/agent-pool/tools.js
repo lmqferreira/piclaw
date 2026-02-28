@@ -1,6 +1,7 @@
 import { createBashTool, createEditTool, createReadTool, createWriteTool, } from "@mariozechner/pi-coding-agent";
 import { createAttachmentTool } from "./attachments.js";
 import { createMessageSearchTool } from "./message-search.js";
+import { createModelListTool } from "./model-list.js";
 import { createModelSwitchTool } from "./model-switch.js";
 import { createThinkingSwitchTool } from "./thinking-switch.js";
 export function createSessionTools(workspaceDir, bashOperations, chatJid, attachments, modelRegistry, getSession) {
@@ -13,6 +14,7 @@ export function createSessionTools(workspaceDir, bashOperations, chatJid, attach
     const customTools = [
         createAttachmentTool(chatJid, attachments),
         createMessageSearchTool(chatJid),
+        createModelListTool(modelRegistry, () => getSession()?.model),
         createModelSwitchTool(getSession, modelRegistry),
         createThinkingSwitchTool(getSession),
     ];

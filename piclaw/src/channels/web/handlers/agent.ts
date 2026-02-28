@@ -140,6 +140,43 @@ export async function processChat(channel: WebChannel, chatJid: string, agentId:
   }));
 
   const output = await channel.agentPool.runAgent(prompt, chatJid, {
+    onAutoCompact: (notice) => {
+      const phaseLabel = notice.phase === "pre"
+        ? "Auto-compacting to free context"
+        : "Auto-compacting after response";
+      if (notice.status === "start") {
+        channel.broadcastEvent("agent_status", withAgentProfile({
+          thread_id: threadId,
+          agent_id: agentId,
+          type: "intent",
+          title: phaseLabel,
+          turn_id: turnId,
+        }));
+      } else if (notice.status === "end" && notice.phase === "pre") {
+        channel.broadcastEvent("agent_status", withAgentProfile({
+          thread_id: threadId,
+          agent_id: agentId,
+          type: "thinking",
+          title: "Thinking...",
+          turn_id: turnId,
+        }));
+      } else if (notice.status === "error" && notice.phase === "pre") {
+        channel.broadcastEvent("agent_status", withAgentProfile({
+          thread_id: threadId,
+          agent_id: agentId,
+          type: "intent",
+          title: "Auto-compaction failed; continuing",
+          turn_id: turnId,
+        }));
+        channel.broadcastEvent("agent_status", withAgentProfile({
+          thread_id: threadId,
+          agent_id: agentId,
+          type: "thinking",
+          title: "Thinking...",
+          turn_id: turnId,
+        }));
+      }
+    },
     onEvent: (event: AgentSessionEvent) => {
       if (event.type === "message_update") {
         const messageEvent = event.assistantMessageEvent;

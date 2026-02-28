@@ -83,12 +83,19 @@ export class AgentPool {
             }, AGENT_TIMEOUT);
             process.env.PICLAW_CHAT_JID = chatJid;
             process.env.PICLAW_CHANNEL = detectChannel(chatJid);
+            const phases = options.autoCompactPhases ?? ["pre", "post"];
+            if (phases.includes("pre")) {
+                await this.maybeAutoCompact(session, "pre", options.onAutoCompact);
+            }
             try {
                 await session.prompt(prompt);
             }
             finally {
                 clearTimeout(timeoutId);
                 unsub();
+            }
+            if (phases.includes("post")) {
+                await this.maybeAutoCompact(session, "post", options.onAutoCompact);
             }
             const duration = Date.now() - startTime;
             const attachments = this.attachments.take(chatJid);
@@ -197,6 +204,36 @@ export class AgentPool {
         }
         catch (err) {
             console.error(`[agent-pool] Failed to bind session ${chatJid}:`, err);
+        }
+    }
+    async maybeAutoCompact(session, phase, onAutoCompact) {
+        if (!session.autoCompactionEnabled)
+            return;
+        const usage = session.getContextUsage();
+        if (!usage || usage.tokens === null || usage.contextWindow <= 0)
+            return;
+        const settings = this.settingsManager.getCompactionSettings();
+        if (!settings.enabled)
+            return;
+        const threshold = usage.contextWindow - settings.reserveTokens;
+        if (usage.tokens <= threshold)
+            return;
+        const noticeBase = {
+            phase,
+            status: "start",
+            tokens: usage.tokens,
+            contextWindow: usage.contextWindow,
+            percent: usage.percent ?? null,
+            threshold,
+        };
+        onAutoCompact?.(noticeBase);
+        try {
+            await session.compact();
+            onAutoCompact?.({ ...noticeBase, status: "end" });
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            onAutoCompact?.({ ...noticeBase, status: "error", error: message });
         }
     }
     evictIdle() {
