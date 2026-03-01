@@ -7,8 +7,8 @@ This document outlines the main components, how they fit together, and where the
 ```mermaid
 flowchart TB
   subgraph Channels
-    WA[WhatsApp (Baileys)]
-    WEB[Web UI + HTTP/SSE]
+    WA[WhatsApp - Baileys]
+    WEB[Web UI + HTTP and SSE]
   end
 
   WA --> WCH[WhatsAppChannel]

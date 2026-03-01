@@ -34,7 +34,7 @@ the new process takes over on the same port.
    ```
 
 5. Launch the force-restart script as a fully detached process. The script:
-   - Does NOT wait for the current pi invocation
+   - Waits briefly so the last response can flush
    - Sends SIGTERM to piclaw and waits for it to die
    - Starts a new piclaw with the same command line
 
@@ -46,8 +46,9 @@ the new process takes over on the same port.
    shift 1
    PICLAW_CMD="$@"
 
-   # Immediate restart (no wait)
-   echo "[reload] Forcing restart (no wait)"
+   # Brief delay to allow the last response to flush
+   echo "[reload] Waiting 3s before restart"
+   sleep 3
 
    # Kill old piclaw
    echo "[reload] Stopping old piclaw ($PICLAW_PID)..."
@@ -72,12 +73,12 @@ the new process takes over on the same port.
 
 6. Confirm the restart script is running:
    ```bash
-   echo "Force restart scheduled. Piclaw will restart immediately."
+   echo "Force restart scheduled. Piclaw will restart shortly."
    ```
 
 ## Important Notes
 
-- This force restart does NOT wait for the current pi invocation; the current response may be cut off.
+- The restart script waits briefly before killing the process so the final message can flush.
 - There will be a brief (~3s) gap where piclaw is down during the restart.
 - The new piclaw inherits the same command-line flags as the old one.
 - WhatsApp session state persists across restarts (stored in SQLite + auth dir).
