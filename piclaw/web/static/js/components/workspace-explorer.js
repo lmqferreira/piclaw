@@ -71,6 +71,48 @@ function treeSignature(node) {
     return JSON.stringify(walk(node));
 }
 
+function mergeTree(prev, next) {
+    if (!next) return next;
+    if (!prev) return next;
+    if (prev.path !== next.path || prev.type !== next.type) return next;
+
+    const prevChildren = Array.isArray(prev.children) ? prev.children : null;
+    const nextChildren = Array.isArray(next.children) ? next.children : null;
+
+    if (!nextChildren) {
+        return prevChildren ? { ...next, children: undefined } : prev;
+    }
+
+    const prevMap = new Map();
+    if (prevChildren) {
+        prevChildren.forEach((child) => {
+            if (child?.path) prevMap.set(child.path, child);
+        });
+    }
+
+    let changed = false;
+    const mergedChildren = nextChildren.map((child) => {
+        const prevChild = prevMap.get(child.path);
+        const merged = mergeTree(prevChild, child);
+        if (merged !== prevChild) changed = true;
+        return merged;
+    });
+
+    if (!prevChildren || prevChildren.length !== mergedChildren.length) {
+        changed = true;
+    } else {
+        for (let i = 0; i < mergedChildren.length; i += 1) {
+            if (mergedChildren[i] !== prevChildren[i]) {
+                changed = true;
+                break;
+            }
+        }
+    }
+
+    if (!changed) return prev;
+    return { ...next, children: mergedChildren };
+}
+
 function iconPath(type) {
     if (type === 'dir') {
         return html`<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />`;
@@ -108,7 +150,7 @@ export function WorkspaceExplorer({ onFileSelect }) {
                 if (!treeRafRef.current) {
                     treeRafRef.current = requestAnimationFrame(() => {
                         treeRafRef.current = 0;
-                        setTree(pendingTreeRef.current);
+                        setTree((prev) => mergeTree(prev, pendingTreeRef.current));
                     });
                 }
             }
@@ -193,7 +235,7 @@ export function WorkspaceExplorer({ onFileSelect }) {
                 <span>Workspace</span>
                 <button class="workspace-refresh" onClick=${loadTree} title="Refresh">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <circle cx="12" cy="12" r="8.5" />
+                        <circle cx="12" cy="12" r="8.5" stroke-dasharray="42 12" stroke-dashoffset="6" transform="rotate(-35 12 12)" />
                         <polyline points="23 4 23 10 17 10" />
                     </svg>
                 </button>
@@ -212,7 +254,7 @@ export function WorkspaceExplorer({ onFileSelect }) {
                             const isDir = node.type === 'dir';
                             const expandedDir = isDir && expanded.has(node.path);
                             const caret = isDir ? (expandedDir ? 'down' : 'right') : null;
-                            const caretSize = 14;
+                            const caretSize = 12;
                             const caretWidth = caretSize;
                             const caretY = y - caretSize / 2 - 1;
                             const iconSlot = 20;
@@ -224,10 +266,10 @@ export function WorkspaceExplorer({ onFileSelect }) {
                                 <g key=${node.path} class="workspace-row" onClick=${() => handleSelect(node)}>
                                     <rect x="0" y=${y - 14} width=${TREE_WIDTH} height=${ROW_HEIGHT} class=${`workspace-row-bg ${isSelected ? 'selected' : ''}`} />
                                     ${caret && html`
-                                        <svg class="workspace-caret-icon" x=${x} y=${caretY} width=${caretSize} height=${caretSize} viewBox="0 0 14 14" aria-hidden="true">
+                                        <svg class="workspace-caret-icon" x=${x} y=${caretY} width=${caretSize} height=${caretSize} viewBox="0 0 12 12" aria-hidden="true">
                                             ${caret === 'down'
-                                                ? html`<polygon points="1 3 13 3 7 13" />`
-                                                : html`<polygon points="3 1 13 7 3 13" />`
+                                                ? html`<polygon points="1 2 11 2 6 11" />`
+                                                : html`<polygon points="2 1 11 6 2 11" />`
                                             }
                                         </svg>
                                     `}
