@@ -22,6 +22,40 @@ export function computeNextRun(scheduleType, scheduleValue) {
     }
     return null;
 }
+function parseModelLabel(label) {
+    const trimmed = label.trim();
+    const slash = trimmed.indexOf("/");
+    if (slash > 0) {
+        return {
+            provider: trimmed.slice(0, slash),
+            modelId: trimmed.slice(slash + 1),
+        };
+    }
+    return { provider: undefined, modelId: trimmed };
+}
+async function applyModelLabel(agentPool, chatJid, label) {
+    const { provider, modelId } = parseModelLabel(label);
+    return agentPool.applyControlCommand(chatJid, {
+        type: "model",
+        provider,
+        modelId,
+        raw: `/model ${label}`,
+    });
+}
+async function switchTaskModel(task, deps) {
+    if (!task.model)
+        return null;
+    const control = await applyModelLabel(deps.agentPool, task.chat_jid, task.model);
+    if (control.status === "error") {
+        return `Model switch failed: ${control.message}`;
+    }
+    return null;
+}
+async function restoreOriginalModel(task, deps, savedModel) {
+    if (!task.model || !savedModel || savedModel === task.model)
+        return;
+    await applyModelLabel(deps.agentPool, task.chat_jid, savedModel);
+}
 export async function runScheduledTask(task, deps) {
     // Re-check task status (may have been paused/cancelled while queued)
     const fresh = getTaskById(task.id);
@@ -38,18 +72,7 @@ export async function runScheduledTask(task, deps) {
     try {
         // Switch model if task specifies one
         if (task.model) {
-            const slash = task.model.indexOf("/");
-            const provider = slash > 0 ? task.model.slice(0, slash) : undefined;
-            const modelId = slash > 0 ? task.model.slice(slash + 1) : task.model;
-            const control = await deps.agentPool.applyControlCommand(task.chat_jid, {
-                type: "model",
-                provider,
-                modelId,
-                raw: `/model ${task.model}`,
-            });
-            if (control.status === "error") {
-                error = `Model switch failed: ${control.message}`;
-            }
+            error = await switchTaskModel(task, deps);
         }
         if (!error) {
             const out = await deps.agentPool.runAgent(task.prompt, task.chat_jid);
@@ -74,17 +97,7 @@ export async function runScheduledTask(task, deps) {
         // stay in a side branch and won't pollute the user's conversation context.
         await deps.agentPool.restoreSessionPosition(task.chat_jid, savedLeafId);
         // Restore the original model if it was changed
-        if (task.model && savedModel && savedModel !== task.model) {
-            const slash = savedModel.indexOf("/");
-            const provider = slash > 0 ? savedModel.slice(0, slash) : undefined;
-            const modelId = slash > 0 ? savedModel.slice(slash + 1) : savedModel;
-            await deps.agentPool.applyControlCommand(task.chat_jid, {
-                type: "model",
-                provider,
-                modelId,
-                raw: `/model ${savedModel}`,
-            });
-        }
+        await restoreOriginalModel(task, deps, savedModel);
     }
     logTaskRun({
         task_id: task.id,
