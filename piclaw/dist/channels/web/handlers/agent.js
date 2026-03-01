@@ -31,7 +31,7 @@ export async function handleAgentMessage(channel, req, pathname, chatJid, defaul
     const threadId = resolveThreadId(data.thread_id, interaction.id);
     const markCommandHandled = () => {
         if (interaction?.timestamp) {
-            channel.lastAgentTimestamp[chatJid] = interaction.timestamp;
+            channel.state.lastAgentTimestamp[chatJid] = interaction.timestamp;
             channel.saveState();
         }
     };
@@ -84,14 +84,14 @@ export async function handleAgentMessage(channel, req, pathname, chatJid, defaul
     return channel.json({ user_message: interaction, thread_id: threadId }, 201);
 }
 export async function processChat(channel, chatJid, agentId, threadRootId) {
-    const since = channel.lastAgentTimestamp[chatJid] || "";
+    const since = channel.state.lastAgentTimestamp[chatJid] || "";
     const messages = getMessagesSince(chatJid, since, ASSISTANT_NAME);
     if (messages.length === 0)
         return;
     const channelName = detectChannel(chatJid);
     const prompt = formatMessages(messages, channelName);
-    const prevCursor = channel.lastAgentTimestamp[chatJid] || "";
-    channel.lastAgentTimestamp[chatJid] = messages[messages.length - 1].timestamp;
+    const prevCursor = channel.state.lastAgentTimestamp[chatJid] || "";
+    channel.state.lastAgentTimestamp[chatJid] = messages[messages.length - 1].timestamp;
     channel.saveState();
     const threadId = messages[messages.length - 1].timestamp;
     const THOUGHT_PREVIEW_LINES = 8;
@@ -192,7 +192,7 @@ export async function processChat(channel, chatJid, agentId, threadRootId) {
         },
     });
     if (output.status === "error") {
-        channel.lastAgentTimestamp[chatJid] = prevCursor;
+        channel.state.lastAgentTimestamp[chatJid] = prevCursor;
         channel.saveState();
         emitter.status({
             thread_id: threadId,

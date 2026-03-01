@@ -14,14 +14,13 @@ import {
   getMessageByRowId,
   getMessageRowIdById,
   getMessagesByHashtag,
-  getRouterState,
   getTimeline,
   hasOlderMessages,
   replaceMessageContent,
   searchMessages,
-  setRouterState,
 } from "../db.js";
 import type { InteractionRow } from "../db.js";
+import { WebChannelState } from "./web/channel-state.js";
 import { storeWebMessage } from "./web/message-store.js";
 
 const DEFAULT_CHAT_JID = "web:default";
@@ -37,13 +36,12 @@ export class WebChannel {
   queue: AgentQueue;
   agentPool: AgentPool;
   server: ReturnType<typeof Bun.serve> | null = null;
-  lastAgentTimestamp: Record<string, string> = {};
+  state = new WebChannelState(STATE_KEY);
   clients: Set<PendingClient> = new Set();
   pendingUiRequests = new Map<string, { resolve: (value: any) => void; reject: (err: Error) => void; timeoutId: ReturnType<typeof setTimeout>; kind: string }>();
   uiRequestCounter = 0;
   editorTextByChat = new Map<string, string>();
   pendingLinkPreviews = new Set<number>();
-  queuedFollowupPlaceholders = new Map<string, number[]>();
   fallbackTheme = createFallbackTheme();
   workspaceWatcher: { close: () => Promise<void> } | null = null;
 
@@ -104,9 +102,7 @@ export class WebChannel {
     const interaction = this.storeMessage(chatJid, text, true, [], { threadId });
     if (!interaction) return null;
 
-    const existing = this.queuedFollowupPlaceholders.get(chatJid) ?? [];
-    existing.push(interaction.id);
-    this.queuedFollowupPlaceholders.set(chatJid, existing);
+    this.state.enqueueFollowupPlaceholder(chatJid, interaction.id);
 
     this.broadcastEvent("agent_response", {
       ...interaction,
@@ -118,11 +114,7 @@ export class WebChannel {
   }
 
   consumeQueuedFollowupPlaceholder(chatJid: string): number | null {
-    const queue = this.queuedFollowupPlaceholders.get(chatJid);
-    if (!queue || queue.length === 0) return null;
-    const next = queue.shift() ?? null;
-    if (!queue.length) this.queuedFollowupPlaceholders.delete(chatJid);
-    return next;
+    return this.state.consumeFollowupPlaceholder(chatJid);
   }
 
   replaceQueuedFollowupPlaceholder(
@@ -156,16 +148,11 @@ export class WebChannel {
   }
 
   loadState(): void {
-    const data = getRouterState(STATE_KEY);
-    try {
-      this.lastAgentTimestamp = data ? JSON.parse(data) : {};
-    } catch {
-      this.lastAgentTimestamp = {};
-    }
+    this.state.load();
   }
 
   saveState(): void {
-    setRouterState(STATE_KEY, JSON.stringify(this.lastAgentTimestamp));
+    this.state.save();
   }
 
   async handleRequest(req: Request): Promise<Response> {

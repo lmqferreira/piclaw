@@ -7,7 +7,8 @@ import { serveDocsStatic, serveStatic } from "./web/static.js";
 import { clampInt, jsonResponse, parseOptionalInt } from "./web/http-utils.js";
 import { createFallbackTheme } from "./web/theme.js";
 import { bindSessionUiContext } from "./web/ui-context.js";
-import { deleteMessageByRowId, getMessageByRowId, getMessageRowIdById, getMessagesByHashtag, getRouterState, getTimeline, hasOlderMessages, replaceMessageContent, searchMessages, setRouterState, } from "../db.js";
+import { deleteMessageByRowId, getMessageByRowId, getMessageRowIdById, getMessagesByHashtag, getTimeline, hasOlderMessages, replaceMessageContent, searchMessages, } from "../db.js";
+import { WebChannelState } from "./web/channel-state.js";
 import { storeWebMessage } from "./web/message-store.js";
 const DEFAULT_CHAT_JID = "web:default";
 const DEFAULT_AGENT_ID = "default";
@@ -16,13 +17,12 @@ export class WebChannel {
     queue;
     agentPool;
     server = null;
-    lastAgentTimestamp = {};
+    state = new WebChannelState(STATE_KEY);
     clients = new Set();
     pendingUiRequests = new Map();
     uiRequestCounter = 0;
     editorTextByChat = new Map();
     pendingLinkPreviews = new Set();
-    queuedFollowupPlaceholders = new Map();
     fallbackTheme = createFallbackTheme();
     workspaceWatcher = null;
     constructor(opts) {
@@ -85,9 +85,7 @@ export class WebChannel {
         const interaction = this.storeMessage(chatJid, text, true, [], { threadId });
         if (!interaction)
             return null;
-        const existing = this.queuedFollowupPlaceholders.get(chatJid) ?? [];
-        existing.push(interaction.id);
-        this.queuedFollowupPlaceholders.set(chatJid, existing);
+        this.state.enqueueFollowupPlaceholder(chatJid, interaction.id);
         this.broadcastEvent("agent_response", {
             ...interaction,
             agent_name: ASSISTANT_NAME,
@@ -96,13 +94,7 @@ export class WebChannel {
         return interaction;
     }
     consumeQueuedFollowupPlaceholder(chatJid) {
-        const queue = this.queuedFollowupPlaceholders.get(chatJid);
-        if (!queue || queue.length === 0)
-            return null;
-        const next = queue.shift() ?? null;
-        if (!queue.length)
-            this.queuedFollowupPlaceholders.delete(chatJid);
-        return next;
+        return this.state.consumeFollowupPlaceholder(chatJid);
     }
     replaceQueuedFollowupPlaceholder(chatJid, rowId, text, mediaIds, contentBlocks, threadId) {
         const updated = replaceMessageContent(chatJid, rowId, text, {
@@ -125,16 +117,10 @@ export class WebChannel {
         return getMessageRowIdById(chatJid, messageId);
     }
     loadState() {
-        const data = getRouterState(STATE_KEY);
-        try {
-            this.lastAgentTimestamp = data ? JSON.parse(data) : {};
-        }
-        catch {
-            this.lastAgentTimestamp = {};
-        }
+        this.state.load();
     }
     saveState() {
-        setRouterState(STATE_KEY, JSON.stringify(this.lastAgentTimestamp));
+        this.state.save();
     }
     async handleRequest(req) {
         const { handleWebRequest } = await import("./web/request-router.js");
