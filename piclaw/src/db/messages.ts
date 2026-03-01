@@ -2,7 +2,7 @@ import { getDb } from "./connection.js";
 import { clampWebContent } from "./web-content.js";
 import type { InteractionRow } from "./types.js";
 import type { NewMessage } from "../types.js";
-import { getMediaIdsForMessage } from "./media.js";
+import { attachMediaToMessage, getMediaIdsForMessage } from "./media.js";
 
 interface StoredMessageRow {
   rowid: number;
@@ -116,6 +116,31 @@ export function updateMessageLinkPreviews(
     .prepare("UPDATE messages SET link_previews = ? WHERE chat_jid = ? AND rowid = ?")
     .run(payload, chatJid, rowId);
   return res.changes > 0;
+}
+
+export function replaceMessageContent(
+  chatJid: string,
+  rowId: number,
+  content: string,
+  options: { contentBlocks?: unknown[]; linkPreviews?: unknown[]; mediaIds?: number[] } = {}
+): InteractionRow | undefined {
+  const db = getDb();
+  const contentBlocks = options.contentBlocks ? JSON.stringify(options.contentBlocks) : null;
+  const linkPreviews = options.linkPreviews ? JSON.stringify(options.linkPreviews) : null;
+  const res = db
+    .prepare(
+      "UPDATE messages SET content = ?, content_blocks = ?, link_previews = ? WHERE chat_jid = ? AND rowid = ?"
+    )
+    .run(content, contentBlocks, linkPreviews, chatJid, rowId);
+
+  if (res.changes <= 0) return undefined;
+
+  db.prepare("DELETE FROM message_media WHERE message_rowid = ?").run(rowId);
+  if (options.mediaIds && options.mediaIds.length > 0) {
+    attachMediaToMessage(rowId, options.mediaIds);
+  }
+
+  return getMessageByRowId(chatJid, rowId);
 }
 
 export function deleteMessageByRowId(chatJid: string, rowId: number): boolean {

@@ -12,6 +12,7 @@ export {
   getNewMessages,
   getMessagesSince,
   updateMessageLinkPreviews,
+  replaceMessageContent,
 } from "./db/messages.js";
 export {
   attachMediaToMessage,

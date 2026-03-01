@@ -56,7 +56,14 @@ export async function handleAgentMessage(
   if (command) {
     const result = await channel.agentPool.applyControlCommand(chatJid, command);
     const formatted = formatOutbound(result.message, "web");
-    if (formatted) await channel.sendMessage(chatJid, formatted);
+    const isQueueCommand = command.type === "queue" || command.type === "queue_all";
+    if (formatted) {
+      if (isQueueCommand && result.queued_followup) {
+        channel.queueFollowupPlaceholder(chatJid, formatted);
+      } else {
+        await channel.sendMessage(chatJid, formatted);
+      }
+    }
     markCommandHandled();
     return channel.json(
       { user_message: interaction, thread_id: data.thread_id ?? interaction.id, command: result },
@@ -155,6 +162,24 @@ export async function processChat(channel: WebChannel, chatJid: string, agentId:
     }));
 
     const formatted = formatOutbound(text, channelName);
+    const placeholderId = channel.consumeQueuedFollowupPlaceholder(chatJid);
+    if (placeholderId) {
+      const updated = channel.replaceQueuedFollowupPlaceholder(
+        chatJid,
+        placeholderId,
+        formatted,
+        mediaIds,
+        contentBlocks.length > 0 ? contentBlocks : undefined,
+        opts?.threadId
+      );
+      if (updated) {
+        if (rootMessageId === undefined) {
+          rootMessageId = updated.id;
+        }
+        return;
+      }
+    }
+
     const interaction = channel.storeMessage(chatJid, formatted, true, mediaIds, {
       contentBlocks: contentBlocks.length > 0 ? contentBlocks : undefined,
       threadId: opts?.threadId,

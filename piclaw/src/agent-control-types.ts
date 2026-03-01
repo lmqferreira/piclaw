@@ -166,4 +166,5 @@ export interface AgentControlResult {
   status: "success" | "error";
   message: string;
   messages?: Array<{ role: string; text: string; customType?: string }>;
+  queued_followup?: boolean;
 }

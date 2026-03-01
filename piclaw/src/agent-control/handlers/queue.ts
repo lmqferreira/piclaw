@@ -35,6 +35,7 @@ export async function handleQueue(session: AgentSession, command: QueueCommand):
       message: useBatch
         ? "Queued as a follow-up (batch mode: all)."
         : "Queued as a follow-up (one-at-a-time).",
+      queued_followup: true,
     };
   }
 

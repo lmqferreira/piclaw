@@ -20,6 +20,7 @@ import {
   getRouterState,
   getTimeline,
   hasOlderMessages,
+  replaceMessageContent,
   searchMessages,
   setRouterState,
   storeChatMetadata,
@@ -48,6 +49,7 @@ export class WebChannel {
   uiRequestCounter = 0;
   editorTextByChat = new Map<string, string>();
   pendingLinkPreviews = new Set<number>();
+  queuedFollowupPlaceholders = new Map<string, number[]>();
   fallbackTheme = createFallbackTheme();
 
   constructor(opts: WebChannelOpts) {
@@ -96,6 +98,57 @@ export class WebChannel {
         agent_avatar: ASSISTANT_AVATAR || null,
       });
     }
+  }
+
+  queueFollowupPlaceholder(chatJid: string, text: string): InteractionRow | null {
+    const interaction = this.storeMessage(chatJid, text, true, []);
+    if (!interaction) return null;
+
+    const existing = this.queuedFollowupPlaceholders.get(chatJid) ?? [];
+    existing.push(interaction.id);
+    this.queuedFollowupPlaceholders.set(chatJid, existing);
+
+    this.broadcastEvent("agent_response", {
+      ...interaction,
+      agent_name: ASSISTANT_NAME,
+      agent_avatar: ASSISTANT_AVATAR || null,
+    });
+
+    return interaction;
+  }
+
+  consumeQueuedFollowupPlaceholder(chatJid: string): number | null {
+    const queue = this.queuedFollowupPlaceholders.get(chatJid);
+    if (!queue || queue.length === 0) return null;
+    const next = queue.shift() ?? null;
+    if (!queue.length) this.queuedFollowupPlaceholders.delete(chatJid);
+    return next;
+  }
+
+  replaceQueuedFollowupPlaceholder(
+    chatJid: string,
+    rowId: number,
+    text: string,
+    mediaIds: number[],
+    contentBlocks: Array<Record<string, unknown>> | undefined,
+    threadId?: number
+  ): InteractionRow | null {
+    const updated = replaceMessageContent(chatJid, rowId, text, {
+      contentBlocks,
+      mediaIds,
+    });
+    if (!updated) return null;
+
+    updated.data.agent_id = DEFAULT_AGENT_ID;
+    if (threadId) updated.data.thread_id = threadId;
+
+    this.broadcastEvent("interaction_updated", {
+      ...updated,
+      agent_name: ASSISTANT_NAME,
+      agent_avatar: ASSISTANT_AVATAR || null,
+    });
+
+    return updated;
   }
 
   loadState(): void {
