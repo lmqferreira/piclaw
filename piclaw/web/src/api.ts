@@ -182,6 +182,39 @@ export async function getMediaInfo(mediaId) {
 }
 
 /**
+ * Get workspace tree
+ */
+export async function getWorkspaceTree(path = '', depth = 2) {
+    const url = `/workspace/tree?path=${encodeURIComponent(path)}&depth=${depth}`;
+    return request(url);
+}
+
+/**
+ * Get workspace file preview
+ */
+export async function getWorkspaceFile(path, maxBytes = 20000) {
+    const url = `/workspace/file?path=${encodeURIComponent(path)}&max=${maxBytes}`;
+    return request(url);
+}
+
+/**
+ * Create a download attachment for a workspace file
+ */
+export async function attachWorkspaceFile(path) {
+    return request('/workspace/attach', {
+        method: 'POST',
+        body: JSON.stringify({ path }),
+    });
+}
+
+/**
+ * Get raw workspace file URL (images/SVG)
+ */
+export function getWorkspaceRawUrl(path) {
+    return `${API_BASE}/workspace/raw?path=${encodeURIComponent(path)}`;
+}
+
+/**
  * SSE client for live updates
  */
 export class SSEClient {

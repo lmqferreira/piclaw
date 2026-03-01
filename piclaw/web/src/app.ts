@@ -4,6 +4,7 @@ import { getTimeline, getPostsByHashtag, searchPosts, deletePost, getAgents, SSE
 import { ComposeBox } from './components/compose-box.js';
 import { AgentRequestModal, AgentStatus, ConnectionStatus } from './components/status.js';
 import { Timeline } from './components/timeline.js';
+import { WorkspaceExplorer } from './components/workspace-explorer.js';
 
 function readSilenceOverride(key, fallback) {
     try {
@@ -647,52 +648,55 @@ function App() {
     }, [handleConnectionStatusChange, handleSseEvent, loadPosts]);
     
     return html`
-        <div class="container">
-            ${searchQuery && isIOSDevice() && html`<div class="search-results-spacer"></div>`}
-            ${(currentHashtag || searchQuery) && html`
-                <div class="hashtag-header">
-                    <button class="back-btn" onClick=${handleBackToTimeline}>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-                    </button>
-                    <span>${currentHashtag ? `#${currentHashtag}` : `Search: ${searchQuery}`}</span>
-                </div>
-            `}
-            <${Timeline} 
-                posts=${posts}
-                hasMore=${hasMore}
-                onLoadMore=${loadMore}
-                timelineRef=${timelineRef}
-                onHashtagClick=${handleHashtagClick}
-                onPostClick=${undefined}
-                onDeletePost=${handleDeletePost}
-                emptyMessage=${currentHashtag ? `No posts with #${currentHashtag}` : searchQuery ? `No results for "${searchQuery}"` : undefined}
-                agents=${agents}
-                reverse=${!(searchQuery && !currentHashtag)}
-            />
-            <${AgentStatus}
-                status=${agentStatus}
-                draft=${agentDraft}
-                plan=${agentPlan}
-                thought=${agentThought}
-                pendingRequest=${pendingRequest}
-                turnId=${currentTurnId}
-            />
-            <${ComposeBox} 
-                onPost=${() => { loadPosts(); scrollToBottom(); }}
-                onFocus=${scrollToBottom}
-                searchMode=${searchOpen}
-                onSearch=${handleSearch}
-                onEnterSearch=${enterSearchMode}
-                onExitSearch=${exitSearchMode}
-            />
-            <${ConnectionStatus} status=${connectionStatus} />
-            <${AgentRequestModal}
-                request=${pendingRequest}
-                onRespond=${() => {
-                    setPendingRequest(null);
-                    pendingRequestRef.current = null;
-                }}
-            />
+        <div class="app-shell">
+            <${WorkspaceExplorer} />
+            <div class="container">
+                ${searchQuery && isIOSDevice() && html`<div class="search-results-spacer"></div>`}
+                ${(currentHashtag || searchQuery) && html`
+                    <div class="hashtag-header">
+                        <button class="back-btn" onClick=${handleBackToTimeline}>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                        </button>
+                        <span>${currentHashtag ? `#${currentHashtag}` : `Search: ${searchQuery}`}</span>
+                    </div>
+                `}
+                <${Timeline} 
+                    posts=${posts}
+                    hasMore=${hasMore}
+                    onLoadMore=${loadMore}
+                    timelineRef=${timelineRef}
+                    onHashtagClick=${handleHashtagClick}
+                    onPostClick=${undefined}
+                    onDeletePost=${handleDeletePost}
+                    emptyMessage=${currentHashtag ? `No posts with #${currentHashtag}` : searchQuery ? `No results for "${searchQuery}"` : undefined}
+                    agents=${agents}
+                    reverse=${!(searchQuery && !currentHashtag)}
+                />
+                <${AgentStatus}
+                    status=${agentStatus}
+                    draft=${agentDraft}
+                    plan=${agentPlan}
+                    thought=${agentThought}
+                    pendingRequest=${pendingRequest}
+                    turnId=${currentTurnId}
+                />
+                <${ComposeBox} 
+                    onPost=${() => { loadPosts(); scrollToBottom(); }}
+                    onFocus=${scrollToBottom}
+                    searchMode=${searchOpen}
+                    onSearch=${handleSearch}
+                    onEnterSearch=${enterSearchMode}
+                    onExitSearch=${exitSearchMode}
+                />
+                <${ConnectionStatus} status=${connectionStatus} />
+                <${AgentRequestModal}
+                    request=${pendingRequest}
+                    onRespond=${() => {
+                        setPendingRequest(null);
+                        pendingRequestRef.current = null;
+                    }}
+                />
+            </div>
         </div>
     `;
 }

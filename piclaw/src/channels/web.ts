@@ -3,6 +3,7 @@ import type { AgentPool } from "../agent-pool.js";
 import { initTheme, type AgentSession } from "@mariozechner/pi-coding-agent";
 import { ASSISTANT_AVATAR, ASSISTANT_NAME, WEB_HOST, WEB_IDLE_TIMEOUT, WEB_PORT } from "../config.js";
 import { handleMedia, handleMediaInfo, handleMediaUpload } from "./web/handlers/media.js";
+import { handleWorkspaceAttach, handleWorkspaceFile, handleWorkspaceRaw, handleWorkspaceTree } from "./web/handlers/workspace.js";
 import { handleSse, broadcastEvent, type PendingClient } from "./web/sse.js";
 import { serveDocsStatic, serveStatic } from "./web/static.js";
 import { clampInt, jsonResponse, parseOptionalInt } from "./web/http-utils.js";
@@ -309,6 +310,22 @@ export class WebChannel {
 
   handleMediaInfo(id: number): Response {
     return handleMediaInfo(this, id);
+  }
+
+  handleWorkspaceTree(req: Request): Response {
+    return handleWorkspaceTree(this, req);
+  }
+
+  handleWorkspaceFile(req: Request): Response {
+    return handleWorkspaceFile(this, req);
+  }
+
+  handleWorkspaceRaw(req: Request): Response {
+    return handleWorkspaceRaw(this, req);
+  }
+
+  async handleWorkspaceAttach(req: Request): Promise<Response> {
+    return handleWorkspaceAttach(this, req);
   }
 
   async serveStatic(relPath: string): Promise<Response> {
