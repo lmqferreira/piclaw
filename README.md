@@ -1,4 +1,4 @@
-# PiClaw — Pi Coding Agent Sandbox + `piclaw` Orchestrator
+# `piclaw` - A `pi`-based general-purpose agent
 
 ![PiClaw](docs/icon-256.png)
 
