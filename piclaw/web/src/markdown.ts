@@ -148,10 +148,11 @@ function renderMath(html_content) {
         }
     });
 
-    // Process inline math ($...$) - avoid matching $$ or currency like $100
-    html_content = html_content.replace(/(?<!\$)\$(?!\$)([^\$\n]+?)\$(?!\$)/g, (match, tex) => {
+    // Process inline math ($...$) - avoid matching $$, shell expansions, or currency
+    html_content = html_content.replace(/(?<!\$)\$(?!\$|\(|\{|\[)([^\$\n]+?)\$(?!\$)/g, (match, tex) => {
+        const trimmed = tex.trim();
         // Skip if it looks like currency ($ followed by number)
-        if (/^\d/.test(tex.trim())) return match;
+        if (/^\d/.test(trimmed)) return match;
         try {
             return katex.renderToString(decodeMath(tex.trim()), { displayMode: false, throwOnError: false });
         } catch (e) {
