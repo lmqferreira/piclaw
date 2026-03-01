@@ -61,7 +61,7 @@ export async function handleAgentMessage(
       if (isQueueCommand && result.queued_followup) {
         channel.queueFollowupPlaceholder(chatJid, formatted, interaction.id);
       } else {
-        await channel.sendMessage(chatJid, formatted);
+        await channel.sendMessage(chatJid, formatted, interaction.id);
       }
     }
     markCommandHandled();
@@ -77,7 +77,7 @@ export async function handleAgentMessage(
     const cmdResult = await channel.agentPool.applySlashCommand(chatJid, trimmed);
     try {
       const formatted = formatOutbound(cmdResult.message || "", "web");
-      if (formatted) await channel.sendMessage(chatJid, formatted);
+      if (formatted) await channel.sendMessage(chatJid, formatted, interaction.id);
     } catch (e) {
       console.error('[web] Failed to send slash command response:', e);
     }

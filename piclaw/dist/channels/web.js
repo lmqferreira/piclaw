@@ -66,8 +66,8 @@ export class WebChannel {
         this.server?.stop(true);
         this.server = null;
     }
-    async sendMessage(chatJid, text) {
-        const interaction = this.storeMessage(chatJid, text, true, []);
+    async sendMessage(chatJid, text, threadId) {
+        const interaction = this.storeMessage(chatJid, text, true, [], threadId ? { threadId } : undefined);
         if (interaction) {
             this.broadcastEvent("agent_response", {
                 ...interaction,
