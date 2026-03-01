@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { html, useEffect } from '../vendor/preact-htm.js';
+import { html, useEffect, useState } from '../vendor/preact-htm.js';
 import { addToWhitelist, respondToAgentRequest } from '../api.js';
 import { renderThinkingMarkdown } from '../markdown.js';
 import { getTurnColor } from '../ui/agent-utils.js';
@@ -54,6 +54,14 @@ export function AgentStatus({ status, draft, plan, thought, pendingRequest, turn
 
     if (!status && !hasDraft && !hasPlan && !hasThought && !pendingRequest) return null;
 
+    const [expandedPanels, setExpandedPanels] = useState(new Set());
+    const toggleExpand = (key) =>
+        setExpandedPanels(prev => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key); else next.add(key);
+            return next;
+        });
+
     const activeTurn = status?.turn_id || turnId;
     const turnColor = getTurnColor(activeTurn);
     const panelTitle = (label) => label;
@@ -71,9 +79,11 @@ export function AgentStatus({ status, draft, plan, thought, pendingRequest, turn
         content = title || statusText || 'Working...';
     }
 
-    const renderThinkingPanel = ({ panelTitle, text, totalLines, maxLines, titleClass }) => {
-        const truncated = typeof maxLines === 'number'
-            ? truncateLines(text, maxLines, totalLines)
+    const renderThinkingPanel = ({ panelTitle, text, totalLines, maxLines, titleClass, panelKey }) => {
+        const isExpanded = expandedPanels.has(panelKey);
+        const effectiveMax = (typeof maxLines === 'number' && !isExpanded) ? maxLines : undefined;
+        const truncated = typeof effectiveMax === 'number'
+            ? truncateLines(text, effectiveMax, totalLines)
             : { text: text || '', omitted: 0, totalLines: Number.isFinite(totalLines) ? totalLines : 0 };
         if (!truncated.text && !(Number.isFinite(truncated.totalLines) && truncated.totalLines > 0)) return null;
         return html`
@@ -87,7 +97,14 @@ export function AgentStatus({ status, draft, plan, thought, pendingRequest, turn
                     dangerouslySetInnerHTML=${{ __html: renderThinkingMarkdown(truncated.text) }}
                 />
                 ${truncated.omitted > 0 && html`
-                    <div class="agent-thinking-truncation">(${truncated.omitted} more lines)</div>
+                    <button class="agent-thinking-truncation" onClick=${() => toggleExpand(panelKey)}>
+                        ▸ ${truncated.omitted} more lines
+                    </button>
+                `}
+                ${isExpanded && truncated.omitted === 0 && html`
+                    <button class="agent-thinking-truncation" onClick=${() => toggleExpand(panelKey)}>
+                        ▴ show less
+                    </button>
                 `}
             </div>
         `;
@@ -109,6 +126,7 @@ export function AgentStatus({ status, draft, plan, thought, pendingRequest, turn
                 panelTitle: panelTitle('Planning'),
                 text: planInfo.text,
                 totalLines: planInfo.totalLines,
+                panelKey: 'plan',
             })}
             ${hasThought && renderThinkingPanel({
                 panelTitle: panelTitle('Thoughts'),
@@ -116,6 +134,7 @@ export function AgentStatus({ status, draft, plan, thought, pendingRequest, turn
                 totalLines: thoughtInfo.totalLines,
                 maxLines: THOUGHT_MAX_LINES,
                 titleClass: 'thought',
+                panelKey: 'thought',
             })}
             ${hasDraft && renderThinkingPanel({
                 panelTitle: panelTitle('Draft'),
@@ -123,6 +142,7 @@ export function AgentStatus({ status, draft, plan, thought, pendingRequest, turn
                 totalLines: draftInfo.totalLines,
                 maxLines: DRAFT_MAX_LINES,
                 titleClass: 'thought',
+                panelKey: 'draft',
             })}
             ${status && html`
                 <div class="agent-status" aria-live="polite" style=${turnColor ? `--turn-color: ${turnColor};` : ''}>

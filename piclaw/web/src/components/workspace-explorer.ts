@@ -124,6 +124,8 @@ export function WorkspaceExplorer({ onFileSelect }) {
     const nodeMapRef      = useRef(new Map());
     const onFileSelectRef = useRef(onFileSelect);
     const loadPreviewRef  = useRef(null);
+    const sidebarRef      = useRef(null);
+    const previewHeightRef= useRef(0);
 
     // Sync mutable refs each render
     onFileSelectRef.current = onFileSelect;
@@ -180,6 +182,13 @@ export function WorkspaceExplorer({ onFileSelect }) {
     useEffect(() => {
         loadTreeFnRef.current();
         const timer = setInterval(() => loadTreeFnRef.current(), REFRESH_INTERVAL_MS);
+        // Apply saved preview height
+        const saved = parseInt(localStorage.getItem('previewHeight') || '', 10);
+        const h = Number.isFinite(saved) ? Math.min(Math.max(saved, 80), 600) : 280;
+        previewHeightRef.current = h;
+        if (sidebarRef.current) {
+            sidebarRef.current.style.setProperty('--preview-height', `${h}px`);
+        }
         return () => {
             clearInterval(timer);
             if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = 0; }
@@ -220,6 +229,40 @@ export function WorkspaceExplorer({ onFileSelect }) {
         loadTreeFnRef.current();
     }).current;
 
+    // ── Preview-pane vertical resize — zero re-renders ────────────────────────
+    const handlePreviewSplitterMouseDown = useRef((e) => {
+        e.preventDefault();
+        const sidebar = sidebarRef.current;
+        if (!sidebar) return;
+        const startY  = e.clientY;
+        const startH  = previewHeightRef.current || 280;
+        const splitter = e.currentTarget;
+        splitter.classList.add('dragging');
+        document.body.style.cursor = 'row-resize';
+        document.body.style.userSelect = 'none';
+
+        const onMove = (me) => {
+            // dragging up (negative delta) grows the preview; down shrinks it
+            const maxH = sidebar.clientHeight - 80;
+            const h = Math.min(Math.max(startH - (me.clientY - startY), 80), maxH);
+            sidebar.style.setProperty('--preview-height', `${h}px`);
+            previewHeightRef.current = h;
+        };
+        const onUp = (me) => {
+            const maxH = sidebar.clientHeight - 80;
+            const h = Math.min(Math.max(startH - (me.clientY - startY), 80), maxH);
+            previewHeightRef.current = h;
+            splitter.classList.remove('dragging');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            localStorage.setItem('previewHeight', String(Math.round(h)));
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    }).current;
+
     const handleDownload = async () => {
         if (!selectedPath) return;
         try {
@@ -232,7 +275,7 @@ export function WorkspaceExplorer({ onFileSelect }) {
 
     // ── Render ────────────────────────────────────────────────────────────────
     return html`
-        <aside class="workspace-sidebar">
+        <aside class="workspace-sidebar" ref=${sidebarRef}>
             <div class="workspace-header">
                 <span>Workspace</span>
                 <button class="workspace-refresh" onClick=${handleRefreshClick} title="Refresh">
@@ -284,6 +327,7 @@ export function WorkspaceExplorer({ onFileSelect }) {
                 `}
             </div>
             ${selectedPath && html`
+                <div class="workspace-preview-splitter-h" onMouseDown=${handlePreviewSplitterMouseDown}></div>
                 <div class="workspace-preview">
                     <div class="workspace-preview-header">
                         <span class="workspace-preview-title">${selectedPath}</span>

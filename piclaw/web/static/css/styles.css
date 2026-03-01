@@ -282,9 +282,13 @@ body {
 }
 
 .workspace-preview {
-    border-top: 1px solid var(--border-color);
+    height: var(--preview-height, 280px);
+    min-height: 80px;
+    overflow: auto;
     padding: var(--spacing-sm) var(--spacing-md);
     background-color: var(--bg-primary);
+    flex-shrink: 0;
+    box-sizing: border-box;
 }
 
 .workspace-preview-header {
@@ -1409,9 +1413,22 @@ body {
 }
 
 .agent-thinking-truncation {
+    display: block;
+    width: 100%;
     margin-top: var(--spacing-xs);
+    padding: 0;
+    background: none;
+    border: none;
+    text-align: left;
+    cursor: pointer;
     color: var(--text-tertiary);
     font-size: var(--font-size-xs);
+    font-family: inherit;
+    transition: color 0.15s;
+}
+
+.agent-thinking-truncation:hover {
+    color: var(--text-secondary);
 }
 
 .agent-thinking-body p {
