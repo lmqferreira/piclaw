@@ -70,6 +70,9 @@ The built-in UI is single-user, mobile-friendly, and streams updates over SSE:
 
 ### Workspace explorer
 
+![Screenshot showing explorer](docs/explorer.jpg)
+
+
 The workspace sidebar shows an SVG tree of `/workspace` (auto-refreshes every 15s and only re-renders when the tree changes). Click a file to:
 
 - Open a preview (images inline, text in monospaced plaintext by default, Markdown rendered only for `.md`).
