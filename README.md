@@ -48,6 +48,7 @@ WhatsApp pairing is optional; see [docs/whatsapp.md](docs/whatsapp.md).
 
 ## Web UI
 
+![Screenshot showing thought](docs/screenshot-dark.png)
 
 The built-in UI is single-user, mobile-friendly, and streams updates over SSE:
 
