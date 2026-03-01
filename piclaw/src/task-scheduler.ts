@@ -40,8 +40,14 @@ export async function runScheduledTask(task: ScheduledTask, deps: SchedulerDeps)
   const start = Date.now();
   let result: string | null = null;
   let error: string | null = null;
+  let previousModel: string | null = null;
   try {
     if (task.model) {
+      const current = await deps.agentPool.applySlashCommand(task.chat_jid, "/model");
+      if (current.status === "success" && current.data?.model) {
+        previousModel = current.data.model;
+      }
+
       const control = await deps.agentPool.applySlashCommand(task.chat_jid, `/model ${task.model}`);
       if (control.status === "error") {
         error = `Model switch failed: ${control.message}`;
@@ -54,6 +60,11 @@ export async function runScheduledTask(task: ScheduledTask, deps: SchedulerDeps)
       else if (out.result) { result = out.result; const t = formatOutbound(result, detectChannel(task.chat_jid)); if (t) { await deps.sendMessage(task.chat_jid, t); await deps.sendNudge?.(t); } }
     }
   } catch (e) { error = e instanceof Error ? e.message : String(e); }
+  finally {
+    if (task.model && previousModel) {
+      await deps.agentPool.applySlashCommand(task.chat_jid, `/model ${previousModel}`);
+    }
+  }
 
   logTaskRun({ task_id: task.id, run_at: new Date().toISOString(), duration_ms: Date.now() - start, status: error ? "error" : "success", result, error });
 
