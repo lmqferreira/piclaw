@@ -346,6 +346,13 @@ export function WorkspaceExplorer({ onFileSelect }) {
         openPaths.forEach((p) => loadSubtreeRef.current?.(p));
     }).current;
 
+    const clearSelection = useRef(() => {
+        setSelectedPath(null);
+        setPreview(null);
+        setDownloadId(null);
+        setLoadingPreview(false);
+    }).current;
+
     const handleToggleHidden = useRef(() => {
         setShowHidden((prev) => {
             const next = !prev;
@@ -360,6 +367,11 @@ export function WorkspaceExplorer({ onFileSelect }) {
             openPaths.forEach((p) => loadSubtreeRef.current?.(p));
             return next;
         });
+    }).current;
+
+    const handleBackgroundClick = useRef((e) => {
+        if (e.target.closest('[data-path]')) return;
+        clearSelection();
     }).current;
 
     // ── Preview-pane vertical resize — zero re-renders ────────────────────────
@@ -434,7 +446,7 @@ export function WorkspaceExplorer({ onFileSelect }) {
                     </button>
                 </div>
             </div>
-            <div class="workspace-tree">
+            <div class="workspace-tree" onClick=${handleBackgroundClick}>
                 ${initialLoad && html`<div class="workspace-loading">Loading…</div>`}
                 ${error && html`<div class="workspace-error">${error}</div>`}
                 ${tree && html`

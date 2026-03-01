@@ -23,16 +23,18 @@ export function buildTree(absPath, depth, state, options) {
         node.children = undefined;
         return node;
     }
-    const entries = readdirSync(absPath, { withFileTypes: true })
-        .filter((entry) => options.includeHidden || !entry.name.startsWith("."))
-        .filter((entry) => !entry.isDirectory() || !shouldExcludeDir(entry.name))
-        .sort((a, b) => {
+    const entriesAll = readdirSync(absPath, { withFileTypes: true })
+        .filter((entry) => !entry.isDirectory() || !shouldExcludeDir(entry.name));
+    const sorter = (a, b) => {
         if (a.isDirectory() && !b.isDirectory())
             return -1;
         if (!a.isDirectory() && b.isDirectory())
             return 1;
         return a.name.localeCompare(b.name);
-    });
+    };
+    const visibleEntries = entriesAll.filter((entry) => !entry.name.startsWith(".")).sort(sorter);
+    const hiddenEntries = entriesAll.filter((entry) => entry.name.startsWith(".")).sort(sorter);
+    const entries = options.includeHidden ? visibleEntries.concat(hiddenEntries) : visibleEntries;
     node.children = [];
     for (const entry of entries) {
         if (state.count >= MAX_TREE_ENTRIES) {
