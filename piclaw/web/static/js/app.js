@@ -693,13 +693,15 @@ function App() {
         document.body.style.cursor = 'col-resize';
         document.body.style.userSelect = 'none';
 
+        let lastX = startX;
         const onMove = (me) => {
+            lastX = me.clientX;
             const w = Math.min(Math.max(startW + (me.clientX - startX), 160), 600);
             shell.style.setProperty('--sidebar-width', `${w}px`);
             sidebarWidthRef.current = w;
         };
-        const onUp = (me) => {
-            const w = Math.min(Math.max(startW + (me.clientX - startX), 160), 600);
+        const onUp = () => {
+            const w = Math.min(Math.max(startW + (lastX - startX), 160), 600);
             sidebarWidthRef.current = w;
             splitter.classList.remove('dragging');
             document.body.style.cursor = '';
@@ -712,10 +714,43 @@ function App() {
         document.addEventListener('mouseup', onUp);
     }).current;
 
+    const handleSplitterTouchStart = useRef((e) => {
+        e.preventDefault();
+        const shell = appShellRef.current;
+        if (!shell) return;
+        const touch = e.touches[0];
+        if (!touch) return;
+        const startX = touch.clientX;
+        const startW = sidebarWidthRef.current || 280;
+        const splitter = e.currentTarget;
+        splitter.classList.add('dragging');
+        document.body.style.userSelect = 'none';
+
+        const onMove = (te) => {
+            const t = te.touches[0];
+            if (!t) return;
+            te.preventDefault();
+            const w = Math.min(Math.max(startW + (t.clientX - startX), 160), 600);
+            shell.style.setProperty('--sidebar-width', `${w}px`);
+            sidebarWidthRef.current = w;
+        };
+        const onUp = () => {
+            splitter.classList.remove('dragging');
+            document.body.style.userSelect = '';
+            localStorage.setItem('sidebarWidth', String(Math.round(sidebarWidthRef.current || startW)));
+            document.removeEventListener('touchmove', onMove);
+            document.removeEventListener('touchend', onUp);
+            document.removeEventListener('touchcancel', onUp);
+        };
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', onUp);
+        document.addEventListener('touchcancel', onUp);
+    }).current;
+
     return html`
         <div class="app-shell" ref=${appShellRef}>
             <${WorkspaceExplorer} onFileSelect=${addFileRef} />
-            <div class="workspace-splitter" onMouseDown=${handleSplitterMouseDown}></div>
+            <div class="workspace-splitter" onMouseDown=${handleSplitterMouseDown} onTouchStart=${handleSplitterTouchStart}></div>
             <div class="container">
                 ${searchQuery && isIOSDevice() && html`<div class="search-results-spacer"></div>`}
                 ${(currentHashtag || searchQuery) && html`

@@ -386,16 +386,18 @@ export function WorkspaceExplorer({ onFileSelect }) {
         document.body.style.cursor = 'row-resize';
         document.body.style.userSelect = 'none';
 
+        let lastY = startY;
         const onMove = (me) => {
+            lastY = me.clientY;
             // dragging up (negative delta) grows the preview; down shrinks it
             const maxH = sidebar.clientHeight - 80;
             const h = Math.min(Math.max(startH - (me.clientY - startY), 80), maxH);
             sidebar.style.setProperty('--preview-height', `${h}px`);
             previewHeightRef.current = h;
         };
-        const onUp = (me) => {
+        const onUp = () => {
             const maxH = sidebar.clientHeight - 80;
-            const h = Math.min(Math.max(startH - (me.clientY - startY), 80), maxH);
+            const h = Math.min(Math.max(startH - (lastY - startY), 80), maxH);
             previewHeightRef.current = h;
             splitter.classList.remove('dragging');
             document.body.style.cursor = '';
@@ -406,6 +408,40 @@ export function WorkspaceExplorer({ onFileSelect }) {
         };
         document.addEventListener('mousemove', onMove);
         document.addEventListener('mouseup', onUp);
+    }).current;
+
+    const handlePreviewSplitterTouchStart = useRef((e) => {
+        e.preventDefault();
+        const sidebar = sidebarRef.current;
+        if (!sidebar) return;
+        const touch = e.touches[0];
+        if (!touch) return;
+        const startY = touch.clientY;
+        const startH = previewHeightRef.current || 280;
+        const splitter = e.currentTarget;
+        splitter.classList.add('dragging');
+        document.body.style.userSelect = 'none';
+
+        const onMove = (te) => {
+            const t = te.touches[0];
+            if (!t) return;
+            te.preventDefault();
+            const maxH = sidebar.clientHeight - 80;
+            const h = Math.min(Math.max(startH - (t.clientY - startY), 80), maxH);
+            sidebar.style.setProperty('--preview-height', `${h}px`);
+            previewHeightRef.current = h;
+        };
+        const onUp = () => {
+            splitter.classList.remove('dragging');
+            document.body.style.userSelect = '';
+            localStorage.setItem('previewHeight', String(Math.round(previewHeightRef.current || startH)));
+            document.removeEventListener('touchmove', onMove);
+            document.removeEventListener('touchend', onUp);
+            document.removeEventListener('touchcancel', onUp);
+        };
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', onUp);
+        document.addEventListener('touchcancel', onUp);
     }).current;
 
     const handleDownload = async () => {
@@ -486,7 +522,7 @@ export function WorkspaceExplorer({ onFileSelect }) {
                 `}
             </div>
             ${selectedPath && html`
-                <div class="workspace-preview-splitter-h" onMouseDown=${handlePreviewSplitterMouseDown}></div>
+                <div class="workspace-preview-splitter-h" onMouseDown=${handlePreviewSplitterMouseDown} onTouchStart=${handlePreviewSplitterTouchStart}></div>
                 <div class="workspace-preview">
                     <div class="workspace-preview-header">
                         <span class="workspace-preview-title">${selectedPath}</span>

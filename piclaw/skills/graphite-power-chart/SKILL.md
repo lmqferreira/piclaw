@@ -10,10 +10,10 @@ The script lives alongside this skill for easy adaptation to other data sources.
 
 ## Usage
 
-### Power chart for a Zigbee device (default 12h)
+### Power chart for the server closet UPS (default 12h)
 ```bash
 bun /workspace/piclaw/piclaw/skills/graphite-power-chart/graphite-power-chart.ts \
-  --device office_benchmark_plug --ipc
+  --device server_closet_ups_power --ipc
 ```
 
 ### Temperature chart (explicit metric + unit)
@@ -27,7 +27,7 @@ bun /workspace/piclaw/piclaw/skills/graphite-power-chart/graphite-power-chart.ts
 ### Override the window and resampling
 ```bash
 bun /workspace/piclaw/piclaw/skills/graphite-power-chart/graphite-power-chart.ts \
-  --device office_desk_ups_power --hours 24 --resample 10min --ipc
+  --device server_closet_ups_power --hours 24 --resample 10min --ipc
 ```
 
 ## Notes
@@ -36,4 +36,5 @@ bun /workspace/piclaw/piclaw/skills/graphite-power-chart/graphite-power-chart.ts
 - Resampling is auto-selected based on window length using Graphite `summarize(..., "avg")`.
 - Use `--resample raw` to disable resampling.
 - Output is posted to the web timeline using the IPC message bus (no push by default).
-- To adapt to other data sources, change the `--base-url` and pass a full `--metric`.
+- Default Graphite base URL: `http://192.168.1.250:8086` (override with `--base-url` or `GRAPHITE_BASE_URL`).
+- Set a full `--metric` to adapt to other data sources.
