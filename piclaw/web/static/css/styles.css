@@ -553,7 +553,7 @@ body {
     color: var(--text-primary);
     background-color: transparent;
     outline: none;
-    padding: var(--spacing-xs);
+    padding: 2px var(--spacing-xs) var(--spacing-xs) 2px;
     line-height: 1.4;
 }
 
@@ -564,8 +564,8 @@ body {
 /* Model hint — bottom-left of input, low opacity */
 .compose-model-hint {
     position: absolute;
-    bottom: 4px;
-    left: var(--spacing-xs);
+    bottom: 2px;
+    left: 2px;
     font-size: 10px;
     color: var(--text-secondary);
     opacity: 0.45;
@@ -1874,7 +1874,7 @@ body {
     }
     
     .compose-box textarea {
-        min-height: 60px;
+        min-height: 64px;
         font-size: var(--font-size-md);
     }
     
