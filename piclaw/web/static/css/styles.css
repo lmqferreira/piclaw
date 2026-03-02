@@ -114,18 +114,6 @@ body {
     height: 100%;
 }
 
-.container {
-    width: 100%;
-    max-width: 800px;
-    margin: 0 auto;
-    height: 100%;
-    height: 100dvh; /* Dynamic viewport height for iOS */
-    background-color: var(--bg-primary);
-    display: flex;
-    flex-direction: column;
-    position: relative;
-    overflow-x: hidden;
-}
 
 .workspace-sidebar {
     display: none;
@@ -378,6 +366,19 @@ body {
 
 .workspace-download-card {
     margin-top: var(--spacing-sm);
+}
+
+.container {
+    width: 100%;
+    max-width: 800px;
+    margin: 0 auto;
+    height: 100%;
+    height: 100dvh; /* Dynamic viewport height for iOS */
+    background-color: var(--bg-primary);
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow-x: hidden;
 }
 
 @media (min-width: 1024px) and (orientation: landscape) {
@@ -707,6 +708,8 @@ body {
     width: 28px;
     height: 28px;
     min-width: 28px;
+    min-height: 28px;
+    flex: 0 0 28px;
     font-size: 0.65rem;
 }
 
@@ -724,6 +727,9 @@ body {
 .post-avatar {
     width: 36px;
     height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+    aspect-ratio: 1 / 1;
     border-radius: var(--radius-md);
     background-color: var(--accent-color);
     display: flex;
@@ -732,7 +738,7 @@ body {
     color: white;
     font-weight: 700;
     font-size: var(--font-size-sm);
-    flex-shrink: 0;
+    flex: 0 0 auto;
 }
 
 .post-avatar.has-image {
@@ -864,15 +870,7 @@ body {
     max-width: 100%;
 }
 
-.post-content.truncated {
-    background: var(--bg-secondary);
-    border: 1px dashed var(--border-color);
-    border-radius: var(--radius-md);
-    color: var(--text-secondary);
-    font-size: var(--font-size-sm);
-    padding: var(--spacing-sm);
-}
-
+.post-content.truncated,
 .post-content.preview {
     background: var(--bg-secondary);
     border: 1px dashed var(--border-color);
@@ -1148,13 +1146,6 @@ body {
     cursor: zoom-in;
 }
 
-.post-content img[alt="token-chart"] {
-    width: 100%;
-    max-width: 720px;
-    border: 1px solid var(--border-color);
-    background: transparent;
-}
-
 /* Hashtags */
 .hashtag {
     color: var(--accent-color);
@@ -1388,9 +1379,6 @@ body {
     font-size: var(--font-size-sm);
     animation: fadeIn 0.2s ease-out;
     --turn-color: var(--accent-color);
-    max-width: 100%;
-    box-sizing: border-box;
-    overflow: hidden;
 }
 
 .turn-dot {
@@ -1905,7 +1893,7 @@ body {
     }
     
     .compose-box textarea {
-        min-height: 64px;
+        min-height: 60px;
         font-size: var(--font-size-md);
     }
     
@@ -1972,6 +1960,12 @@ body {
 @media (min-width: 1024px) {
     .container {
         max-width: 800px;
+    }
+
+    .app-shell > .container {
+        max-width: none;
+        margin: 0;
+        flex: 1;
     }
     
     .post-avatar {
