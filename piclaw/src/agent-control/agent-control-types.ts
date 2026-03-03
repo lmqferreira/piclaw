@@ -160,6 +160,21 @@ export type AgentControlCommand =
       type: "agent_avatar";
       avatar?: string;
       raw: string;
+    }
+  | {
+      type: "user_name";
+      name?: string;
+      raw: string;
+    }
+  | {
+      type: "user_avatar";
+      avatar?: string;
+      raw: string;
+    }
+  | {
+      type: "user_github";
+      profile?: string;
+      raw: string;
     };
 
 export interface AgentControlResult {

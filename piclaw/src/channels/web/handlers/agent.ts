@@ -1,5 +1,12 @@
 import type { WebChannel } from "../../web.js";
-import { ASSISTANT_AVATAR, ASSISTANT_NAME, BACKGROUND_AGENT_TIMEOUT, TRIGGER_PATTERN } from "../../../core/config.js";
+import {
+  ASSISTANT_AVATAR,
+  ASSISTANT_NAME,
+  BACKGROUND_AGENT_TIMEOUT,
+  TRIGGER_PATTERN,
+  USER_AVATAR,
+  USER_NAME,
+} from "../../../core/config.js";
 import { parseControlCommand } from "../../../agent-control/index.js";
 import {
   normalizeAgentMessagePayload,
@@ -9,6 +16,7 @@ import {
 import { getMessageRowIdById, getMessagesSince } from "../../../db.js";
 import { detectChannel, formatMessages, formatOutbound } from "../../../router.js";
 import { createAgentProfileBuilder } from "../agent-utils.js";
+import { resolveAvatarUrl } from "../avatar-service.js";
 import { createAgentEventEmitter, createStreamingEventHandler } from "../agent-events.js";
 import { storeAgentTurn } from "../agent-message-store.js";
 import { resolveThreadId, resolveThreadRootId } from "../threading.js";
@@ -141,7 +149,12 @@ export async function processChat(
   const PREVIEW_MAX_CHARS_PER_LINE = 160;
 
   const turnId = createUuid("turn");
-  const withAgentProfile = createAgentProfileBuilder(ASSISTANT_NAME, ASSISTANT_AVATAR);
+  const withAgentProfile = createAgentProfileBuilder(
+    ASSISTANT_NAME,
+    resolveAvatarUrl("agent", ASSISTANT_AVATAR),
+    USER_NAME || null,
+    resolveAvatarUrl("user", USER_AVATAR)
+  );
   const emitter = createAgentEventEmitter(channel, withAgentProfile);
   const trackedEmitter = {
     ...emitter,

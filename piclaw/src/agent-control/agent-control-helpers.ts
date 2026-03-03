@@ -117,6 +117,52 @@ export function updateAssistantConfig(patch: { name?: string | null; avatar?: st
   };
 }
 
+export function updateUserConfig(patch: { name?: string | null; avatar?: string | null }): {
+  name?: string;
+  avatar?: string;
+} {
+  const config = readJsonConfig(PICLAW_CONFIG_PATH);
+  const user =
+    config.user && typeof config.user === "object"
+      ? { ...(config.user as Record<string, unknown>) }
+      : {};
+  const nameKeys = ["userName", "user_name", "name", "PICLAW_USER_NAME"];
+  const avatarKeys = ["userAvatar", "user_avatar", "avatar", "PICLAW_USER_AVATAR"];
+
+  const clearKeys = (keys: string[]) => {
+    for (const key of keys) {
+      if (key in user) delete user[key];
+    }
+  };
+
+  if (patch.name !== undefined) {
+    clearKeys(nameKeys);
+    if (patch.name !== null) {
+      user.userName = patch.name;
+    }
+  }
+
+  if (patch.avatar !== undefined) {
+    clearKeys(avatarKeys);
+    if (patch.avatar !== null) {
+      user.userAvatar = patch.avatar;
+    }
+  }
+
+  if (Object.keys(user).length > 0) {
+    config.user = user;
+  } else {
+    delete config.user;
+  }
+
+  writeJsonConfig(PICLAW_CONFIG_PATH, config);
+
+  return {
+    name: typeof user.userName === "string" ? user.userName : undefined,
+    avatar: typeof user.userAvatar === "string" ? user.userAvatar : undefined,
+  };
+}
+
 export async function runPromptAndCapture(session: AgentSession, text: string): Promise<string> {
   let assistantBuffer = "";
   const customBuffers: string[] = [];

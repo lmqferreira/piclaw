@@ -6,6 +6,8 @@ import { readJsonConfig } from "./config-store.js";
 const envConfig = readEnvFile([
   "PICLAW_ASSISTANT_NAME",
   "PICLAW_ASSISTANT_AVATAR",
+  "PICLAW_USER_NAME",
+  "PICLAW_USER_AVATAR",
   "ASSISTANT_NAME",
   "ASSISTANT_AVATAR",
   "PICLAW_AGENT_TIMEOUT",
@@ -66,6 +68,10 @@ const assistantConfig =
   piclawConfig.assistant && typeof piclawConfig.assistant === "object"
     ? (piclawConfig.assistant as Record<string, unknown>)
     : piclawConfig;
+const userConfig =
+  piclawConfig.user && typeof piclawConfig.user === "object"
+    ? (piclawConfig.user as Record<string, unknown>)
+    : piclawConfig;
 const configAppToken = pickString(pushoverConfig, ["appToken", "app_token", "PUSHOVER_APP_TOKEN"]);
 const configUserKey = pickString(pushoverConfig, ["userKey", "user_key", "PUSHOVER_USER_KEY"]);
 const configDevice = pickString(pushoverConfig, ["device", "PUSHOVER_DEVICE"]);
@@ -87,6 +93,18 @@ const configAssistantAvatar = pickString(assistantConfig, [
   "agent_avatar",
   "avatar",
   "ASSISTANT_AVATAR",
+]);
+const configUserName = pickString(userConfig, [
+  "userName",
+  "user_name",
+  "name",
+  "PICLAW_USER_NAME",
+]);
+const configUserAvatar = pickString(userConfig, [
+  "userAvatar",
+  "user_avatar",
+  "avatar",
+  "PICLAW_USER_AVATAR",
 ]);
 
 function warnDeprecatedEnv(oldName: string, newName: string): void {
@@ -115,6 +133,16 @@ export let ASSISTANT_AVATAR =
   process.env.ASSISTANT_AVATAR ||
   envConfig.ASSISTANT_AVATAR ||
   configAssistantAvatar ||
+  "";
+export let USER_NAME =
+  process.env.PICLAW_USER_NAME ||
+  envConfig.PICLAW_USER_NAME ||
+  configUserName ||
+  "";
+export let USER_AVATAR =
+  process.env.PICLAW_USER_AVATAR ||
+  envConfig.PICLAW_USER_AVATAR ||
+  configUserAvatar ||
   "";
 
 export const AGENT_TIMEOUT = parseInt(
@@ -197,6 +225,14 @@ export function setAssistantName(name: string): void {
 
 export function setAssistantAvatar(avatar: string): void {
   ASSISTANT_AVATAR = avatar.trim();
+}
+
+export function setUserName(name: string): void {
+  USER_NAME = name.trim();
+}
+
+export function setUserAvatar(avatar: string): void {
+  USER_AVATAR = avatar.trim();
 }
 
 export const TOOL_OUTPUT_RETENTION_DAYS = parseInt(process.env.PICLAW_TOOL_OUTPUT_RETENTION_DAYS || "30", 10);

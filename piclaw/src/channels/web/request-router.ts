@@ -26,6 +26,11 @@ export async function handleWebRequest(channel: WebChannel, req: Request): Promi
     return await channel.handleAgents();
   }
 
+  if ((req.method === "GET" || req.method === "HEAD") && (pathname === "/avatar/agent" || pathname === "/avatar/user")) {
+    const kind = pathname.endsWith("/user") ? "user" : "agent";
+    return await channel.handleAvatar(kind, req);
+  }
+
   if (req.method === "GET" && pathname === "/timeline") {
     const limit = channel.clampInt(url.searchParams.get("limit"), 10, 1, 100);
     const before = channel.parseOptionalInt(url.searchParams.get("before"));

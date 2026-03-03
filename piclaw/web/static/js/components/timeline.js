@@ -6,7 +6,7 @@ import { getAgentAvatarUrl, getAgentName } from '../ui/agent-utils.js';
 /**
  * Timeline component
  */
-export function Timeline({ posts, hasMore, onLoadMore, onPostClick, onHashtagClick, emptyMessage, timelineRef, agents, onDeletePost, reverse = true }) {
+export function Timeline({ posts, hasMore, onLoadMore, onPostClick, onHashtagClick, emptyMessage, timelineRef, agents, user, onDeletePost, reverse = true }) {
     const [loadingMore, setLoadingMore] = useState(false);
     const sentinelRef = useRef(null);
     const hasIntersectionObserver = typeof IntersectionObserver !== 'undefined';
@@ -110,6 +110,8 @@ export function Timeline({ posts, hasMore, onLoadMore, onPostClick, onHashtagCli
                         isThreadReply=${isThreadReply}
                         agentName=${getAgentName(post.data?.agent_id, agents || {})}
                         agentAvatarUrl=${getAgentAvatarUrl(post.data?.agent_id, agents || {})}
+                        userName=${user?.name || user?.user_name}
+                        userAvatarUrl=${user?.avatar_url || user?.avatarUrl || user?.avatar}
                         onClick=${() => onPostClick?.(post)}
                         onHashtagClick=${onHashtagClick}
                         onDelete=${onDeletePost}

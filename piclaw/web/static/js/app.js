@@ -116,8 +116,10 @@ function App() {
     const [activeModel, setActiveModel] = useState(null);
     const [notificationsEnabled, setNotificationsEnabled] = useState(false);
     const [notificationPermission, setNotificationPermission] = useState('default');
+    const [userProfile, setUserProfile] = useState({ name: 'You', avatar_url: null });
     const hasConnectedOnceRef = useRef(false);
     const agentsRef = useRef({});
+    const userProfileRef = useRef({ name: null, avatar_url: null });
     const viewStateRef = useRef({ currentHashtag: null, searchQuery: null });
     const hasMoreRef = useRef(false);
     const loadMoreRef = useRef(null);
@@ -138,6 +140,7 @@ function App() {
     const notificationsEnabledRef = useRef(false);
     const lastNotifiedIdRef = useRef(null);
     const lastAgentResponseRef = useRef(null);
+    const brandingRef = useRef({ title: null, avatarBase: null });
 
     // Refresh timestamps every 30 seconds
     useTimestampRefresh(30000);
@@ -176,6 +179,34 @@ function App() {
     useEffect(() => {
         agentsRef.current = agents || {};
     }, [agents]);
+
+    useEffect(() => {
+        userProfileRef.current = userProfile || { name: 'You', avatar_url: null };
+    }, [userProfile]);
+
+    const applyBranding = useCallback((name, avatarUrl, avatarVersion = null) => {
+        if (typeof document === 'undefined') return;
+        const title = (name || '').trim() || 'PiClaw';
+        if (brandingRef.current.title !== title) {
+            document.title = title;
+            const titleMeta = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+            if (titleMeta && titleMeta.getAttribute('content') !== title) {
+                titleMeta.setAttribute('content', title);
+            }
+            brandingRef.current.title = title;
+        }
+
+        const favicon = document.getElementById('dynamic-favicon');
+        if (!favicon) return;
+        const defaultHref = favicon.getAttribute('data-default') || favicon.getAttribute('href') || '/favicon.ico';
+        const baseHref = avatarUrl || defaultHref;
+        const avatarKey = avatarUrl ? `${baseHref}|${avatarVersion || ''}` : baseHref;
+        if (brandingRef.current.avatarBase !== avatarKey) {
+            const cacheBust = avatarUrl ? `${baseHref}${baseHref.includes('?') ? '&' : '?'}v=${avatarVersion || Date.now()}` : baseHref;
+            favicon.setAttribute('href', cacheBust);
+            brandingRef.current.avatarBase = avatarKey;
+        }
+    }, []);
 
     const addFileRef = useCallback((path) => {
         if (!path) return;
@@ -627,13 +658,21 @@ function App() {
         try {
             const data = await getAgents();
             setAgents(buildAgentsMap(data));
+            const nextUser = data?.user || {};
+            setUserProfile((prev) => {
+                const nextName = typeof nextUser.name === 'string' && nextUser.name.trim() ? nextUser.name.trim() : 'You';
+                const nextAvatar = typeof nextUser.avatar_url === 'string' ? nextUser.avatar_url.trim() : null;
+                if (prev.name === nextName && prev.avatar_url === nextAvatar) return prev;
+                return { name: nextName, avatar_url: nextAvatar };
+            });
             // Pick up the current model from the default agent entry
             const defaultAgent = (data?.agents || []).find((a) => a.id === 'default');
             if (defaultAgent?.model) setActiveModel(defaultAgent.model);
+            applyBranding(defaultAgent?.name, defaultAgent?.avatar_url);
         } catch (e) {
             console.warn('Failed to load agents:', e);
         }
-    }, []);
+    }, [applyBranding]);
 
     useEffect(() => {
         loadAgents();
@@ -654,30 +693,58 @@ function App() {
         const nextAvatar = payload.agent_avatar;
         if (!nextName && nextAvatar === undefined) return;
 
+        const current = agentsRef.current?.[agentId] || { id: agentId };
+        let resolvedName = current.name || null;
+        let resolvedAvatar = current.avatar_url ?? current.avatarUrl ?? current.avatar ?? null;
+        let avatarChanged = false;
+        let nameChanged = false;
+
+        if (nextName && nextName !== current.name) {
+            resolvedName = nextName;
+            nameChanged = true;
+        }
+
+        if (nextAvatar !== undefined) {
+            const normalizedAvatar = typeof nextAvatar === 'string' ? nextAvatar.trim() : null;
+            const normalizedCurrent = typeof resolvedAvatar === 'string' ? resolvedAvatar.trim() : null;
+            const nextValue = normalizedAvatar || null;
+            const currentValue = normalizedCurrent || null;
+            if (nextValue !== currentValue) {
+                resolvedAvatar = nextValue;
+                avatarChanged = true;
+            }
+        }
+
+        if (!nameChanged && !avatarChanged) return;
+
         setAgents((prev) => {
-            const current = prev[agentId] || { id: agentId };
-            const updated = { ...current };
-            let changed = false;
-
-            if (nextName && nextName !== current.name) {
-                updated.name = nextName;
-                changed = true;
-            }
-
-            if (nextAvatar !== undefined) {
-                const normalizedAvatar = typeof nextAvatar === 'string' ? nextAvatar.trim() : null;
-                const currentAvatar = current.avatar_url ?? current.avatarUrl ?? current.avatar;
-                const normalizedCurrent = typeof currentAvatar === 'string' ? currentAvatar.trim() : null;
-                const nextValue = normalizedAvatar || null;
-                const currentValue = normalizedCurrent || null;
-                if (nextValue !== currentValue) {
-                    updated.avatar_url = nextValue;
-                    changed = true;
-                }
-            }
-
-            if (!changed) return prev;
+            const currentEntry = prev[agentId] || { id: agentId };
+            const updated = { ...currentEntry };
+            if (nameChanged) updated.name = resolvedName;
+            if (avatarChanged) updated.avatar_url = resolvedAvatar;
             return { ...prev, [agentId]: updated };
+        });
+
+        if (agentId === 'default') {
+            applyBranding(resolvedName, resolvedAvatar, avatarChanged ? Date.now() : null);
+        }
+    }, [applyBranding]);
+
+    const updateUserProfile = useCallback((payload) => {
+        if (!payload || typeof payload !== 'object') return;
+        const nextName = payload.user_name ?? payload.userName;
+        const nextAvatar = payload.user_avatar ?? payload.userAvatar;
+        if (nextName === undefined && nextAvatar === undefined) return;
+
+        setUserProfile((prev) => {
+            const resolvedName = typeof nextName === 'string' && nextName.trim()
+                ? nextName.trim()
+                : prev.name || 'You';
+            const resolvedAvatar = nextAvatar === undefined
+                ? prev.avatar_url
+                : (typeof nextAvatar === 'string' && nextAvatar.trim() ? nextAvatar.trim() : null);
+            if (prev.name === resolvedName && prev.avatar_url === resolvedAvatar) return prev;
+            return { name: resolvedName, avatar_url: resolvedAvatar };
         });
     }, []);
 
@@ -685,6 +752,7 @@ function App() {
         const turnId = data?.turn_id;
 
         updateAgentProfile(data);
+        updateUserProfile(data);
 
         // Handle agent status updates
         if (eventType === 'connected') {
@@ -908,7 +976,7 @@ function App() {
                 }
             }
         }
-    }, [clearAgentRunState, noteAgentActivity, notifyForFinalResponse, removeStalledPost, setActiveTurn, updateAgentProfile]);
+    }, [clearAgentRunState, noteAgentActivity, notifyForFinalResponse, removeStalledPost, setActiveTurn, updateAgentProfile, updateUserProfile]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -1045,6 +1113,7 @@ function App() {
                     onDeletePost=${handleDeletePost}
                     emptyMessage=${currentHashtag ? `No posts with #${currentHashtag}` : searchQuery ? `No results for "${searchQuery}"` : undefined}
                     agents=${agents}
+                    user=${userProfile}
                     reverse=${!(searchQuery && !currentHashtag)}
                 />
                 <${AgentStatus}

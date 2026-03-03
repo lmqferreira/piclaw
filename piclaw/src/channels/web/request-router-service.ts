@@ -84,6 +84,11 @@ export class RequestRouterService {
       return await this.channel.handleAgents();
     }
 
+    if (isGetOrHead && (pathname === "/avatar/agent" || pathname === "/avatar/user")) {
+      const kind = pathname.endsWith("/user") ? "user" : "agent";
+      return await this.channel.handleAvatar(kind, req);
+    }
+
     if (req.method === "GET" && pathname === "/timeline") {
       const limit = this.channel.clampInt(url.searchParams.get("limit"), 10, 1, 100);
       const before = this.channel.parseOptionalInt(url.searchParams.get("before"));

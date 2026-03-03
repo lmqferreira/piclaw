@@ -218,6 +218,30 @@ export function parseAgentAvatar(args: string, raw: string): AgentControlCommand
   };
 }
 
+export function parseUserName(args: string, raw: string): AgentControlCommand {
+  return {
+    type: "user_name",
+    name: args || undefined,
+    raw,
+  };
+}
+
+export function parseUserAvatar(args: string, raw: string): AgentControlCommand {
+  return {
+    type: "user_avatar",
+    avatar: args || undefined,
+    raw,
+  };
+}
+
+export function parseUserGithub(args: string, raw: string): AgentControlCommand {
+  return {
+    type: "user_github",
+    profile: args || undefined,
+    raw,
+  };
+}
+
 export const COMMAND_PARSERS: Record<string, CommandParser> = {
   "/model": parseModel,
   "/thinking": parseThinking,
@@ -252,4 +276,7 @@ export const COMMAND_PARSERS: Record<string, CommandParser> = {
   "/labels": simple("labels"),
   "/agent-name": parseAgentName,
   "/agent-avatar": parseAgentAvatar,
+  "/user-name": parseUserName,
+  "/user-avatar": parseUserAvatar,
+  "/user-github": parseUserGithub,
 };

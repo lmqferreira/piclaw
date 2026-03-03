@@ -213,16 +213,19 @@ function extractFileRefs(content) {
 /**
  * Single post component
  */
-export function Post({ post, onClick, onHashtagClick, agentName, agentAvatarUrl, onDelete, isThreadReply }) {
+export function Post({ post, onClick, onHashtagClick, agentName, agentAvatarUrl, userName, userAvatarUrl, onDelete, isThreadReply }) {
     const [zoomedImage, setZoomedImage] = useState(null);
     const contentRef = useRef(null);
 
     const data = post.data;
     const isAgent = data.type === 'agent_response';
-    const displayName = isAgent ? (agentName || DEFAULT_AGENT_NAME) : 'You';
+    const resolvedUserName = userName || 'You';
+    const displayName = isAgent ? (agentName || DEFAULT_AGENT_NAME) : resolvedUserName;
 
     // Get avatar info based on the name
-    const avatarInfo = isAgent ? getAvatarInfo(agentName, agentAvatarUrl) : getAvatarInfo('You');
+    const avatarInfo = isAgent
+        ? getAvatarInfo(agentName, agentAvatarUrl)
+        : getAvatarInfo(resolvedUserName, userAvatarUrl);
 
     const contentMeta = data.content_meta;
     const isTruncated = Boolean(contentMeta?.truncated);

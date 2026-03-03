@@ -10,6 +10,7 @@ import {
   handleRestart,
 } from "./handlers/control.js";
 import { handleAgentAvatar, handleAgentName } from "./handlers/agent.js";
+import { handleUserAvatar, handleUserGithub, handleUserName } from "./handlers/user.js";
 import {
   handleCommands,
   handleContext,
@@ -100,6 +101,12 @@ export async function applyControlCommand(
       return handleAgentName(session, command);
     case "agent_avatar":
       return handleAgentAvatar(session, command);
+    case "user_name":
+      return handleUserName(session, command);
+    case "user_avatar":
+      return handleUserAvatar(session, command);
+    case "user_github":
+      return handleUserGithub(session, command);
     case "model":
       return handleModel(session, modelRegistry, command);
     case "commands":

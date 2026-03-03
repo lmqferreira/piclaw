@@ -3,16 +3,22 @@ import { buildPreviewLines, countSoftLines, splitLines } from "../../utils/previ
 export type AgentProfileBuilder = <T extends object>(payload: T) => T & {
   agent_name: string;
   agent_avatar: string | null;
+  user_name: string | null;
+  user_avatar: string | null;
 };
 
 export function createAgentProfileBuilder(
   agentName: string,
-  agentAvatar?: string | null
+  agentAvatar?: string | null,
+  userName?: string | null,
+  userAvatar?: string | null
 ): AgentProfileBuilder {
   return (payload) => ({
     ...payload,
     agent_name: agentName,
     agent_avatar: agentAvatar ?? null,
+    user_name: userName ?? null,
+    user_avatar: userAvatar ?? null,
   });
 }
 

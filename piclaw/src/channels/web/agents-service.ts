@@ -7,6 +7,8 @@ export async function getAgentsResponse(
     agentId: string;
     agentName: string;
     agentAvatar?: string | null;
+    userName?: string | null;
+    userAvatar?: string | null;
   }
 ): Promise<{ status: number; body: unknown }> {
   const model = await agentPool.getCurrentModelLabel(options.chatJid).catch(() => null);
@@ -24,6 +26,10 @@ export async function getAgentsResponse(
           model: model ?? null,
         },
       ],
+      user: {
+        name: options.userName || null,
+        avatar_url: options.userAvatar || null,
+      },
     },
   };
 }
