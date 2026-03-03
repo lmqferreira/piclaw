@@ -1123,12 +1123,9 @@ function App() {
                 title=${workspaceOpen ? 'Hide workspace' : 'Show workspace'}
                 aria-label=${workspaceOpen ? 'Hide workspace' : 'Show workspace'}
             >
-                <span class="workspace-toggle-tab-content">
-                    <svg class="workspace-toggle-tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <polyline points="6 3 11 8 6 13" />
-                    </svg>
-                    <span class="workspace-toggle-tab-label">Workspace</span>
-                </span>
+                <svg class="workspace-toggle-tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="6 3 11 8 6 13" />
+                </svg>
             </button>
             <div class="workspace-splitter" onMouseDown=${handleSplitterMouseDown} onTouchStart=${handleSplitterTouchStart}></div>
             <div class="container">

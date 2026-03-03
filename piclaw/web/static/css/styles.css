@@ -139,8 +139,8 @@ body {
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
     padding: 0;
-    width: 28px;
-    height: 110px;
+    width: 26px;
+    height: 56px;
     border-radius: var(--radius-md) 0 0 var(--radius-md);
     box-shadow: var(--shadow-sm);
     cursor: pointer;
@@ -153,20 +153,9 @@ body {
     border-color: var(--accent-color);
 }
 
-.workspace-toggle-tab-content {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    transform: rotate(-90deg);
-    font-size: 11px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    white-space: nowrap;
-}
-
 .workspace-toggle-tab-icon {
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
     flex-shrink: 0;
 }
 
@@ -458,7 +447,7 @@ body {
     }
 
     .app-shell:not(.workspace-collapsed) .workspace-toggle-tab {
-        left: calc(var(--sidebar-width, 280px) - 12px);
+        left: calc(var(--sidebar-width, 280px) - 1px);
     }
 
     .app-shell.workspace-collapsed .container {
