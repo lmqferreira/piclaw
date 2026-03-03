@@ -364,6 +364,10 @@ export class SSEClient {
         this.eventSource.addEventListener('agent_thought_delta', (e) => {
             this.onEvent('agent_thought_delta', JSON.parse(e.data));
         });
+
+        this.eventSource.addEventListener('model_changed', (e) => {
+            this.onEvent('model_changed', JSON.parse(e.data));
+        });
     }
     
     scheduleReconnect() {
