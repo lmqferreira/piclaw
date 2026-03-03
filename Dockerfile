@@ -133,30 +133,46 @@ COPY --chown=agent:agent piclaw/skills/ /home/agent/.pi/agent/skills/
 
 # Ship piclaw orchestrator and install as global binary
 COPY --chown=agent:agent piclaw/ /home/agent/piclaw/
-RUN set -euo pipefail && \
-    export BUN_INSTALL="$HOME/.bun" && export PATH="$BUN_INSTALL/bin:$PATH" && \
-    rm -f /tmp/piclaw-*.tgz && \
-    cd /home/agent/piclaw && bun update && bun install && bun run build && bun run build:web && \
-    rm -f piclaw-*.tgz && \
-    PACK_DIR=$(mktemp -d) && \
-    bun pm pack --outdir "$PACK_DIR" && \
-    TARBALL=$(find "$PACK_DIR" -maxdepth 1 -name 'piclaw-*.tgz' | head -1) && \
-    if [ -z "$TARBALL" ] || [ ! -f "$TARBALL" ]; then TARBALL=$(find . -maxdepth 1 -name 'piclaw-*.tgz' | head -1); fi && \
-    if [ -z "$TARBALL" ] || [ ! -f "$TARBALL" ]; then echo "piclaw tarball not found" >&2; exit 1; fi && \
-    DEST="$BUN_INSTALL/install/global/node_modules/piclaw" && \
-    rm -rf "$DEST" && mkdir -p "$DEST" && \
-    tar -xzf "$TARBALL" -C "$DEST" --strip-components=1 && \
-    if [ "${TARBALL#${PACK_DIR}/}" = "$TARBALL" ]; then rm -f "$TARBALL"; fi && \
-    rm -rf "$PACK_DIR" && \
-    cd "$DEST" && bun install --production && \
-    BUN_BIN="$BUN_INSTALL/bin/bun" && \
-    mkdir -p "$BUN_INSTALL/bin" && \
-    cat <<PICLAW_BIN > "$BUN_INSTALL/bin/piclaw" && \
-    chmod +x "$BUN_INSTALL/bin/piclaw"
+RUN bash <<'BUILD_PICLAW'
+set -euo pipefail
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
+rm -f /tmp/piclaw-*.tgz
+cd /home/agent/piclaw
+bun update
+bun install
+bun run build
+bun run build:web
+rm -f piclaw-*.tgz
+PACK_DIR=$(mktemp -d)
+bun pm pack --outdir "$PACK_DIR"
+TARBALL=$(find "$PACK_DIR" -maxdepth 1 -name 'piclaw-*.tgz' | head -1)
+if [ -z "$TARBALL" ] || [ ! -f "$TARBALL" ]; then
+  TARBALL=$(find . -maxdepth 1 -name 'piclaw-*.tgz' | head -1)
+fi
+if [ -z "$TARBALL" ] || [ ! -f "$TARBALL" ]; then
+  echo "piclaw tarball not found" >&2
+  exit 1
+fi
+DEST="$BUN_INSTALL/install/global/node_modules/piclaw"
+rm -rf "$DEST"
+mkdir -p "$DEST"
+tar -xzf "$TARBALL" -C "$DEST" --strip-components=1
+if [ "${TARBALL#${PACK_DIR}/}" = "$TARBALL" ]; then
+  rm -f "$TARBALL"
+fi
+rm -rf "$PACK_DIR"
+cd "$DEST"
+bun install --production
+BUN_BIN="$BUN_INSTALL/bin/bun"
+mkdir -p "$BUN_INSTALL/bin"
+cat <<'PICLAW_BIN' > "$BUN_INSTALL/bin/piclaw"
 #!/usr/bin/env bash
 set -euo pipefail
 exec "$BUN_BIN" "$DEST/src/index.ts" "\$@"
 PICLAW_BIN
+chmod +x "$BUN_INSTALL/bin/piclaw"
+BUILD_PICLAW
 
 # Layer 5: Save skeleton + global shims
 USER root
