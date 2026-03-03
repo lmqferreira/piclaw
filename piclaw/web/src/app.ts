@@ -522,6 +522,19 @@ function App() {
         }
     }, []);
 
+    const refreshTimeline = useCallback(async () => {
+        try {
+            const result = await getTimeline(10);
+            setPosts((prev) => {
+                if (!prev || prev.length === 0) return result.posts;
+                return dedupePosts([...result.posts, ...prev]);
+            });
+            setHasMore((prev) => prev || result.has_more);
+        } catch (error) {
+            console.error('Failed to refresh timeline:', error);
+        }
+    }, []);
+
     const handleConnectionStatusChange = useCallback((status) => {
         setConnectionStatus(status);
         if (status !== 'connected') {
@@ -540,9 +553,9 @@ function App() {
         }
         const { currentHashtag: activeHashtag, searchQuery: activeSearch } = viewStateRef.current;
         if (!activeHashtag && !activeSearch) {
-            loadPosts();
+            refreshTimeline();
         }
-    }, [clearAgentRunState, loadPosts]);
+    }, [clearAgentRunState, refreshTimeline]);
     
     // Load older messages (prepend)
     const loadMore = useCallback(async () => {
