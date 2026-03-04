@@ -97,10 +97,12 @@ export function Timeline({ posts, hasMore, onLoadMore, onPostClick, onHashtagCli
     // Sort posts by id (oldest first)
     const displayPosts = posts.slice().sort((a, b) => a.id - b.id);
 
+    const sentinel = html`<div class="timeline-sentinel" ref=${sentinelRef}></div>`;
+
     return html`
         <div class="timeline ${reverse ? 'reverse' : 'normal'}" ref=${timelineRef} onScroll=${hasIntersectionObserver ? undefined : handleScroll}>
             <div class="timeline-content">
-                <div class="timeline-sentinel" ref=${sentinelRef}></div>
+                ${reverse ? null : sentinel}
                 ${displayPosts.map(post => {
                     const isThreadReply = Boolean(post.data?.thread_id && post.data.thread_id !== post.id);
                     return html`
@@ -118,6 +120,7 @@ export function Timeline({ posts, hasMore, onLoadMore, onPostClick, onHashtagCli
                         onDelete=${onDeletePost}
                     />
                 `})}
+                ${reverse ? sentinel : null}
             </div>
         </div>
     `;
