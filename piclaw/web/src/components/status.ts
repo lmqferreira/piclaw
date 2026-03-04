@@ -90,28 +90,36 @@ export function AgentStatus({ status, draft, plan, thought, pendingRequest, turn
 
     const renderThinkingPanel = ({ panelTitle, text, fullText, totalLines, maxLines, titleClass, panelKey }) => {
         const isExpanded = expandedPanels.has(panelKey);
-        const effectiveText = (isExpanded && fullText) ? fullText : text;
-        const effectiveMax = (typeof maxLines === 'number' && !isExpanded) ? maxLines : undefined;
-        const truncated = typeof effectiveMax === 'number'
-            ? truncateLines(effectiveText, effectiveMax, totalLines)
-            : { text: effectiveText || '', omitted: 0, totalLines: Number.isFinite(totalLines) ? totalLines : 0 };
-        if (!truncated.text && !(Number.isFinite(truncated.totalLines) && truncated.totalLines > 0)) return null;
+        const sourceText = fullText || text || '';
+        const isCollapsible = typeof maxLines === 'number';
+        const truncated = isCollapsible
+            ? truncateLines(sourceText, maxLines, totalLines)
+            : { text: sourceText || '', omitted: 0, totalLines: Number.isFinite(totalLines) ? totalLines : 0 };
+        if (!sourceText && !(Number.isFinite(truncated.totalLines) && truncated.totalLines > 0)) return null;
+        const bodyClass = `agent-thinking-body${isCollapsible ? ' agent-thinking-body-collapsible' : ''}`;
+        const bodyStyle = isCollapsible ? `--agent-thinking-collapsed-lines: ${maxLines};` : '';
         return html`
-            <div class="agent-thinking" style=${turnColor ? `--turn-color: ${turnColor};` : ''}>
+            <div
+                class="agent-thinking"
+                data-expanded=${isExpanded ? 'true' : 'false'}
+                data-collapsible=${isCollapsible ? 'true' : 'false'}
+                style=${turnColor ? `--turn-color: ${turnColor};` : ''}
+            >
                 <div class="agent-thinking-title ${titleClass || ''}">
                     ${turnColor && html`<span class=${dotClass} aria-hidden="true"></span>`}
                     ${panelTitle}
                 </div>
                 <div
-                    class="agent-thinking-body"
-                    dangerouslySetInnerHTML=${{ __html: renderThinkingMarkdown(truncated.text) }}
+                    class=${bodyClass}
+                    style=${bodyStyle}
+                    dangerouslySetInnerHTML=${{ __html: renderThinkingMarkdown(sourceText) }}
                 />
-                ${truncated.omitted > 0 && html`
+                ${!isExpanded && truncated.omitted > 0 && html`
                     <button class="agent-thinking-truncation" onClick=${() => toggleExpand(panelKey)}>
                         ▸ ${truncated.omitted} more lines
                     </button>
                 `}
-                ${isExpanded && truncated.omitted === 0 && html`
+                ${isExpanded && truncated.omitted > 0 && html`
                     <button class="agent-thinking-truncation" onClick=${() => toggleExpand(panelKey)}>
                         ▴ show less
                     </button>

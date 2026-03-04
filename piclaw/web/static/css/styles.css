@@ -48,6 +48,7 @@
     /* Misc */
     --placeholder-opacity: 0.65;
     --model-hint-opacity: 0.85;
+    --ui-transition-fast: 0.15s ease;
 }
 
 /* Dark mode */
@@ -134,6 +135,9 @@ body {
     background-color: var(--bg-primary);
     height: 100dvh;
     overflow: hidden;
+    opacity: 1;
+    transform: translateX(0);
+    transition: width var(--ui-transition-fast), min-width var(--ui-transition-fast), opacity var(--ui-transition-fast), transform var(--ui-transition-fast);
 }
 
 .workspace-toggle-tab {
@@ -153,6 +157,7 @@ body {
     cursor: pointer;
     align-items: center;
     justify-content: center;
+    transition: background-color var(--ui-transition-fast), color var(--ui-transition-fast), border-color var(--ui-transition-fast), box-shadow var(--ui-transition-fast);
 }
 
 .workspace-toggle-tab:hover {
@@ -164,6 +169,7 @@ body {
     width: 12px;
     height: 12px;
     flex-shrink: 0;
+    transition: transform var(--ui-transition-fast);
 }
 
 .workspace-toggle-tab.open .workspace-toggle-tab-icon {
@@ -201,6 +207,7 @@ body {
     width: 28px;
     height: 28px;
     box-sizing: border-box;
+    transition: background-color var(--ui-transition-fast), color var(--ui-transition-fast), border-color var(--ui-transition-fast), box-shadow var(--ui-transition-fast);
 }
 
 .workspace-refresh svg,
@@ -266,6 +273,7 @@ body {
     border-radius: 3px;
     gap: 2px;
     box-sizing: border-box;
+    transition: background-color var(--ui-transition-fast);
 }
 
 .workspace-row:hover,
@@ -328,6 +336,8 @@ body {
     position: relative;
     z-index: 10;
     touch-action: none;
+    opacity: 1;
+    transition: width var(--ui-transition-fast), opacity var(--ui-transition-fast);
 }
 
 .workspace-splitter::after {
@@ -383,6 +393,8 @@ body {
     background-color: var(--bg-primary);
     flex-shrink: 0;
     box-sizing: border-box;
+    animation: fadeSlideIn 0.2s ease-out;
+    transition: background-color var(--ui-transition-fast), border-color var(--ui-transition-fast), opacity var(--ui-transition-fast);
 }
 
 .workspace-preview-header {
@@ -413,6 +425,7 @@ body {
     border-radius: var(--radius-sm);
     padding: var(--spacing-sm);
     font-size: 12px;
+    transition: background-color var(--ui-transition-fast), border-color var(--ui-transition-fast), color var(--ui-transition-fast);
 }
 
 .workspace-preview-image img {
@@ -460,11 +473,17 @@ body {
     }
 
     .app-shell.workspace-collapsed .workspace-sidebar {
-        display: none;
+        width: 0;
+        min-width: 0;
+        opacity: 0;
+        transform: translateX(-8px);
+        pointer-events: none;
     }
 
     .app-shell.workspace-collapsed .workspace-splitter {
-        display: none;
+        width: 0;
+        opacity: 0;
+        pointer-events: none;
     }
 
     .app-shell.workspace-collapsed .workspace-toggle-tab {
@@ -484,9 +503,10 @@ body {
     }
 
     .container {
-        max-width: none;
+        max-width: 100%;
         margin: 0;
         flex: 1;
+        transition: max-width var(--ui-transition-fast), min-width var(--ui-transition-fast), margin var(--ui-transition-fast);
     }
 }
 
@@ -505,6 +525,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: background-color var(--ui-transition-fast), color var(--ui-transition-fast), border-color var(--ui-transition-fast), box-shadow var(--ui-transition-fast);
 }
 
 .floating-btn:hover {
@@ -544,6 +565,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: background-color var(--ui-transition-fast), color var(--ui-transition-fast), border-color var(--ui-transition-fast), box-shadow var(--ui-transition-fast);
 }
 
 .theme-toggle:hover {
@@ -705,6 +727,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: background-color var(--ui-transition-fast), color var(--ui-transition-fast), border-color var(--ui-transition-fast), box-shadow var(--ui-transition-fast);
 }
 
 .icon-btn:hover {
@@ -742,6 +765,7 @@ body {
 
 .send-btn {
     color: var(--accent-color);
+    transition: color var(--ui-transition-fast);
 }
 
 .send-btn:disabled {
@@ -803,6 +827,7 @@ body {
     font-size: var(--font-size-sm);
     text-align: center;
     width: 100%;
+    transition: background-color var(--ui-transition-fast), color var(--ui-transition-fast);
 }
 
 .load-more-btn:hover {
@@ -816,6 +841,7 @@ body {
     gap: var(--spacing-sm);
     align-items: flex-start;
     animation: fadeSlideIn 0.3s ease-out backwards;
+    transition: background-color var(--ui-transition-fast);
 }
 
 .post:hover {
@@ -1002,6 +1028,7 @@ body {
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
     padding: var(--spacing-sm);
+    transition: background-color var(--ui-transition-fast), border-color var(--ui-transition-fast), color var(--ui-transition-fast);
 }
 
 .post-content.truncated .truncated-title,
@@ -1580,6 +1607,7 @@ body {
     --turn-color: var(--accent-color);
     max-width: 100%;
     box-sizing: border-box;
+    transition: background-color var(--ui-transition-fast), border-color var(--ui-transition-fast);
 }
 
 .agent-thinking-title {
@@ -1607,6 +1635,19 @@ body {
     line-height: 1.35;
     padding-bottom: 0.15em;
     max-width: 100%;
+    --agent-thinking-line-height: 1.35;
+    transition: max-height 0.18s ease, opacity 0.18s ease;
+}
+
+.agent-thinking-body-collapsible {
+    overflow: hidden;
+    max-height: calc(var(--agent-thinking-line-height) * 1em * var(--agent-thinking-collapsed-lines, 8));
+    opacity: 0.94;
+}
+
+.agent-thinking[data-expanded="true"] .agent-thinking-body-collapsible {
+    max-height: 70vh;
+    opacity: 1;
 }
 
 .agent-thinking-body,
@@ -1627,7 +1668,11 @@ body {
     color: var(--text-tertiary);
     font-size: var(--font-size-xs);
     font-family: inherit;
-    transition: color 0.15s;
+    transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.agent-thinking[data-expanded="true"] .agent-thinking-truncation {
+    transform: translateY(1px);
 }
 
 .agent-thinking-truncation:hover {
