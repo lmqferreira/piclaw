@@ -12,6 +12,7 @@ import { mkdtempSync, rmSync, mkdirSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
+/** Shape of an isolated temp workspace: paths and cleanup callback. */
 export interface TempWorkspace {
   base: string;
   workspace: string;
@@ -22,6 +23,7 @@ export interface TempWorkspace {
 
 let sharedWorkspace: TempWorkspace | null = null;
 
+/** Create an isolated temp directory with workspace, store, and data subdirs. */
 export function createTempWorkspace(prefix = "piclaw-test-"): TempWorkspace {
   const base = mkdtempSync(join(tmpdir(), prefix));
   const workspace = base;
@@ -40,6 +42,7 @@ export function createTempWorkspace(prefix = "piclaw-test-"): TempWorkspace {
   };
 }
 
+/** Return the shared temp workspace, creating it on first call. */
 export function getTestWorkspace(): TempWorkspace {
   if (!sharedWorkspace) {
     sharedWorkspace = createTempWorkspace("piclaw-shared-test-");
@@ -52,6 +55,7 @@ process.env.PICLAW_WORKSPACE = shared.workspace;
 process.env.PICLAW_STORE = shared.store;
 process.env.PICLAW_DATA = shared.data;
 
+/** Temporarily override env vars; returns a restore function. */
 export function setEnv(vars: Record<string, string | undefined>): () => void {
   const previous: Record<string, string | undefined> = {};
   for (const [key, value] of Object.entries(vars)) {
@@ -67,11 +71,13 @@ export function setEnv(vars: Record<string, string | undefined>): () => void {
   };
 }
 
+/** Import a module with a cache-busting suffix to bypass Bun's module cache. */
 export async function importFresh<T = any>(modulePath: string): Promise<T> {
   const suffix = `?t=${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return import(`${modulePath}${suffix}`) as Promise<T>;
 }
 
+/** Poll a predicate until it returns true, or throw after timeoutMs. */
 export async function waitFor(predicate: () => boolean, timeoutMs = 5000, intervalMs = 50): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
