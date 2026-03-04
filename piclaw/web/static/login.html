@@ -1,5 +1,13 @@
 <!doctype html>
 <html lang="en">
+<!--
+  login.html – TOTP authentication page for PiClaw.
+
+  Shown when WEB_TOTP_SECRET is configured. Collects a 6-digit TOTP code
+  and POSTs it to /login for session token creation.
+
+  Served by: channels/web/auth.ts when the user is not authenticated.
+-->
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
