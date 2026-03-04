@@ -1,25 +1,54 @@
+/**
+ * utils/preview.ts – Text truncation and line-counting helpers.
+ *
+ * Provides utilities for generating previews of multi-line text content
+ * (tool outputs, agent drafts, etc.) and for counting "soft" wrapped lines
+ * at a given column width.
+ *
+ * Consumers:
+ *   - tool-output.ts uses buildPreviewLines() when generating summaries of
+ *     large tool outputs.
+ *   - channels/web/agent-utils.ts uses countSoftLines() for draft height
+ *     estimation in the streaming UI.
+ *   - agent-control/handlers/info.ts uses truncateLine() when formatting
+ *     command output for display.
+ */
+
+/** Options for buildPreviewLines(). */
 export interface PreviewLinesOptions {
+  /** Maximum number of lines to include in the preview. */
   maxLines: number;
+  /** Optional per-line character cap (lines longer than this are truncated). */
   maxLineLength?: number;
+  /** If true, append a "… (N more lines)" trailer when lines are omitted. */
   includeOmittedLine?: boolean;
 }
 
+/** Normalise \r\n and bare \r to \n for consistent line splitting. */
 export function normalizeLineEndings(text: string): string {
   return (text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
+/** Split text into an array of lines (handles all line-ending styles). */
 export function splitLines(text: string): string[] {
   const normalized = normalizeLineEndings(text);
   if (normalized === "") return [];
   return normalized.split("\n");
 }
 
+/** Truncate a single line to `maxLength` characters, adding an ellipsis if cut. */
 export function truncateLine(line: string, maxLength?: number): string {
   if (!maxLength || maxLength <= 0) return line;
   if (line.length <= maxLength) return line;
   return `${line.slice(0, maxLength)}…`;
 }
 
+/**
+ * Build a preview of the first N lines of text, optionally truncating each
+ * line and appending an omitted-lines trailer.
+ *
+ * @returns The preview string and the count of lines that were omitted.
+ */
 export function buildPreviewLines(
   input: string | string[],
   options: PreviewLinesOptions
@@ -36,11 +65,16 @@ export function buildPreviewLines(
   return { preview: previewLines.join("\n"), omittedLines };
 }
 
+/**
+ * Count the number of "soft" (word-wrapped) lines an array of strings
+ * would occupy at a given column width.
+ */
 export function countSoftLines(lines: string[], maxCharsPerLine: number): number {
   if (!lines.length) return 0;
   return lines.reduce((acc, line) => acc + countSoftLine(line, maxCharsPerLine), 0);
 }
 
+/** Count how many visual lines a single string occupies at a given column width. */
 export function countSoftLine(line: string, maxCharsPerLine: number): number {
   if (!line) return 1;
   if (!maxCharsPerLine || maxCharsPerLine <= 0) return 1;

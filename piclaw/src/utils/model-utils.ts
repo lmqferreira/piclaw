@@ -1,11 +1,34 @@
+/**
+ * utils/model-utils.ts – Helpers for parsing and resolving LLM model identifiers.
+ *
+ * Model references can be specified as "modelId" or "provider/modelId". These
+ * helpers parse that input, look up the matching Model from the pi-ai registry,
+ * and handle ambiguous or missing matches with descriptive error messages.
+ *
+ * Consumers:
+ *   - agent-control/handlers/model.ts uses parseModelInput() + findModel() to
+ *     implement `/model set`, `/model info`, etc.
+ *   - extensions/model-control.ts uses resolveModelLabel() for the model-switch
+ *     tool exposed to the agent.
+ *   - agent-pool.ts uses resolveModelLabel() when overriding the model for a run.
+ */
+
 import type { Model } from "@mariozechner/pi-ai";
 import type { ModelRegistry } from "@mariozechner/pi-coding-agent";
 
+/** Result of splitting a raw model input string into provider + modelId. */
 export interface ParsedModelInput {
+  /** Optional provider prefix (e.g. "anthropic"). */
   provider?: string;
+  /** The model identifier (e.g. "claude-sonnet-4-20250514"). */
   modelId: string;
 }
 
+/**
+ * Split a raw model input string at the first `/`.
+ * "anthropic/claude-sonnet-4-20250514" → { provider: "anthropic", modelId: "claude-sonnet-4-20250514" }
+ * "claude-sonnet-4-20250514" → { modelId: "claude-sonnet-4-20250514" }
+ */
 export function parseModelInput(input: string): ParsedModelInput {
   const trimmed = input.trim();
   if (!trimmed) return { modelId: "" };
@@ -15,6 +38,11 @@ export function parseModelInput(input: string): ParsedModelInput {
     : { modelId: trimmed };
 }
 
+/**
+ * Find a single Model in the registry matching the given provider and modelId.
+ * Returns an error string if no match is found or if the modelId is ambiguous
+ * across multiple providers.
+ */
 export function findModel(
   models: Model<any>[],
   provider: string | undefined,
@@ -40,6 +68,12 @@ export function findModel(
   return { model: matches[0] };
 }
 
+/**
+ * High-level convenience: refresh the registry, resolve the input, and return
+ * the canonical "provider/modelId" label or an error message.
+ *
+ * Used by extensions/model-control.ts and agent-pool.ts.
+ */
 export function resolveModelLabel(
   modelRegistry: ModelRegistry,
   input: string
