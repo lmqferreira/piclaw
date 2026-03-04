@@ -61,6 +61,7 @@ WhatsApp channel:
 
 Web channel:
 - Markdown is allowed, including tables, headings, and links.
+- KaTeX math is **block-only**: use `$$ ... $$` on its own lines or fenced ```math``` blocks. Inline `$...$` is disabled.
 
 If the channel is unknown, default to WhatsApp formatting rules.
 

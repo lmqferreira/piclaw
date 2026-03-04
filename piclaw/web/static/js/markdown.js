@@ -246,10 +246,35 @@ function linkifyHashtagsInHtml(html_content) {
 /**
  * Render markdown and then linkify hashtags
  */
+function normalizeMathFences(text) {
+    if (!text) return text;
+    const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const lines = normalized.split('\n');
+    const output = [];
+    let inMath = false;
+
+    for (const line of lines) {
+        if (!inMath && line.trim().match(/^```(?:math|katex|latex)\s*$/i)) {
+            inMath = true;
+            output.push('$$');
+            continue;
+        }
+        if (inMath && line.trim().match(/^```\s*$/)) {
+            inMath = false;
+            output.push('$$');
+            continue;
+        }
+        output.push(line);
+    }
+
+    return output.join('\n');
+}
+
 export function renderMarkdown(text, onHashtagClick) {
     if (!text) return '';
 
-    const { text: stripped, blocks: mermaidBlocks } = extractMermaidBlocks(text);
+    const normalizedMath = normalizeMathFences(text);
+    const { text: stripped, blocks: mermaidBlocks } = extractMermaidBlocks(normalizedMath);
 
     // Decode HTML entities first (in case content has encoded entities)
     const decoded = decodeEntitiesDeep(stripped, 2);
