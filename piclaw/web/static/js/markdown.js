@@ -160,8 +160,34 @@ function renderMath(html_content) {
 
     const decodeMath = (value) => decodeEntities(value).replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
 
+    const stripCodeBlocks = (html) => {
+        const blocks = [];
+        let output = html.replace(/<pre><code>[\s\S]*?<\/code><\/pre>/g, (match) => {
+            const idx = blocks.length;
+            blocks.push(match);
+            return `@@CODE_BLOCK_${idx}@@`;
+        });
+        output = output.replace(/<code>[\s\S]*?<\/code>/g, (match) => {
+            const idx = blocks.length;
+            blocks.push(match);
+            return `@@CODE_INLINE_${idx}@@`;
+        });
+        return { html: output, blocks };
+    };
+
+    const restoreCodeBlocks = (html, blocks) => {
+        if (!blocks.length) return html;
+        return html.replace(/@@CODE_(?:BLOCK|INLINE)_(\d+)@@/g, (_match, idxStr) => {
+            const idx = Number(idxStr);
+            return blocks[idx] ?? '';
+        });
+    };
+
+    const stripped = stripCodeBlocks(html_content);
+    let processed = stripped.html;
+
     // Process display math first ($$...$$) - must not be inside code blocks
-    html_content = html_content.replace(/\$\$([\s\S]+?)\$\$/g, (match, tex) => {
+    processed = processed.replace(/\$\$([\s\S]+?)\$\$/g, (match, tex) => {
         try {
             return katex.renderToString(decodeMath(tex.trim()), { displayMode: true, throwOnError: false });
         } catch (e) {
@@ -170,7 +196,7 @@ function renderMath(html_content) {
     });
 
     // Process inline math ($...$) - avoid matching $$, shell expansions, or currency
-    html_content = html_content.replace(/(?<!\$)\$(?!\$|\(|\{|\[)([^\$\n]+?)\$(?!\$)/g, (match, tex) => {
+    processed = processed.replace(/(?<!\$)\$(?!\$|\(|\{|\[)([^\$\n]+?)\$(?!\$)/g, (match, tex) => {
         const trimmed = tex.trim();
         // Skip if it looks like currency ($ followed by number)
         if (/^\d/.test(trimmed)) return match;
@@ -181,7 +207,7 @@ function renderMath(html_content) {
         }
     });
 
-    return html_content;
+    return restoreCodeBlocks(processed, stripped.blocks);
 }
 
 /**
