@@ -7,6 +7,7 @@
 
 export type AttachmentKind = "image" | "file";
 
+/** Metadata for a file attachment: id, filename, content type, size. */
 export interface AttachmentInfo {
   id: number;
   name: string;
@@ -16,6 +17,7 @@ export interface AttachmentInfo {
   sourcePath: string;
 }
 
+/** Per-session registry of file attachments created during agent runs. */
 export class AttachmentRegistry {
   private pending = new Map<string, AttachmentInfo[]>();
 
@@ -41,6 +43,7 @@ export class AttachmentRegistry {
 
 let _instance: AttachmentRegistry | null = null;
 
+/** Get or create the AttachmentRegistry for the current chat context. */
 export function getAttachmentRegistry(): AttachmentRegistry {
   if (!_instance) _instance = new AttachmentRegistry();
   return _instance;

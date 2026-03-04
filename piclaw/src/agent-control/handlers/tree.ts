@@ -15,6 +15,7 @@ type TreeCommand = Extract<AgentControlCommand, { type: "tree" }>;
 type LabelCommand = Extract<AgentControlCommand, { type: "label" }>;
 type LabelsCommand = Extract<AgentControlCommand, { type: "labels" }>;
 
+/** Handle /tree: render the session message tree in text format. */
 export async function handleTree(session: AgentSession, command: TreeCommand): Promise<AgentControlResult> {
   const sessionManager = session.sessionManager;
   const leafId = sessionManager.getLeafId();
@@ -139,6 +140,7 @@ export async function handleTree(session: AgentSession, command: TreeCommand): P
   }
 }
 
+/** Handle /label: set or clear a label on a specific entry. */
 export async function handleLabel(session: AgentSession, command: LabelCommand): Promise<AgentControlResult> {
   if (!command.targetId) {
     return { status: "error", message: "Usage: /label <entryId> <label|clear>" };
@@ -152,6 +154,7 @@ export async function handleLabel(session: AgentSession, command: LabelCommand):
   };
 }
 
+/** Handle /label: set or clear a label on a specific entry. */
 export async function handleLabels(session: AgentSession, _command: LabelsCommand): Promise<AgentControlResult> {
   const roots = session.sessionManager.getTree();
   const labels: Array<{ id: string; label: string; summary: string }> = [];

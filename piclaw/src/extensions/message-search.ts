@@ -216,6 +216,7 @@ const SEARCH_HINT = [
 
 // ── Factory ───────────────────────────────────────────────
 
+/** Extension factory that registers the search_messages tool. */
 export const messageSearch: ExtensionFactory = (pi: ExtensionAPI) => {
   pi.on("before_agent_start", async (event) => {
     return { systemPrompt: `${event.systemPrompt}\n\n${SEARCH_HINT}` };

@@ -10,6 +10,7 @@
 
 import type { Theme } from "@mariozechner/pi-coding-agent";
 
+/** Return a minimal fallback Theme when no custom theme is loaded. */
 export function createFallbackTheme(): Theme {
   const passthrough = (text: string) => text;
   const identity = () => passthrough;

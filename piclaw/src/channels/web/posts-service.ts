@@ -10,6 +10,7 @@
 
 import type { WebChannel } from "../web.js";
 
+/** Shape of the JSON body received from the compose box on POST /post. */
 export interface PostPayload {
   content?: string;
   thread_id?: number | null;
@@ -18,6 +19,7 @@ export interface PostPayload {
   link_previews?: unknown[];
 }
 
+/** Validate and parse a raw POST body into a PostPayload. */
 export function parsePostPayload(body: unknown): { ok: boolean; error?: string; data?: PostPayload } {
   if (!body || typeof body !== "object") return { ok: false, error: "Invalid JSON" };
   const data = body as PostPayload;
@@ -25,11 +27,13 @@ export function parsePostPayload(body: unknown): { ok: boolean; error?: string; 
   return { ok: true, data };
 }
 
+/** Parse a comma-separated media ID string into a number array. */
 export function normalizeMediaIds(ids: unknown): number[] {
   if (!Array.isArray(ids)) return [];
   return ids.map((id) => Number(id)).filter((id) => Number.isFinite(id));
 }
 
+/** Store a user post, attach media, trigger link previews, and broadcast. */
 export function storePost(
   channel: WebChannel,
   chatJid: string,

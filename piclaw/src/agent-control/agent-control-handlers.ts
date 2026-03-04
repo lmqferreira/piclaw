@@ -50,6 +50,7 @@ import {
 } from "./handlers/session.js";
 import { handleLabel, handleLabels, handleTree } from "./handlers/tree.js";
 
+/** Dispatch a parsed control command to the appropriate handler and return the result. */
 export async function applyControlCommand(
   session: AgentSession,
   modelRegistry: ModelRegistry,

@@ -10,6 +10,7 @@
 
 import type { WebChannel } from "../web.js";
 
+/** Route an incoming HTTP request to the appropriate handler. */
 export async function handleWebRequest(channel: WebChannel, req: Request): Promise<Response> {
   const url = new URL(req.url);
   const pathname = url.pathname;

@@ -200,6 +200,7 @@ export type AgentControlCommand =
       raw: string;
     };
 
+/** Result returned by command handlers: status, message, and optional side-effects. */
 export interface AgentControlResult {
   status: "success" | "error";
   message: string;

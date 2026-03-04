@@ -15,6 +15,7 @@ import { getMessageByRowId, updateMessageLinkPreviews } from "../../db.js";
 import { lookup } from "dns/promises";
 import { isIP } from "net";
 
+/** OpenGraph metadata for a URL: title, description, image, site name. */
 export interface LinkPreview {
   url: string;
   title?: string;
@@ -122,6 +123,7 @@ async function isSafeUrl(raw: string): Promise<boolean> {
   }
 }
 
+/** Extract HTTP/HTTPS URLs from a text string. */
 export function extractUrls(text: string, limit = MAX_URLS): string[] {
   if (!text) return [];
   const matches = text.match(URL_REGEX) ?? [];
@@ -180,6 +182,7 @@ function normalizeImage(url: string, baseUrl: string): string {
   }
 }
 
+/** Fetch OpenGraph metadata for a single URL. */
 export async function fetchLinkPreview(url: string): Promise<LinkPreview | null> {
   const allowed = await isSafeUrl(url);
   if (!allowed) return null;
@@ -235,6 +238,7 @@ export async function fetchLinkPreview(url: string): Promise<LinkPreview | null>
   }
 }
 
+/** Fetch OpenGraph metadata for multiple URLs in parallel. */
 export async function fetchLinkPreviews(urls: string[]): Promise<LinkPreview[]> {
   const previews: LinkPreview[] = [];
   for (const url of urls) {
@@ -244,6 +248,7 @@ export async function fetchLinkPreviews(urls: string[]): Promise<LinkPreview[]> 
   return previews;
 }
 
+/** Asynchronously fetch link previews for a message and broadcast updates. */
 export function scheduleLinkPreviews(
   channel: WebChannel,
   chatJid: string,

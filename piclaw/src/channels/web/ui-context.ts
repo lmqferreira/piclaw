@@ -16,10 +16,12 @@ function getBridge(channel: WebChannel): UiBridge {
   return (channel as any).uiBridge ?? new UiBridge(channel);
 }
 
+/** Attach a UiBridge to an agent session for extension UI interactions. */
 export async function bindSessionUiContext(channel: WebChannel, session: AgentSession, chatJid: string): Promise<void> {
   return getBridge(channel).bindSession(session, chatJid);
 }
 
+/** Create an ExtensionUIContext backed by the given UiBridge. */
 export function createUiContext(channel: WebChannel, chatJid: string): ExtensionUIContext {
   return getBridge(channel).createUiContext(chatJid);
 }

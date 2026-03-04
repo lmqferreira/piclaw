@@ -10,6 +10,7 @@
 
 import { broadcastEvent, handleSse, type PendingClient, type SseClientContainer } from "./sse.js";
 
+/** Manages SSE client connections and provides broadcast(). */
 export class SseHub implements SseClientContainer {
   clients = new Set<PendingClient>();
 

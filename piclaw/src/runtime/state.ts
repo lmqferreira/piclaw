@@ -15,6 +15,7 @@ import { join } from "path";
 
 import { getRouterState, setRouterState } from "../db.js";
 
+/** Persistent runtime state: per-chat timestamps, active chat JIDs. */
 export class RuntimeState {
   lastTimestamp = "";
   lastAgentTimestamp: Record<string, string> = {};

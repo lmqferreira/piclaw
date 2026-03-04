@@ -11,8 +11,10 @@
 import { buildTree } from "./tree.js";
 import { resolveWorkspacePath } from "./paths.js";
 
+/** Cached tree result type: array of tree nodes. */
 export type WorkspaceTreeResult = { status: number; body: unknown };
 
+/** Time-based cache for workspace directory tree builds. */
 export class WorkspaceTreeCache {
   private treeCache = new Map<string, { timestamp: number; result: WorkspaceTreeResult }>();
   private treeRequestTimes: number[] = [];

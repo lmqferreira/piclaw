@@ -17,6 +17,7 @@ import { normalizeControlCommandName } from "./command-registry.js";
 import { stripTrigger } from "./parser-utils.js";
 import { COMMAND_PARSERS } from "./command-parsers.js";
 
+/** Parse a raw text message into an AgentControlCommand, or return null if not a command. */
 export function parseControlCommand(text: string, triggerPattern?: RegExp): AgentControlCommand | null {
   if (!text) return null;
   const cleaned = stripTrigger(text, triggerPattern);

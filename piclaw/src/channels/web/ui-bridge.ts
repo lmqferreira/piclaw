@@ -21,6 +21,7 @@ interface PendingUiRequest {
   kind: string;
 }
 
+/** Bridges extension UI prompts (confirm/input) to SSE events and API responses. */
 export class UiBridge {
   pendingUiRequests = new Map<string, PendingUiRequest>();
   uiRequestCounter = 0;

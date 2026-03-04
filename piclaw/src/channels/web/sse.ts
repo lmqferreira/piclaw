@@ -9,15 +9,18 @@
 
 const encoder = new TextEncoder();
 
+/** An SSE client waiting to be registered (response + controller). */
 export interface PendingClient {
   controller: ReadableStreamDefaultController<Uint8Array>;
   heartbeat: Timer;
 }
 
+/** Interface for a container that holds SSE client lists. */
 export interface SseClientContainer {
   clients: Set<PendingClient>;
 }
 
+/** Create an SSE response stream and register the client. */
 export function handleSse(channel: SseClientContainer): Response {
   let clientRef: PendingClient | null = null;
 
@@ -53,6 +56,7 @@ export function handleSse(channel: SseClientContainer): Response {
   });
 }
 
+/** Encode and send an SSE event to all connected clients. */
 export function broadcastEvent(channel: SseClientContainer, eventType: string, data: unknown): void {
   const payload = `event: ${eventType}\ndata: ${JSON.stringify(data)}\n\n`;
   const bytes = encoder.encode(payload);

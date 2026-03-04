@@ -21,6 +21,7 @@ type LastCommand = Extract<AgentControlCommand, { type: "last" }>;
 type CommandsCommand = Extract<AgentControlCommand, { type: "commands" }>;
 type SearchCommand = Extract<AgentControlCommand, { type: "search_workspace" }>;
 
+/** Handle /state: display current session state summary. */
 export async function handleState(session: AgentSession, _command: StateCommand): Promise<AgentControlResult> {
   const modelLabel = session.model ? `${session.model.provider}/${session.model.id}` : "none";
   const steeringCount = session.getSteeringMessages().length;
@@ -43,6 +44,7 @@ export async function handleState(session: AgentSession, _command: StateCommand)
   return { status: "success", message: lines.join("\n") };
 }
 
+/** Handle /stats: display token usage and cost statistics. */
 export async function handleStats(session: AgentSession, _command: StatsCommand): Promise<AgentControlResult> {
   const stats = session.getSessionStats();
   const tokens = stats.tokens;
@@ -56,6 +58,7 @@ export async function handleStats(session: AgentSession, _command: StatsCommand)
   return { status: "success", message: lines.join("\n") };
 }
 
+/** Handle /context: display context window usage breakdown. */
 export async function handleContext(session: AgentSession, _command: ContextCommand): Promise<AgentControlResult> {
   const usage = session.getContextUsage();
   if (!usage) {
@@ -74,6 +77,7 @@ export async function handleContext(session: AgentSession, _command: ContextComm
   };
 }
 
+/** Handle /last: display the last assistant response. */
 export async function handleLast(session: AgentSession, _command: LastCommand): Promise<AgentControlResult> {
   const last = session.getLastAssistantText();
   if (!last) {
@@ -82,6 +86,7 @@ export async function handleLast(session: AgentSession, _command: LastCommand): 
   return { status: "success", message: `Last assistant response:\n\n${last}` };
 }
 
+/** Handle /search-workspace: full-text search across workspace files. */
 export async function handleSearchWorkspace(_session: AgentSession, command: SearchCommand): Promise<AgentControlResult> {
   const query = command.query?.trim();
   if (!query) {
@@ -113,6 +118,7 @@ export async function handleSearchWorkspace(_session: AgentSession, command: Sea
   return { status: "success", message: `${header}\n${lines.join("\n")}` };
 }
 
+/** Handle /commands: list all available control commands. */
 export async function handleCommands(session: AgentSession, _command: CommandsCommand): Promise<AgentControlResult> {
   type CommandSource = "core" | "extension" | "pi-extension" | "template" | "skill";
   type ExtensionMeta = { source: CommandSource; detail?: string };

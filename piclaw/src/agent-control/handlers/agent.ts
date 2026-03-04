@@ -15,6 +15,7 @@ import { updateAssistantConfig } from "../agent-control-helpers.js";
 type AgentNameCommand = Extract<AgentControlCommand, { type: "agent_name" }>;
 type AgentAvatarCommand = Extract<AgentControlCommand, { type: "agent_avatar" }>;
 
+/** Handle /agent-name: update the assistant display name. */
 export async function handleAgentName(_session: AgentSession, command: AgentNameCommand): Promise<AgentControlResult> {
   if (!command.name) {
     return { status: "success", message: `Agent name: ${ASSISTANT_NAME}` };
@@ -34,6 +35,7 @@ export async function handleAgentName(_session: AgentSession, command: AgentName
   };
 }
 
+/** Handle /agent-avatar: update the assistant avatar URL. */
 export async function handleAgentAvatar(_session: AgentSession, command: AgentAvatarCommand): Promise<AgentControlResult> {
   if (!command.avatar) {
     const current = ASSISTANT_AVATAR || "(default)";

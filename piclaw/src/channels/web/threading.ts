@@ -10,6 +10,7 @@
 
 import type { WebChannel } from "../web.js";
 
+/** Determine the thread_id for a new message (existing thread or new). */
 export function resolveThreadId(
   explicit: number | null | undefined,
   fallback: number | null | undefined
@@ -18,6 +19,7 @@ export function resolveThreadId(
   return fallback ?? null;
 }
 
+/** Find the root message rowid for a thread chain. */
 export function resolveThreadRootId(
   channel: WebChannel,
   chatJid: string,

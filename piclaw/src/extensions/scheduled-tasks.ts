@@ -77,6 +77,7 @@ function listTasks(filter: string | null): { summary: string; lines: string[] } 
   }
 }
 
+/** Extension factory that registers /tasks and /scheduled slash commands. */
 export const scheduledTasks: ExtensionFactory = (pi: ExtensionAPI) => {
   const handler = async (args: string) => {
     const token = (args || "").trim().toLowerCase();

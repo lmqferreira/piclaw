@@ -16,6 +16,7 @@ export interface ControlCommandDefinition {
   aliases?: string[];
 }
 
+/** Metadata for all control commands: name, description, aliases. */
 export const CONTROL_COMMAND_DEFINITIONS: ControlCommandDefinition[] = [
   { name: "/model", description: "Select model or list available models", aliases: ["/models"] },
   { name: "/cycle-model", description: "Cycle to the next available model" },
@@ -66,6 +67,7 @@ for (const def of CONTROL_COMMAND_DEFINITIONS) {
   }
 }
 
+/** Resolve command aliases (e.g. /models → /model, /ctx → /context). */
 export function normalizeControlCommandName(name: string): string {
   const normalized = name.trim().toLowerCase().replace(/_/g, "-");
   return ALIAS_MAP.get(normalized) ?? normalized;

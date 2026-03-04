@@ -18,6 +18,7 @@ type ForkCommand = Extract<AgentControlCommand, { type: "fork" }>;
 type ForksCommand = Extract<AgentControlCommand, { type: "forks" }>;
 type ExportHtmlCommand = Extract<AgentControlCommand, { type: "export_html" }>;
 
+/** Handle /session-name: rename the current session. */
 export async function handleSessionName(session: AgentSession, command: SessionNameCommand): Promise<AgentControlResult> {
   if (!command.name) {
     return {
@@ -35,6 +36,7 @@ export async function handleSessionName(session: AgentSession, command: SessionN
   return { status: "success", message: `Session name set to "${name}".` };
 }
 
+/** Handle /new-session: create a new session, optionally under a parent. */
 export async function handleNewSession(session: AgentSession, command: NewSessionCommand): Promise<AgentControlResult> {
   const ok = await session.newSession(command.parent ? { parentSession: command.parent } : undefined);
   if (!ok) {
@@ -43,6 +45,7 @@ export async function handleNewSession(session: AgentSession, command: NewSessio
   return { status: "success", message: "Started a new session." };
 }
 
+/** Handle /switch-session: switch to an existing session by path. */
 export async function handleSwitchSession(session: AgentSession, command: SwitchSessionCommand): Promise<AgentControlResult> {
   if (!command.path) {
     return { status: "error", message: "Usage: /switch-session <path>" };
@@ -54,6 +57,7 @@ export async function handleSwitchSession(session: AgentSession, command: Switch
   return { status: "success", message: `Switched to session: ${command.path.trim()}.` };
 }
 
+/** Handle /fork: fork the conversation from a specific entry. */
 export async function handleFork(session: AgentSession, command: ForkCommand): Promise<AgentControlResult> {
   if (!command.entryId) {
     return { status: "error", message: "Usage: /fork <entryId>" };
@@ -71,6 +75,7 @@ export async function handleFork(session: AgentSession, command: ForkCommand): P
   }
 }
 
+/** Handle /fork: fork the conversation from a specific entry. */
 export async function handleForks(session: AgentSession, _command: ForksCommand): Promise<AgentControlResult> {
   const messages = session.getUserMessagesForForking();
   if (messages.length === 0) {
@@ -80,6 +85,7 @@ export async function handleForks(session: AgentSession, _command: ForksCommand)
   return { status: "success", message: lines.join("\n") };
 }
 
+/** Handle /export-html: export the session as an HTML file. */
 export async function handleExportHtml(session: AgentSession, command: ExportHtmlCommand): Promise<AgentControlResult> {
   try {
     const outputPath = command.path?.trim() || undefined;

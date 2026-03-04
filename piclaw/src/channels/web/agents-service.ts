@@ -9,6 +9,7 @@
 
 import type { AgentPool } from "../../agent-pool.js";
 
+/** Build the GET /agents response payload with agent profile and model info. */
 export async function getAgentsResponse(
   agentPool: AgentPool,
   options: {

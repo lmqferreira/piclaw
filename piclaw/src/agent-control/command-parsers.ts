@@ -12,12 +12,14 @@
 import type { AgentControlCommand } from "./agent-control-types.js";
 import { parseQueueMode, parseToggle, parseTreeArgs, splitArgs } from "./parser-utils.js";
 
+/** Function signature for a command parser: takes args and raw text, returns a command. */
 export type CommandParser = (args: string, raw: string) => AgentControlCommand;
 
 const simple = (type: AgentControlCommand["type"]): CommandParser => {
   return (_args, raw) => ({ type, raw } as AgentControlCommand);
 };
 
+/** Parse /model arguments: provider/modelId or bare model name. */
 export function parseModel(args: string, raw: string): AgentControlCommand {
   const tokens = args.split(/\s+/).filter(Boolean);
   if (tokens.length === 0) {
@@ -52,6 +54,7 @@ export function parseModel(args: string, raw: string): AgentControlCommand {
   };
 }
 
+/** Parse /thinking arguments: level name or empty for query. */
 export function parseThinking(args: string, raw: string): AgentControlCommand {
   const level = args.split(/\s+/).filter(Boolean)[0];
   return {
@@ -61,6 +64,7 @@ export function parseThinking(args: string, raw: string): AgentControlCommand {
   };
 }
 
+/** Parse /shell arguments: optional command string. */
 export function parseShell(args: string, raw: string): AgentControlCommand {
   return {
     type: "shell",
@@ -69,6 +73,7 @@ export function parseShell(args: string, raw: string): AgentControlCommand {
   };
 }
 
+/** Parse /queue arguments: message text to inject. */
 export function parseQueue(args: string, raw: string): AgentControlCommand {
   return {
     type: "queue",
@@ -77,6 +82,7 @@ export function parseQueue(args: string, raw: string): AgentControlCommand {
   };
 }
 
+/** Parse /queue-all arguments: message text for all chats. */
 export function parseQueueAll(args: string, raw: string): AgentControlCommand {
   return {
     type: "queue_all",
@@ -85,6 +91,7 @@ export function parseQueueAll(args: string, raw: string): AgentControlCommand {
   };
 }
 
+/** Parse /compact arguments: optional custom instructions. */
 export function parseCompact(args: string, raw: string): AgentControlCommand {
   return {
     type: "compact",
@@ -93,6 +100,7 @@ export function parseCompact(args: string, raw: string): AgentControlCommand {
   };
 }
 
+/** Parse /auto-compact arguments: on/off toggle. */
 export function parseAutoCompact(args: string, raw: string): AgentControlCommand {
   return {
     type: "auto_compact",
@@ -101,6 +109,7 @@ export function parseAutoCompact(args: string, raw: string): AgentControlCommand
   };
 }
 
+/** Parse /auto-retry arguments: on/off toggle. */
 export function parseAutoRetry(args: string, raw: string): AgentControlCommand {
   return {
     type: "auto_retry",
@@ -109,6 +118,7 @@ export function parseAutoRetry(args: string, raw: string): AgentControlCommand {
   };
 }
 
+/** Parse /cycle-model arguments: optional forward/backward direction. */
 export function parseCycleModel(args: string, raw: string): AgentControlCommand {
   const dirRaw = args.toLowerCase();
   const direction = ["back", "backward", "prev", "previous"].includes(dirRaw)
@@ -121,6 +131,7 @@ export function parseCycleModel(args: string, raw: string): AgentControlCommand 
   };
 }
 
+/** Parse /steering-mode arguments: "all" or "one-at-a-time". */
 export function parseSteeringMode(args: string, raw: string): AgentControlCommand {
   return {
     type: "steering_mode",
@@ -129,6 +140,7 @@ export function parseSteeringMode(args: string, raw: string): AgentControlComman
   };
 }
 
+/** Parse /followup-mode arguments: "all" or "one-at-a-time". */
 export function parseFollowupMode(args: string, raw: string): AgentControlCommand {
   return {
     type: "followup_mode",
@@ -137,6 +149,7 @@ export function parseFollowupMode(args: string, raw: string): AgentControlComman
   };
 }
 
+/** Parse /session-name arguments: optional new name. */
 export function parseSessionName(args: string, raw: string): AgentControlCommand {
   return {
     type: "session_name",
@@ -145,6 +158,7 @@ export function parseSessionName(args: string, raw: string): AgentControlCommand
   };
 }
 
+/** Parse /new-session arguments: optional parent session path. */
 export function parseNewSession(args: string, raw: string): AgentControlCommand {
   return {
     type: "new_session",
@@ -153,6 +167,7 @@ export function parseNewSession(args: string, raw: string): AgentControlCommand 
   };
 }
 
+/** Parse /switch-session arguments: session path. */
 export function parseSwitchSession(args: string, raw: string): AgentControlCommand {
   return {
     type: "switch_session",
@@ -161,6 +176,7 @@ export function parseSwitchSession(args: string, raw: string): AgentControlComma
   };
 }
 
+/** Parse /fork arguments: optional entry ID to fork from. */
 export function parseFork(args: string, raw: string): AgentControlCommand {
   return {
     type: "fork",
@@ -169,6 +185,7 @@ export function parseFork(args: string, raw: string): AgentControlCommand {
   };
 }
 
+/** Parse /export-html arguments: optional output file path. */
 export function parseExportHtml(args: string, raw: string): AgentControlCommand {
   return {
     type: "export_html",
@@ -177,6 +194,7 @@ export function parseExportHtml(args: string, raw: string): AgentControlCommand 
   };
 }
 
+/** Parse /bash arguments: optional command string. */
 export function parseBash(args: string, raw: string): AgentControlCommand {
   return {
     type: "bash",
@@ -185,6 +203,7 @@ export function parseBash(args: string, raw: string): AgentControlCommand {
   };
 }
 
+/** Parse /tree arguments: target, mode, limit, offset, summarize flags. */
 export function parseTree(args: string, raw: string): AgentControlCommand {
   const parsed = parseTreeArgs(args);
   return {
@@ -201,6 +220,7 @@ export function parseTree(args: string, raw: string): AgentControlCommand {
   };
 }
 
+/** Parse /label arguments: target entry ID and label text. */
 export function parseLabel(args: string, raw: string): AgentControlCommand {
   const tokens = splitArgs(args);
   const targetId = tokens[0];
@@ -213,6 +233,7 @@ export function parseLabel(args: string, raw: string): AgentControlCommand {
   };
 }
 
+/** Parse /agent-name arguments: new display name. */
 export function parseAgentName(args: string, raw: string): AgentControlCommand {
   return {
     type: "agent_name",
@@ -221,6 +242,7 @@ export function parseAgentName(args: string, raw: string): AgentControlCommand {
   };
 }
 
+/** Parse /agent-avatar arguments: avatar URL or file path. */
 export function parseAgentAvatar(args: string, raw: string): AgentControlCommand {
   return {
     type: "agent_avatar",
@@ -229,6 +251,7 @@ export function parseAgentAvatar(args: string, raw: string): AgentControlCommand
   };
 }
 
+/** Parse /user-name arguments: new display name. */
 export function parseUserName(args: string, raw: string): AgentControlCommand {
   return {
     type: "user_name",
@@ -237,6 +260,7 @@ export function parseUserName(args: string, raw: string): AgentControlCommand {
   };
 }
 
+/** Parse /user-avatar arguments: avatar URL or file path. */
 export function parseUserAvatar(args: string, raw: string): AgentControlCommand {
   return {
     type: "user_avatar",
@@ -245,6 +269,7 @@ export function parseUserAvatar(args: string, raw: string): AgentControlCommand 
   };
 }
 
+/** Parse /user-github arguments: GitHub profile URL or username. */
 export function parseUserGithub(args: string, raw: string): AgentControlCommand {
   return {
     type: "user_github",
@@ -253,6 +278,7 @@ export function parseUserGithub(args: string, raw: string): AgentControlCommand 
   };
 }
 
+/** Parse /search-workspace arguments: query, scope, limit, offset, flags. */
 export function parseSearch(args: string, raw: string): AgentControlCommand {
   const tokens = splitArgs(args);
   let scope: "notes" | "skills" | "all" | undefined;
@@ -350,6 +376,7 @@ export function parseSearch(args: string, raw: string): AgentControlCommand {
   };
 }
 
+/** Map of normalised command names to their parser functions. */
 export const COMMAND_PARSERS: Record<string, CommandParser> = {
   "/model": parseModel,
   "/thinking": parseThinking,

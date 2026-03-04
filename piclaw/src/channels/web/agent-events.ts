@@ -13,6 +13,7 @@ import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import type { WebChannel } from "../web.js";
 import { buildPreview, createToolTitleTracker, type AgentProfileBuilder } from "./agent-utils.js";
 
+/** Interface for broadcasting agent events to SSE clients. */
 export interface AgentEventEmitter {
   status: (payload: Record<string, unknown>) => void;
   thought: (payload: Record<string, unknown>) => void;
@@ -22,6 +23,7 @@ export interface AgentEventEmitter {
   response: (payload: object) => void;
 }
 
+/** Create an AgentEventEmitter that broadcasts via the given SSE hub. */
 export function createAgentEventEmitter(
   channel: WebChannel,
   withAgentProfile: AgentProfileBuilder
@@ -36,6 +38,7 @@ export function createAgentEventEmitter(
   };
 }
 
+/** Options for the streaming event handler: emitter, callbacks, buffers. */
 export interface StreamingEventHandlerOptions {
   emitter: AgentEventEmitter;
   agentId: string;
@@ -50,6 +53,7 @@ export interface StreamingEventHandlerOptions {
   onDraftBuffer?: (text: string, totalLines: number) => void;
 }
 
+/** Create an event handler that translates agent session events to SSE broadcasts. */
 export function createStreamingEventHandler(options: StreamingEventHandlerOptions): (event: AgentSessionEvent) => void {
   const thoughtPreviewLines = options.thoughtPreviewLines ?? 8;
   const draftPreviewLines = options.draftPreviewLines ?? 8;

@@ -23,12 +23,14 @@ import type { InteractionRow } from "../../db.js";
 import type { NewMessage } from "../../types.js";
 import { createUuid } from "../../utils/ids.js";
 
+/** Options for storing a web channel message (content, media, thread). */
 export interface StoreWebMessageOptions {
   contentBlocks?: unknown[];
   linkPreviews?: unknown[];
   threadId?: number | null;
 }
 
+/** Resolved parameters for storeWebMessage (after defaults applied). */
 export interface StoreWebMessageParams {
   chatJid: string;
   content: string;
@@ -38,6 +40,7 @@ export interface StoreWebMessageParams {
   agentName: string;
 }
 
+/** Store a web channel message in the database and attach media. */
 export function storeWebMessage(
   channel: WebChannel,
   params: StoreWebMessageParams,

@@ -45,6 +45,7 @@ const silentLogger = {
   fatal: () => {},
 } as any;
 
+/** Configuration for the WhatsApp channel: phone, callbacks. */
 export interface WhatsAppChannelOpts {
   onMessage: OnInboundMessage;
   onChatMetadata: OnChatMetadata;
@@ -56,6 +57,7 @@ export interface WhatsAppChannelOpts {
 const MAX_RECONNECT_ATTEMPTS = 5;
 const BASE_RECONNECT_DELAY_MS = 2_000; // 2s, 4s, 8s, 16s, 32s
 
+/** WhatsApp Web channel adapter using the Baileys library. */
 export class WhatsAppChannel {
   private sock!: WASocket;
   private connected = false;

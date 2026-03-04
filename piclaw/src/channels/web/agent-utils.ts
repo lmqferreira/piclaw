@@ -9,6 +9,7 @@
 
 import { buildPreviewLines, countSoftLines, splitLines } from "../../utils/preview.js";
 
+/** Function type that decorates payloads with agent name/avatar fields. */
 export type AgentProfileBuilder = <T extends object>(payload: T) => T & {
   agent_name: string;
   agent_avatar: string | null;
@@ -17,6 +18,7 @@ export type AgentProfileBuilder = <T extends object>(payload: T) => T & {
   user_avatar_background: string | null;
 };
 
+/** Create a profile builder from the current agent name and avatar config. */
 export function createAgentProfileBuilder(
   agentName: string,
   agentAvatar?: string | null,
@@ -34,6 +36,7 @@ export function createAgentProfileBuilder(
   });
 }
 
+/** Build a truncated preview of text for SSE draft/thought events. */
 export function buildPreview(
   text: string,
   maxLines: number,
@@ -106,6 +109,7 @@ function formatToolTitle(toolName: string, args: unknown): string {
   return `${toolName}: ${clipped}`;
 }
 
+/** Track and return the title of the last tool call for status display. */
 export function createToolTitleTracker() {
   const toolTitles = new Map<string, string>();
 

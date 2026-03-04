@@ -182,6 +182,7 @@ async function indexWorkspace(roots: string[], maxBytes: number): Promise<void> 
   }
 }
 
+/** Full-text search across indexed workspace files. */
 export async function searchWorkspace(params: WorkspaceSearchParams): Promise<WorkspaceSearchResult> {
   const query = params.query.trim();
   const limit = clampNumber(params.limit, 10, 1, 50);

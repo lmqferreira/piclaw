@@ -19,6 +19,7 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+/** Handle GET /workspace/tree: return the directory tree. */
 export function handleWorkspaceTree(_channel: WebChannel, req: Request): Response {
   const url = new URL(req.url);
   const showHidden = url.searchParams.get("show_hidden") === "1" || url.searchParams.get("show_hidden") === "true";
@@ -30,6 +31,7 @@ export function handleWorkspaceTree(_channel: WebChannel, req: Request): Respons
   return jsonResponse(result.body, result.status);
 }
 
+/** Handle GET /workspace/file: return file content. */
 export function handleWorkspaceFile(_channel: WebChannel, req: Request): Response {
   const url = new URL(req.url);
   const result = workspaceService.getFile(
@@ -39,6 +41,7 @@ export function handleWorkspaceFile(_channel: WebChannel, req: Request): Respons
   return jsonResponse(result.body, result.status);
 }
 
+/** Handle GET /workspace/raw: serve raw file content for download. */
 export function handleWorkspaceRaw(_channel: WebChannel, req: Request): Response {
   const url = new URL(req.url);
   const result = workspaceService.getRaw(url.searchParams.get("path"));
@@ -50,6 +53,7 @@ export function handleWorkspaceRaw(_channel: WebChannel, req: Request): Response
   });
 }
 
+/** Handle POST /workspace/attach: attach a workspace file to agent context. */
 export async function handleWorkspaceAttach(_channel: WebChannel, req: Request): Promise<Response> {
   let data: { path?: string };
   try {
@@ -62,6 +66,7 @@ export async function handleWorkspaceAttach(_channel: WebChannel, req: Request):
   return jsonResponse(result.body, result.status);
 }
 
+/** Handle POST /workspace/upload: upload a file. */
 export async function handleWorkspaceUpload(_channel: WebChannel, req: Request): Promise<Response> {
   const url = new URL(req.url);
   let formData: FormData;
@@ -79,6 +84,7 @@ export async function handleWorkspaceUpload(_channel: WebChannel, req: Request):
   return jsonResponse(result.body, result.status);
 }
 
+/** Handle GET /workspace/download: serve a file as a download attachment. */
 export async function handleWorkspaceDownload(_channel: WebChannel, req: Request): Promise<Response> {
   const url = new URL(req.url);
   const showHidden = url.searchParams.get("show_hidden") === "1" || url.searchParams.get("show_hidden") === "true";
@@ -95,6 +101,7 @@ export async function handleWorkspaceDownload(_channel: WebChannel, req: Request
   });
 }
 
+/** Start the workspace filesystem watcher and wire SSE broadcasts. */
 export function startWorkspaceWatcher(channel: WebChannel): { close: () => Promise<void> } {
   return workspaceService.startWatcher(
     (updates) => {

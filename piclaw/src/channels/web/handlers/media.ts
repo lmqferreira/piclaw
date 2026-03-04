@@ -11,6 +11,7 @@ import { MediaService } from "../media-service.js";
 
 const mediaService = new MediaService();
 
+/** Handle POST /media: file upload. */
 export async function handleMediaUpload(channel: WebChannel, req: Request): Promise<Response> {
   let form: FormData;
   try {
@@ -26,6 +27,7 @@ export async function handleMediaUpload(channel: WebChannel, req: Request): Prom
   return channel.json(result.body, result.status);
 }
 
+/** Route media requests to upload, download, or info handlers. */
 export function handleMedia(channel: WebChannel, id: number, thumbnail: boolean): Response {
   const result = mediaService.getMedia(id, thumbnail);
   if (result.status !== 200) return channel.json({ error: "Media not found" }, result.status);
@@ -36,6 +38,7 @@ export function handleMedia(channel: WebChannel, id: number, thumbnail: boolean)
   });
 }
 
+/** Handle GET /media/:id/info: metadata query. */
 export function handleMediaInfo(channel: WebChannel, id: number): Response {
   const result = mediaService.getInfo(id);
   return channel.json(result.body, result.status);

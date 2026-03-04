@@ -9,6 +9,7 @@
 
 import { createMedia, getMediaById, getMediaInfoById } from "../../db.js";
 
+/** File upload/download service wrapping db/media.ts operations. */
 export class MediaService {
   async createFromFile(file: File): Promise<{ status: number; body: unknown }> {
     const arrayBuffer = await file.arrayBuffer();

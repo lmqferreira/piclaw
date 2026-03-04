@@ -17,6 +17,7 @@ import {
   searchMessages,
 } from "../../db.js";
 
+/** Build paginated timeline data for GET /timeline. */
 export function getTimelineResponse(
   chatJid: string,
   limit: number,
@@ -28,6 +29,7 @@ export function getTimelineResponse(
   return { status: 200, body: { posts, limit, has_more: hasMore } };
 }
 
+/** Build timeline data filtered by hashtag. */
 export function getHashtagResponse(
   chatJid: string,
   tag: string,
@@ -38,6 +40,7 @@ export function getHashtagResponse(
   return { status: 200, body: { hashtag: tag, posts, limit, offset } };
 }
 
+/** Build timeline data filtered by search query. */
 export function getSearchResponse(
   chatJid: string,
   query: string,
@@ -49,6 +52,7 @@ export function getSearchResponse(
   return { status: 200, body: { query, results, limit, offset } };
 }
 
+/** Build a single thread's messages for GET /thread/:id. */
 export function getThreadResponse(chatJid: string, id: number | null): { status: number; body: unknown } {
   if (!id) return { status: 404, body: { error: "Thread not found" } };
   const thread = getMessageByRowId(chatJid, id);
@@ -56,6 +60,7 @@ export function getThreadResponse(chatJid: string, id: number | null): { status:
   return { status: 200, body: { thread: [thread] } };
 }
 
+/** Delete a post and its thread, returning success/error. */
 export function deletePostResponse(
   chatJid: string,
   id: number | null,

@@ -57,6 +57,7 @@ function totpAtTime(secret: string, stepSeconds: number, digits: number, timeMs:
   return (code % mod).toString().padStart(digits, "0");
 }
 
+/** Verify a 6-digit TOTP code against the configured secret. */
 export function verifyTotp(secret: string, code: string, windowSteps = 1, stepSeconds = 30, digits = 6): boolean {
   const normalized = code.replace(/\D/g, "").slice(0, digits);
   if (normalized.length !== digits) return false;
@@ -69,6 +70,7 @@ export function verifyTotp(secret: string, code: string, windowSteps = 1, stepSe
   return false;
 }
 
+/** Generate a cryptographically random hex session token. */
 export function randomSessionToken(): string {
   return randomBytes(32).toString("base64url");
 }

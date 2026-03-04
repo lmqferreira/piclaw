@@ -11,6 +11,7 @@
 import type { WebChannel } from "../../web.js";
 import { parsePostPayload, storePost } from "../posts-service.js";
 
+/** Route post requests to create, update, delete, or query handlers. */
 export async function handlePost(channel: WebChannel, req: Request, isReply: boolean, chatJid: string): Promise<Response> {
   let data: unknown;
   try {

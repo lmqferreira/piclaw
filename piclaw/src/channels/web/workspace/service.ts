@@ -14,6 +14,7 @@ import { startWorkspaceWatcher } from "./watcher.js";
 export { createWorkspaceUpdateThrottle } from "./watcher.js";
 export type { WorkspaceUpdate } from "./watcher.js";
 
+/** High-level workspace explorer service combining files, tree, and watcher. */
 export class WorkspaceService {
   private treeCache = new WorkspaceTreeCache();
   private fileService = new WorkspaceFileService();

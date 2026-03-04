@@ -36,6 +36,7 @@ export interface MessageProcessingDeps {
   triggerPattern: RegExp;
 }
 
+/** Process pending messages for a single chat: send to agent, deliver response. */
 export async function processMessages(chatJid: string, deps: MessageProcessingDeps): Promise<boolean> {
   const since = deps.state.lastAgentTimestamp[chatJid] || "";
   const messages = getMessagesSince(chatJid, since, deps.assistantName);
@@ -133,6 +134,7 @@ export async function processMessages(chatJid: string, deps: MessageProcessingDe
   return true;
 }
 
+/** Dependencies for the message polling loop. */
 export interface MessageLoopDeps {
   queue: AgentQueue;
   state: RuntimeState;
@@ -141,6 +143,7 @@ export interface MessageLoopDeps {
   processMessages: (chatJid: string) => Promise<boolean>;
 }
 
+/** Start the polling loop that checks for new messages across all chats. */
 export async function runMessageLoop(deps: MessageLoopDeps): Promise<void> {
   console.log(`[piclaw] Running (trigger: @${deps.assistantName})`);
   while (true) {

@@ -18,6 +18,7 @@ import { MAX_ATTACH_BYTES, MAX_PREVIEW_BYTES, MAX_UPLOAD_BYTES } from "./constan
 import { contentTypeForPath, detectBinary, formatMtime, isImageFile, isTextFile } from "./file-utils.js";
 import { isHiddenPath, resolveWorkspacePath, shouldIgnorePath, toRelativePath } from "./paths.js";
 
+/** File read/write service for the workspace explorer API. */
 export class WorkspaceFileService {
   getFile(pathParam: string | null, maxParam?: string | null): { status: number; body: unknown } {
     const targetPath = resolveWorkspacePath(pathParam);

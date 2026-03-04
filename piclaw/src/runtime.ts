@@ -53,6 +53,7 @@ let pushover: PushoverChannel | null = null;
 const state = new RuntimeState(DATA_DIR);
 
 
+/** Boot all subsystems (DB, channels, agent pool, scheduler) and enter the main loop. */
 export async function main(): Promise<void> {
   // Ensure directories
   mkdirSync(STORE_DIR, { recursive: true });

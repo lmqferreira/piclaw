@@ -15,6 +15,7 @@ type QueueCommand = Extract<AgentControlCommand, { type: "queue" | "queue_all" }
 type SteeringCommand = Extract<AgentControlCommand, { type: "steering_mode" }>;
 type FollowupCommand = Extract<AgentControlCommand, { type: "followup_mode" }>;
 
+/** Handle /queue: inject a message into the agent prompt queue. */
 export async function handleQueue(session: AgentSession, command: QueueCommand): Promise<AgentControlResult> {
   const queuedText = command.message?.trim();
   const useBatch = command.type === "queue_all";
@@ -57,6 +58,7 @@ export async function handleQueue(session: AgentSession, command: QueueCommand):
   }
 }
 
+/** Handle /steering-mode: set "all" or "one-at-a-time" steering. */
 export async function handleSteeringMode(session: AgentSession, command: SteeringCommand): Promise<AgentControlResult> {
   const hasArgs = command.raw.trim().split(/\s+/).length > 1;
   if (!command.mode) {
@@ -69,6 +71,7 @@ export async function handleSteeringMode(session: AgentSession, command: Steerin
   return { status: "success", message: `Steering mode set to ${command.mode}.` };
 }
 
+/** Handle /followup-mode: set "all" or "one-at-a-time" followups. */
 export async function handleFollowupMode(session: AgentSession, command: FollowupCommand): Promise<AgentControlResult> {
   const hasArgs = command.raw.trim().split(/\s+/).length > 1;
   if (!command.mode) {

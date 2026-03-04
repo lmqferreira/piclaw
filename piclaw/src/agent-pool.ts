@@ -49,6 +49,7 @@ import { resolveModelLabel } from "./utils/model-utils.js";
 import { withChatContext } from "./core/chat-context.js";
 import { clearAutoCompactState, getAutoCompactState, setAutoCompactState } from "./db/auto-compaction.js";
 
+/** Output from an agent run: response text, status, and token usage. */
 export interface AgentOutput {
   status: "success" | "error";
   result: string | null;
@@ -62,6 +63,7 @@ export interface TurnOutput {
   attachments: AttachmentInfo[];
 }
 
+/** Notification payload when auto-compaction occurs. */
 export interface AutoCompactNotice {
   phase: "pre" | "post";
   status: "start" | "end" | "error";
@@ -72,6 +74,7 @@ export interface AutoCompactNotice {
   error?: string;
 }
 
+/** Options for AgentPool.runAgent(): chatJid, messages, callbacks. */
 export interface RunAgentOptions {
   onEvent?: (event: AgentSessionEvent) => void;
   onAutoCompact?: (notice: AutoCompactNotice) => void;
@@ -82,6 +85,7 @@ export interface RunAgentOptions {
   timeoutMs?: number;
 }
 
+/** Construction options for creating an AgentPool. */
 export interface AgentPoolOptions {
   createSession?: (chatJid: string, sessionDir: string) => Promise<AgentSession>;
   modelRegistry?: ModelRegistry;

@@ -33,6 +33,7 @@ const AttachmentSchema = Type.Object({
 });
 
 type AttachmentParams = Static<typeof AttachmentSchema>;
+/** Attachment type: "file" for workspace files. */
 export type AttachmentKind = "image" | "file";
 
 // ── Helpers ───────────────────────────────────────────────
@@ -113,6 +114,7 @@ const ATTACHMENT_HINT = [
 
 // ── Factory ───────────────────────────────────────────────
 
+/** Extension factory that registers the attach_file tool. */
 export const fileAttachments: ExtensionFactory = (pi: ExtensionAPI) => {
   pi.on("before_agent_start", async (event) => {
     return { systemPrompt: `${event.systemPrompt}\n\n${ATTACHMENT_HINT}` };

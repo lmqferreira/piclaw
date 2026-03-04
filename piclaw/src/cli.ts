@@ -41,6 +41,7 @@ Keychain commands:
   piclaw keychain delete <name>
 `;
 
+/** Read the version string from package.json. */
 export function getVersion(): string {
   try {
     const packagePath = join(import.meta.dir, "..", "package.json");
@@ -111,6 +112,7 @@ async function handleKeychainCommand(args: string[]): Promise<void> {
   }
 }
 
+/** Parse CLI args for sub-commands. Returns true if a sub-command was handled. */
 export async function handleCliOptions(args = process.argv.slice(2)): Promise<boolean> {
   if (args.includes("-h") || args.includes("--help")) {
     console.log(HELP_TEXT.trim());

@@ -28,6 +28,7 @@ function buildAttachmentBlocks(attachments: AttachmentInfo[]): {
   return { mediaIds, contentBlocks };
 }
 
+/** Persist the accumulated agent turn (text + attachments) to the database. */
 export function storeAgentTurn(
   channel: WebChannel,
   emitter: AgentEventEmitter,

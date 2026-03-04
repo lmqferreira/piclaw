@@ -17,6 +17,7 @@ interface PendingResume {
   createdAt: string;
 }
 
+/** Persistent per-chat state manager for the web channel. */
 export class WebChannelState {
   lastAgentTimestamp: Record<string, string> = {};
   pendingResumes: Record<string, PendingResume> = {};

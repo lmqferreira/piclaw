@@ -33,6 +33,7 @@ import { storeAgentTurn } from "../agent-message-store.js";
 import { resolveThreadId, resolveThreadRootId } from "../threading.js";
 import { createUuid } from "../../../utils/ids.js";
 
+/** Handle POST to create an agent message and start an agent run. */
 export async function handleAgentMessage(
   channel: WebChannel,
   req: Request,
@@ -149,6 +150,7 @@ export async function handleAgentMessage(
   return channel.json({ user_message: interaction, thread_id: threadId }, 201);
 }
 
+/** Process a chat message: detect commands, queue agent run, or store post. */
 export async function processChat(
   channel: WebChannel,
   chatJid: string,
