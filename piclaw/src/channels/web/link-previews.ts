@@ -1,3 +1,15 @@
+/**
+ * web/link-previews.ts – OpenGraph metadata fetching for URLs in messages.
+ *
+ * When a user posts a message containing URLs, this module fetches the
+ * OpenGraph title, description, and image for each URL and stores them
+ * as link_previews on the message. Results are broadcast via SSE so the
+ * timeline can render rich link cards.
+ *
+ * Consumers: web/posts-service.ts triggers link preview fetching after
+ *            a new user message is stored.
+ */
+
 import type { WebChannel } from "../web.js";
 import { getMessageByRowId, updateMessageLinkPreviews } from "../../db.js";
 import { lookup } from "dns/promises";

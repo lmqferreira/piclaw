@@ -1,3 +1,18 @@
+/**
+ * channels/web.ts – Web channel: HTTP server, SSE, and API endpoints.
+ *
+ * The WebChannel class is the central coordinator for the web UI. It:
+ *   - Starts the HTTP(S) server (Bun.serve) with TLS and auth support.
+ *   - Routes requests to handlers (posts, media, agent, workspace).
+ *   - Manages SSE connections for real-time event streaming to browsers.
+ *   - Bridges agent events (drafts, thoughts, status) to the UI.
+ *   - Handles inbound messages and control commands from the web compose box.
+ *
+ * Consumers:
+ *   - runtime.ts creates and starts the WebChannel.
+ *   - The web UI (web/src/) connects via SSE and REST API.
+ */
+
 import { AgentQueue } from "../queue.js";
 import type { AgentPool } from "../agent-pool.js";
 import { initTheme, type AgentSession } from "@mariozechner/pi-coding-agent";

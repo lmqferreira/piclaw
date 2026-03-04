@@ -1,3 +1,11 @@
+/**
+ * web/handlers/media.ts – HTTP handlers for media upload and retrieval.
+ *
+ * Handles POST /media (upload) and GET /media/:id (download/thumbnail).
+ *
+ * Consumers: web/request-router.ts routes media paths here.
+ */
+
 import type { WebChannel } from "../../web.js";
 import { MediaService } from "../media-service.js";
 

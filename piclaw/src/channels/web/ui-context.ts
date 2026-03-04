@@ -1,3 +1,12 @@
+/**
+ * web/ui-context.ts – Extension UI context implementation.
+ *
+ * Implements the ExtensionUIContext interface used by pi-agent extensions
+ * to request user input. Backed by the UI bridge for actual delivery.
+ *
+ * Consumers: channels/web.ts creates a UIContext for each agent session.
+ */
+
 import type { AgentSession, ExtensionUIContext } from "@mariozechner/pi-coding-agent";
 
 import type { WebChannel } from "../web.js";

@@ -1,3 +1,12 @@
+/**
+ * web/handlers/workspace.ts – HTTP handlers for the workspace explorer API.
+ *
+ * Handles GET /workspace/tree, GET /workspace/file, PUT /workspace/file,
+ * and POST /workspace/folder for the web UI's sidebar file explorer.
+ *
+ * Consumers: web/request-router.ts routes workspace paths here.
+ */
+
 import type { WebChannel } from "../../web.js";
 import { WorkspaceService } from "../workspace/service.js";
 

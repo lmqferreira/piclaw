@@ -1,3 +1,12 @@
+/**
+ * web/agents-service.ts – Serves agent profile information to the web UI.
+ *
+ * Builds the response payload for GET /agents, including the agent's name,
+ * avatar URL, current model, and thinking level.
+ *
+ * Consumers: web/handlers/agent.ts calls getAgentsResponse().
+ */
+
 import type { AgentPool } from "../../agent-pool.js";
 
 export async function getAgentsResponse(

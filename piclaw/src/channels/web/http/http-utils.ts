@@ -1,3 +1,12 @@
+/**
+ * web/http/http-utils.ts – Low-level HTTP response helpers.
+ *
+ * Provides jsonResponse(), parseOptionalInt(), clampInt(), and other
+ * small utilities for building API responses.
+ *
+ * Consumers: All web/handlers/*.ts modules and web/http/response-service.ts.
+ */
+
 export function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,

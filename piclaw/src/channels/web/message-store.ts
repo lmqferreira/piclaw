@@ -1,3 +1,13 @@
+/**
+ * web/message-store.ts – Database operations for web-channel messages.
+ *
+ * Wraps db/messages.ts with web-channel-specific logic: generating message
+ * IDs, attaching media, and handling content blocks. Serves as the data
+ * access layer for all web-channel message CRUD operations.
+ *
+ * Consumers: web/posts-service.ts, web/agent-message-service.ts.
+ */
+
 import type { WebChannel } from "../web.js";
 import {
   attachMediaToMessage,
