@@ -283,7 +283,8 @@ function App() {
         clearLastActivityTimer();
         const token = Date.now();
         lastActivityTokenRef.current = token;
-        setAgentStatus({ ...payload, last_activity: true });
+        // Strip tool/intent details — only show a minimal "last active" hint
+        setAgentStatus({ type: payload.type || 'active', last_activity: true });
         lastActivityTimerRef.current = setTimeout(() => {
             if (lastActivityTokenRef.current !== token) return;
             setAgentStatus((prev) => {

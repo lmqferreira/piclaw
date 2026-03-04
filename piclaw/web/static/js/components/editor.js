@@ -100,6 +100,7 @@ export function WorkspaceEditor({
             lineNumbers(),
             highlightActiveLine(),
             highlightSpecialChars(),
+            EditorView.lineWrapping,
             search(),
             keymap.of([...searchKeymap, indentWithTab, { key: 'Mod-s', run: () => { handleSave(); return true; } }]),
             EditorView.updateListener.of((update) => {

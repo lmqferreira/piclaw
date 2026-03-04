@@ -90,7 +90,7 @@ export function AgentStatus({ status, draft, plan, thought, pendingRequest, turn
         content = title || statusText || 'Working...';
     }
     if (isLastActivity) {
-        content = `Last activity: ${content}`;
+        content = 'Last activity just now';
     }
 
     const renderThinkingPanel = ({ panelTitle, text, fullText, totalLines, maxLines, titleClass, panelKey }) => {

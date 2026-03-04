@@ -2,7 +2,7 @@
 
 ![PiClaw](docs/icon-512.png)
 
-PiClaw is a minimal Docker-based sandbox for running the [Pi Coding Agent](https://github.com/badlogic/pi-mono) in an isolated Debian environment. It bundles `piclaw` — a web‑first orchestrator built on the Pi SDK with persistent sessions, a streaming web UI, and scheduled tasks. WhatsApp is optional. Inspired by [agentbox](https://github.com/rcarmo/agentbox) and [nanoclaw](https://github.com/qwibitai/nanoclaw).
+PiClaw is a minimal Docker-based sandbox for running the [Pi Coding Agent](https://github.com/badlogic/pi-mono) in an isolated Debian environment. It bundles `piclaw` - a web-first orchestrator built on the Pi SDK with persistent sessions, a streaming web UI, and scheduled tasks. WhatsApp is optional. Inspired by [agentbox](https://github.com/rcarmo/agentbox) and [nanoclaw](https://github.com/qwibitai/nanoclaw).
 
 ## Highlights
 
@@ -11,6 +11,7 @@ PiClaw is a minimal Docker-based sandbox for running the [Pi Coding Agent](https
 - **Pi Coding Agent** installed globally (`pi` CLI)
 - **`piclaw`** orchestrator (web UI, WhatsApp optional)
 - **Streaming Web UI** with markdown, attachments, link previews, and SSE
+- **Built-in code editor** (CodeMirror 6) with syntax highlighting for 12+ languages
 - **Persistent workspace & SQLite storage** (messages, media, tasks, token usage)
 - **Token usage tracking + charts** (token-chart skill)
 - **Built-in skills** for setup, debugging, Playwright, charts, and scheduling
@@ -30,7 +31,7 @@ docker logs -f piclaw
 
 `supervisord` now acts as PID 1 and keeps `piclaw` running (see [`supervisor/conf.d/piclaw.conf`](supervisor/conf.d/piclaw.conf)). On first boot, default supervisor config is copied into `/workspace/.piclaw/supervisor/` so it persists on the workspace volume; edits there survive container rebuilds/restarts.
 
-Optional services can use [`supervisor/conf.d/optional-service-template.conf`](supervisor/conf.d/optional-service-template.conf) — it guards missing binaries so a failed optional service does not impact `piclaw`.
+Optional services can use [`supervisor/conf.d/optional-service-template.conf`](supervisor/conf.d/optional-service-template.conf) - it guards missing binaries so a failed optional service does not impact `piclaw`.
 
 Once piclaw is running, open the web UI at:
 
@@ -77,14 +78,15 @@ The built-in UI is single-user, mobile-friendly, and streams updates over SSE:
 - **Real-time streaming** with token-by-token updates
 - **Markdown rendering** with syntax highlighting, KaTeX, and Mermaid
 - **Thought/Draft panels** during streaming
-- **Live steering** and follow‑ups while streaming
+- **Live steering** and follow-ups while streaming
 - **File attachments** with download links
 - **Workspace explorer** (left sidebar SVG tree, previews, and downloads) — responsive, shown on desktop/tablet in landscape
+- **Code editor** — built-in CodeMirror 6 editor with syntax highlighting for 12 languages, search/replace, and save
 - **File reference pills** (click a file to add it to the next prompt)
 - **Preview rules**: Markdown renders only for `.md`; other text is monospaced plaintext; images render inline
 - **Link previews** via server-side OpenGraph fetch
-- **Multi-turn threading** — when the agent produces multiple turns in a single response, subsequent turns are visually threaded under the first
-- **Large message previews** — oversized messages are truncated with a download link for the full content
+- **Multi-turn threading** - when the agent produces multiple turns in a single response, subsequent turns are visually threaded under the first
+- **Large message previews** - oversized messages are truncated with a download link for the full content
 - **Dark/Light themes** (system preference)
 - **Mobile-first layout** with webapp manifest
 
@@ -108,7 +110,22 @@ Files:
 <your message>
 ```
 
-Remove pills with the “x” on each tag, or clear them automatically after sending.
+Remove pills with the "x" on each tag, or clear them automatically after sending.
+
+### Code editor
+
+Click the **pencil icon** in the file preview header to open any text file (up to 256 KB) in the built-in code editor. The editor appears as a resizable center pane between the workspace sidebar and the chat.
+
+**Features:**
+- **Syntax highlighting** for 12 languages: JavaScript/TypeScript (JSX/TSX), Python, Go, JSON, CSS, HTML, YAML, SQL, XML/SVG, Markdown, and Shell (bash/zsh)
+- **Search & replace** — `Cmd/Ctrl+F` to find, `Cmd/Ctrl+H` to replace
+- **Save** — `Cmd/Ctrl+S` or click the Save button; dirty state is tracked
+- **Line numbers** and active line highlight
+- **Line wrapping** enabled by default
+- **Resizable pane** — drag the splitter between editor and chat to adjust widths (persisted in localStorage)
+- **Vendored CodeMirror 6** bundle (~245 KB gzip) — no external CDN dependencies
+
+The editor uses your system monospace font stack and respects the current dark/light theme.
 
 Web server settings:
 
@@ -306,9 +323,9 @@ Or via config:
 
 ## Tools & skills overview
 
-`pi` ships with the standard tools (read, bash, edit, write) plus `piclaw` extensions for message search, model control, and file attachments. They keep output lean, store messages and media in SQLite, and enable one‑shot operations without leaving the chat.
+`pi` ships with the standard tools (read, bash, edit, write) plus `piclaw` extensions for message search, model control, and file attachments. They keep output lean, store messages and media in SQLite, and enable one-shot operations without leaving the chat.
 
-Skills live under `.pi/skills` and `~/.pi/agent/skills` and are kept in sync. They cover setup, diagnostics, Playwright automation, hot‑reload, scheduling, messaging, and chart helpers. Each skill keeps its script alongside the `SKILL.md` so it can travel with the workspace.
+Skills live under `.pi/skills` and `~/.pi/agent/skills` and are kept in sync. They cover setup, diagnostics, Playwright automation, hot-reload, scheduling, messaging, and chart helpers. Each skill keeps its script alongside the `SKILL.md` so it can travel with the workspace.
 
 ## Further documentation
 
@@ -345,9 +362,9 @@ bun test test/extensions-model-control.test.ts  # single file
 
 PiClaw is a standard OCI image and works with any compliant container runtime:
 
-- **Docker** / Docker Desktop — primary development target
-- **Apple Containers** (macOS 26+) — works natively
-- **Podman**, **nerdctl**, etc. — standard `docker compose` equivalents work
+- **Docker** / Docker Desktop - primary development target
+- **Apple Containers** (macOS 26+) - works natively
+- **Podman**, **nerdctl**, etc. - standard `docker compose` equivalents work
 
 Multi-arch images (amd64 + arm64) are published to GHCR on every tag push.
 
