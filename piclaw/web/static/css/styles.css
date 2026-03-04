@@ -1547,6 +1547,10 @@ body {
     --turn-color: var(--accent-color);
 }
 
+.agent-status.agent-status-last-activity {
+    opacity: 0.85;
+}
+
 .turn-dot {
     width: 8px;
     height: 8px;

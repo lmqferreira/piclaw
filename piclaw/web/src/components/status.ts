@@ -74,6 +74,7 @@ export function AgentStatus({ status, draft, plan, thought, pendingRequest, turn
     const turnColor = getTurnColor(activeTurn);
     const dotClass = steerQueued ? 'turn-dot turn-dot-queued' : 'turn-dot';
     const panelTitle = (label) => label;
+    const isLastActivity = Boolean(status?.last_activity || status?.lastActivity);
 
     let content = '';
     const title = status?.title;
@@ -86,6 +87,9 @@ export function AgentStatus({ status, draft, plan, thought, pendingRequest, turn
         content = title ? `${title}: ${statusText || 'Working...'}` : (statusText || 'Working...');
     } else {
         content = title || statusText || 'Working...';
+    }
+    if (isLastActivity) {
+        content = `Last activity: ${content}`;
     }
 
     const renderThinkingPanel = ({ panelTitle, text, fullText, totalLines, maxLines, titleClass, panelKey }) => {
@@ -166,9 +170,9 @@ export function AgentStatus({ status, draft, plan, thought, pendingRequest, turn
                 panelKey: 'draft',
             })}
             ${status && html`
-                <div class="agent-status" aria-live="polite" style=${turnColor ? `--turn-color: ${turnColor};` : ''}>
+                <div class=${`agent-status${isLastActivity ? ' agent-status-last-activity' : ''}`} aria-live="polite" style=${turnColor ? `--turn-color: ${turnColor};` : ''}>
                     ${turnColor && html`<span class=${dotClass} aria-hidden="true"></span>`}
-                    <div class="agent-status-spinner"></div>
+                    ${!isLastActivity && html`<div class="agent-status-spinner"></div>`}
                     <span class="agent-status-text">${content}</span>
                 </div>
             `}

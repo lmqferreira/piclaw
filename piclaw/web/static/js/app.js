@@ -22,6 +22,7 @@ function readSilenceOverride(key, fallback) {
 const SILENCE_WARNING_MS = readSilenceOverride('warning', 30_000);
 const SILENCE_FINALIZE_MS = readSilenceOverride('finalize', 120_000);
 const SILENCE_REFRESH_MS = readSilenceOverride('refresh', 30_000);
+const LAST_ACTIVITY_TTL_MS = 30_000;
 
 // Configure marked for safe rendering
 if (window.marked) {
@@ -148,6 +149,8 @@ function App() {
     const notificationsEnabledRef = useRef(false);
     const lastNotifiedIdRef = useRef(null);
     const lastAgentResponseRef = useRef(null);
+    const lastActivityTimerRef = useRef(null);
+    const lastActivityTokenRef = useRef(0);
     const brandingRef = useRef({ title: null, avatarBase: null });
 
     // Refresh timestamps every 30 seconds
@@ -183,6 +186,10 @@ function App() {
     useEffect(() => {
         notificationsEnabledRef.current = notificationsEnabled;
     }, [notificationsEnabled]);
+
+    useEffect(() => () => {
+        clearLastActivityTimer();
+    }, [clearLastActivityTimer]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -245,6 +252,39 @@ function App() {
         }
     }, []);
 
+    const clearLastActivityTimer = useCallback(() => {
+        if (lastActivityTimerRef.current) {
+            clearTimeout(lastActivityTimerRef.current);
+            lastActivityTimerRef.current = null;
+        }
+        lastActivityTokenRef.current = 0;
+    }, []);
+
+    const clearLastActivityFlag = useCallback(() => {
+        clearLastActivityTimer();
+        setAgentStatus((prev) => {
+            if (!prev) return prev;
+            if (!(prev.last_activity || prev.lastActivity)) return prev;
+            const { last_activity, lastActivity, ...rest } = prev;
+            return rest;
+        });
+    }, [clearLastActivityTimer]);
+
+    const showLastActivity = useCallback((payload) => {
+        if (!payload) return;
+        clearLastActivityTimer();
+        const token = Date.now();
+        lastActivityTokenRef.current = token;
+        setAgentStatus({ ...payload, last_activity: true });
+        lastActivityTimerRef.current = setTimeout(() => {
+            if (lastActivityTokenRef.current !== token) return;
+            setAgentStatus((prev) => {
+                if (!prev || !(prev.last_activity || prev.lastActivity)) return prev;
+                return null;
+            });
+        }, LAST_ACTIVITY_TTL_MS);
+    }, [clearLastActivityTimer]);
+
     const clearAgentRunState = useCallback(() => {
         isAgentRunningRef.current = false;
         lastAgentEventRef.current = null;
@@ -255,11 +295,12 @@ function App() {
         lastAgentResponseRef.current = null;
         currentTurnIdRef.current = null;
         steerQueuedTurnIdRef.current = null;
+        clearLastActivityTimer();
         setCurrentTurnId(null);
         setSteerQueuedTurnId(null);
         thoughtExpandedRef.current = false;
         draftExpandedRef.current = false;
-    }, [setCurrentTurnId, setSteerQueuedTurnId]);
+    }, [clearLastActivityTimer, setCurrentTurnId, setSteerQueuedTurnId]);
 
     const setActiveTurn = useCallback((turnId) => {
         if (!turnId) return;
@@ -580,6 +621,21 @@ function App() {
         }
     }, []);
 
+    const refreshAgentStatus = useCallback(async () => {
+        try {
+            const res = await getAgentStatus('web:default');
+            if (!res || res.status !== 'active' || !res.data) return;
+            const payload = res.data;
+            const activeTurn = payload.turn_id || payload.turnId;
+            if (activeTurn) setActiveTurn(activeTurn);
+            noteAgentActivity({ running: true, clearSilence: true });
+            clearLastActivityFlag();
+            setAgentStatus(payload);
+        } catch (err) {
+            console.warn('Failed to fetch agent status:', err);
+        }
+    }, [clearLastActivityFlag, noteAgentActivity, setActiveTurn]);
+
     const handleConnectionStatusChange = useCallback((status) => {
         setConnectionStatus(status);
         if (status !== 'connected') {
@@ -865,6 +921,10 @@ function App() {
         updateAgentProfile(data);
         updateUserProfile(data);
 
+        if (eventType?.startsWith('agent_')) {
+            clearLastActivityFlag();
+        }
+
         // Handle agent status updates
         if (eventType === 'connected') {
             setAgentStatus(null);
@@ -881,8 +941,8 @@ function App() {
                     const payload = res.data;
                     const activeTurn = payload.turn_id || payload.turnId;
                     if (activeTurn) setActiveTurn(activeTurn);
-                    noteAgentActivity({ running: true, clearSilence: true });
-                    setAgentStatus(payload);
+                    noteAgentActivity({ clearSilence: true });
+                    showLastActivity(payload);
                 })
                 .catch((err) => {
                     console.warn('Failed to fetch agent status:', err);
@@ -1094,7 +1154,7 @@ function App() {
                 }
             }
         }
-    }, [clearAgentRunState, noteAgentActivity, notifyForFinalResponse, preserveTimelineScrollTop, removeStalledPost, setActiveTurn, updateAgentProfile, updateUserProfile]);
+    }, [clearAgentRunState, clearLastActivityFlag, noteAgentActivity, notifyForFinalResponse, preserveTimelineScrollTop, removeStalledPost, setActiveTurn, showLastActivity, updateAgentProfile, updateUserProfile]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -1144,11 +1204,13 @@ function App() {
         if (connectionStatus !== 'connected') return;
         const interval = setInterval(() => {
             const { currentHashtag: activeHashtag, searchQuery: activeSearch } = viewStateRef.current || {};
-            if (activeHashtag || activeSearch) return;
-            refreshTimeline();
+            if (!activeHashtag && !activeSearch) {
+                refreshTimeline();
+            }
+            refreshAgentStatus();
         }, 60000);
         return () => clearInterval(interval);
-    }, [connectionStatus, refreshTimeline]);
+    }, [connectionStatus, refreshAgentStatus, refreshTimeline]);
 
     // ── Splitter drag: zero re-renders, direct CSS var manipulation ───────────
     const handleSplitterMouseDown = useRef((e) => {
