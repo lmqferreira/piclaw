@@ -1,3 +1,14 @@
+/**
+ * web/agent-events.ts – Transforms pi-agent session events into SSE broadcasts.
+ *
+ * Subscribes to the agent session's event stream and translates events
+ * (text deltas, tool calls, message completions) into SSE payloads for the
+ * web UI. Also manages draft/thought buffer accumulation and auto-compaction
+ * status broadcasts.
+ *
+ * Consumers: channels/web.ts wires this up during agent runs.
+ */
+
 import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import type { WebChannel } from "../web.js";
 import { buildPreview, createToolTitleTracker, type AgentProfileBuilder } from "./agent-utils.js";

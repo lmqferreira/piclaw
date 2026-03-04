@@ -1,3 +1,13 @@
+/**
+ * web/handlers/agent.ts – HTTP handlers for agent-related API endpoints.
+ *
+ * Handles GET /agents, GET /agent/status, GET /agent/thought,
+ * POST /agent/thought/visibility, avatar upload/retrieval, user profile,
+ * and branding endpoints.
+ *
+ * Consumers: web/request-router.ts routes agent paths to these handlers.
+ */
+
 import type { WebChannel } from "../../web.js";
 import {
   ASSISTANT_AVATAR,

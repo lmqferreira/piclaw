@@ -1,3 +1,12 @@
+/**
+ * web/agent-message-service.ts – Stores agent responses as timeline posts.
+ *
+ * After an agent run completes, this service persists the response as a
+ * message in the database and broadcasts it to SSE clients.
+ *
+ * Consumers: channels/web.ts calls this after agent runs complete.
+ */
+
 import type { WebChannel } from "../web.js";
 import type { InteractionRow } from "../../db.js";
 import { normalizeMediaIds } from "./posts-service.js";
