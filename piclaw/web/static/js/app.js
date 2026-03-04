@@ -446,6 +446,22 @@ function App() {
         });
     }, []);
 
+    const preserveTimelineScrollTop = useCallback((mutate) => {
+        const container = timelineRef.current;
+        if (!container || typeof mutate !== 'function') {
+            mutate?.();
+            return;
+        }
+        const anchor = container.scrollTop;
+        mutate();
+        requestAnimationFrame(() => {
+            const target = timelineRef.current;
+            if (!target) return;
+            const maxScroll = Math.max(target.scrollHeight - target.clientHeight, 0);
+            target.scrollTop = Math.min(anchor, maxScroll);
+        });
+    }, []);
+
     const finalizeStalledResponse = useCallback(() => {
         if (!isAgentRunningRef.current) return;
         isAgentRunningRef.current = false;
@@ -586,10 +602,14 @@ function App() {
     // Load older messages (prepend)
     const loadMore = useCallback(async (options = {}) => {
         if (!posts || posts.length === 0) return;
-        const { preserveScroll = false } = options;
+        const { preserveScroll = false, preserveMode = 'bottom' } = options;
         const applyUpdate = (fn) => {
-            if (preserveScroll) preserveTimelineScroll(fn);
-            else fn();
+            if (!preserveScroll) {
+                fn();
+                return;
+            }
+            if (preserveMode === 'top') preserveTimelineScrollTop(fn);
+            else preserveTimelineScroll(fn);
         };
         const sortedPosts = posts.slice().sort((a, b) => a.id - b.id);
         const oldestId = sortedPosts[0].id;
@@ -609,7 +629,7 @@ function App() {
         } catch (error) {
             console.error('Failed to load more posts:', error);
         }
-    }, [posts, preserveTimelineScroll]);
+    }, [posts, preserveTimelineScroll, preserveTimelineScrollTop]);
 
     useEffect(() => {
         loadMoreRef.current = loadMore;
@@ -684,11 +704,11 @@ function App() {
         try {
             const result = await deletePost(postId, replyCount > 0);
             if (result?.ids?.length) {
-                preserveTimelineScroll(() => {
+                preserveTimelineScrollTop(() => {
                     setPosts((prev) => prev ? prev.filter((item) => !result.ids.includes(item.id)) : prev);
                 });
                 if (hasMore) {
-                    await loadMore({ preserveScroll: true });
+                    await loadMore({ preserveScroll: true, preserveMode: 'top' });
                 }
             }
         } catch (error) {
@@ -698,11 +718,11 @@ function App() {
                 if (!confirmed) return;
                 const result = await deletePost(postId, true);
                 if (result?.ids?.length) {
-                    preserveTimelineScroll(() => {
+                    preserveTimelineScrollTop(() => {
                         setPosts((prev) => prev ? prev.filter((item) => !result.ids.includes(item.id)) : prev);
                     });
                     if (hasMore) {
-                        await loadMore({ preserveScroll: true });
+                        await loadMore({ preserveScroll: true, preserveMode: 'top' });
                     }
                 }
                 return;
@@ -710,7 +730,7 @@ function App() {
             console.error('Failed to delete post:', error);
             alert(`Failed to delete message: ${errorMessage}`);
         }
-    }, [hasMore, loadMore, posts, preserveTimelineScroll]);
+    }, [hasMore, loadMore, posts, preserveTimelineScrollTop]);
 
     const loadAgents = useCallback(async () => {
         try {
@@ -1043,16 +1063,16 @@ function App() {
         if (eventType === 'interaction_deleted') {
             const ids = data?.ids || [];
             if (ids.length) {
-                preserveTimelineScroll(() => {
+                preserveTimelineScrollTop(() => {
                     setPosts(prev => prev ? prev.filter(p => !ids.includes(p.id)) : prev);
                 });
                 const { currentHashtag: activeHashtag, searchQuery: activeSearch } = viewStateRef.current;
                 if (hasMoreRef.current && !activeHashtag && !activeSearch) {
-                    loadMoreRef.current?.({ preserveScroll: true });
+                    loadMoreRef.current?.({ preserveScroll: true, preserveMode: 'top' });
                 }
             }
         }
-    }, [clearAgentRunState, noteAgentActivity, notifyForFinalResponse, preserveTimelineScroll, removeStalledPost, setActiveTurn, updateAgentProfile, updateUserProfile]);
+    }, [clearAgentRunState, noteAgentActivity, notifyForFinalResponse, preserveTimelineScrollTop, removeStalledPost, setActiveTurn, updateAgentProfile, updateUserProfile]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
