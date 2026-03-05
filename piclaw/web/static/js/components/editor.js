@@ -10,6 +10,7 @@ import {
     highlightActiveLineGutter,
     highlightSpecialChars,
     scrollPastEnd,
+    showPanel,
     javascript,
     python,
     markdown,
@@ -36,8 +37,6 @@ import {
     completionKeymap,
     closeBrackets,
     closeBracketsKeymap,
-    foldGutter,
-    foldKeymap,
     vim,
     indentationMarkers,
     githubLight,
@@ -55,6 +54,45 @@ const headingStyle = HighlightStyle.define([
     { tag: tags.heading5, fontWeight: 'bold', textDecoration: 'none' },
     { tag: tags.heading6, fontWeight: 'bold', textDecoration: 'none' },
 ]);
+
+const createStatusPanel = (vimEnabledRef) => {
+    return (view) => {
+        const dom = document.createElement('div');
+        dom.className = 'cm-statusbar';
+
+        const left = document.createElement('div');
+        left.className = 'cm-statusbar-left';
+
+        const right = document.createElement('div');
+        right.className = 'cm-statusbar-right';
+
+        dom.append(left, right);
+
+        const update = () => {
+            const state = view.state;
+            const pos = state.selection.main.head;
+            const line = state.doc.lineAt(pos);
+            const col = pos - line.from + 1;
+            const indentUnit = state.facet(EditorState.indentUnit) || '  ';
+            const indentLabel = indentUnit === '\t' ? 'Tabs' : `Spaces:${indentUnit.length}`;
+            left.textContent = `Ln ${line.number}, Col ${col}`;
+            const vimLabel = vimEnabledRef.current ? 'Vim' : 'Insert';
+            right.textContent = `${indentLabel} • ${vimLabel}`;
+        };
+
+        update();
+
+        return {
+            dom,
+            update: (updateEvent) => {
+                if (updateEvent.docChanged || updateEvent.selectionSet || updateEvent.viewportChanged) {
+                    update();
+                }
+            },
+            destroy: () => {},
+        };
+    };
+};
 
 const languageForPath = (path) => {
     const lower = String(path || '').toLowerCase();
@@ -105,6 +143,7 @@ export function WorkspaceEditor({
             return false;
         }
     });
+    const vimEnabledRef = useRef(vimEnabled);
 
     const [isDark, setIsDark] = useState(() => {
         try {
@@ -128,6 +167,7 @@ export function WorkspaceEditor({
     }, []);
 
     useEffect(() => {
+        vimEnabledRef.current = vimEnabled;
         try {
             localStorage.setItem('piclaw_vim_mode', vimEnabled ? 'true' : 'false');
         } catch {
@@ -189,18 +229,17 @@ export function WorkspaceEditor({
             closeBrackets(),
             autocompletion(),
             highlightSelectionMatches(),
-            foldGutter(),
             indentationMarkers(),
             syntaxHighlighting(headingStyle),
             syntaxHighlighting(classHighlighter),
             search(),
             vimCompartment.of(vimEnabled ? vim() : []),
             themeCompartment.of(isDark ? githubDark : githubLight),
+            showPanel.of(createStatusPanel(vimEnabledRef)),
             keymap.of([
                 ...searchKeymap,
                 ...completionKeymap,
                 ...closeBracketsKeymap,
-                ...foldKeymap,
                 indentWithTab,
                 { key: 'Mod-s', run: () => { handleSave(); return true; } },
             ]),

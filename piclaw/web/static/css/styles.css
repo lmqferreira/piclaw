@@ -683,6 +683,27 @@ body {
     color: var(--text-secondary);
 }
 
+.cm-statusbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-top: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+}
+
+.cm-statusbar-left,
+.cm-statusbar-right {
+    white-space: nowrap;
+}
+
+.cm-statusbar-right {
+    text-align: right;
+}
+
 .editor-error {
     padding: 6px var(--spacing-md);
     font-size: 11px;
@@ -1484,6 +1505,21 @@ body {
     text-decoration: underline;
 }
 
+.post-content li input[type="checkbox"] {
+    margin-right: 6px;
+}
+
+.post-content li input[type="checkbox"] + a,
+.post-content li input[type="checkbox"] + span,
+.post-content li input[type="checkbox"] + label {
+    text-decoration: none;
+}
+
+.post-content li input[type="checkbox"]:checked + a,
+.post-content li input[type="checkbox"]:checked + span,
+.post-content li input[type="checkbox"]:checked + label {
+    text-decoration: none;
+}
 .post-content table {
     border-collapse: collapse;
     margin: 0.5em 0;

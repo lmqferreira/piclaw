@@ -7,6 +7,7 @@ export {
   highlightActiveLineGutter,
   highlightSpecialChars,
   scrollPastEnd,
+  showPanel,
 } from "@codemirror/view";
 export { minimalSetup } from "codemirror";
 export { javascript } from "@codemirror/lang-javascript";
@@ -25,7 +26,6 @@ export { shell } from "@codemirror/legacy-modes/mode/shell";
 export { indentWithTab } from "@codemirror/commands";
 export { search, openSearchPanel, closeSearchPanel, searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 export { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
-export { foldGutter, foldKeymap } from "@codemirror/fold";
 export { lintGutter } from "@codemirror/lint";
 export { vim } from "@replit/codemirror-vim";
 export { indentationMarkers } from "@replit/codemirror-indentation-markers";
