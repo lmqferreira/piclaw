@@ -8,7 +8,7 @@
  * Consumers: channels/web.ts uses these helpers in its request handler
  *            to gate access to all API and static endpoints.
  */
-import { createHmac, randomBytes } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 function decodeBase32(value) {
     const clean = value.toUpperCase().replace(/[^A-Z2-7]/g, "");
@@ -56,12 +56,25 @@ export function verifyTotp(secret, code, windowSteps = 1, stepSeconds = 30, digi
     if (normalized.length !== digits)
         return false;
     const now = Date.now();
+    let valid = false;
     for (let offset = -windowSteps; offset <= windowSteps; offset += 1) {
         const expected = totpAtTime(secret, stepSeconds, digits, now + offset * stepSeconds * 1000);
-        if (expected === normalized)
-            return true;
+        // Constant-time comparison to prevent timing side-channels.
+        const a = Buffer.from(expected, "utf8");
+        const b = Buffer.from(normalized, "utf8");
+        if (a.length === b.length && timingSafeEqual(a, b)) {
+            valid = true;
+        }
     }
-    return false;
+    return valid;
+}
+/** Constant-time string comparison for secrets. */
+export function safeEqual(a, b) {
+    const bufA = Buffer.from(a, "utf8");
+    const bufB = Buffer.from(b, "utf8");
+    if (bufA.length !== bufB.length)
+        return false;
+    return timingSafeEqual(bufA, bufB);
 }
 /** Generate a cryptographically random hex session token. */
 export function randomSessionToken() {

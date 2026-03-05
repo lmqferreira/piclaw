@@ -14,7 +14,7 @@
  */
 import { initTheme } from "@mariozechner/pi-coding-agent";
 import { generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse, } from "@simplewebauthn/server";
-import { randomSessionToken, verifyTotp } from "./web/auth.js";
+import { randomSessionToken, safeEqual, verifyTotp } from "./web/auth.js";
 import { ASSISTANT_AVATAR, ASSISTANT_NAME, USER_AVATAR, USER_AVATAR_BACKGROUND, USER_NAME, WEB_HOST, WEB_IDLE_TIMEOUT, WEB_PORT, WEB_TLS_CERT, WEB_TLS_KEY, WEB_SESSION_TTL, WEB_TOTP_SECRET, WEB_TOTP_WINDOW, WEB_INTERNAL_SECRET, WEB_PASSKEY_MODE, } from "../core/config.js";
 import { handleMedia, handleMediaInfo, handleMediaUpload } from "./web/handlers/media.js";
 import { handleWorkspaceAttach, handleWorkspaceDownload, handleWorkspaceFile, handleWorkspaceRaw, handleWorkspaceTree, handleWorkspaceUpdate, handleWorkspaceUpload, startWorkspaceWatcher, } from "./web/handlers/workspace.js";
@@ -293,12 +293,12 @@ export class WebChannel {
         if (!secret)
             return false;
         const header = req.headers.get("x-piclaw-internal-secret") || "";
-        if (header && header === secret)
+        if (header && safeEqual(header, secret))
             return true;
         const auth = req.headers.get("authorization") || "";
         if (auth.toLowerCase().startsWith("bearer ")) {
             const token = auth.slice(7).trim();
-            if (token === secret)
+            if (token && safeEqual(token, secret))
                 return true;
         }
         return false;
