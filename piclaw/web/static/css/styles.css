@@ -1528,11 +1528,6 @@ body {
     margin-right: 6px;
 }
 
-.post-content .task-list-text,
-.post-content .task-list-text a,
-.post-content .task-list-text a:hover,
-.post-content li.task-list-item,
-.post-content li.task-list-item *,
 .post-content li input[type="checkbox"] ~ *,
 .post-content li input[type="checkbox"] ~ * *,
 .post-content li input[type="checkbox"] + * {
