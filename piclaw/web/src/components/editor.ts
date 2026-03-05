@@ -159,6 +159,18 @@ export function WorkspaceEditor({
         setDirty(false);
     }, [savedAt]);
 
+    // Escape to close when clean. Skips if CodeMirror already handled the
+    // event (e.g. closing the search panel) by checking defaultPrevented.
+    useEffect(() => {
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape' && !e.defaultPrevented && !dirty) {
+                onClose?.();
+            }
+        };
+        document.addEventListener('keydown', onKeyDown);
+        return () => document.removeEventListener('keydown', onKeyDown);
+    }, [dirty, onClose]);
+
     const handleSave = useCallback(() => {
         if (saving || loading) return;
         const view = viewRef.current;
