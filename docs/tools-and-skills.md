@@ -46,36 +46,66 @@ Each skill keeps its script alongside its `SKILL.md` for portability. Current se
 | Skill | Purpose |
 |------|---------|
 | `debug` | Diagnose container issues and environment setup |
-| `setup` | Scaffold a new project with bun + Makefile |
-| `reload` | Force‑restart `piclaw` after code changes (tarball install, not symlinks) |
+| `setup` | Scaffold a new project with Bun + Makefile |
+| `reload` | Force-restart `piclaw` after code changes (tarball install, not symlinks) |
 | `playwright` | Local Playwright browser automation |
 | `schedule` | Create/modify scheduled tasks via IPC |
 | `send-message` | Send chat messages immediately via IPC |
 | `token-chart` | Generate token usage charts (from `token_usage`) |
 | `graphite-power-chart` | Generate Zigbee/Graphite charts for the web timeline |
 | `web-search` | Search the web via SearXNG and convert pages to Markdown |
-| `web-search-summary` | Search via SearXNG with auto-summarized results |
+| `web-search-summary` | Search via SearXNG with auto-summarised results |
 | `twitter-summary` | Fetch a user's recent tweets via Playwright + Nitter |
 | `feed-digest` | Build a deduped Markdown digest from an RSS/Atom feed index |
+| `bootstrap-container` | Validate required tools and install missing dependencies |
+| `extension-design` | Design and audit Pi extensions safely |
+| `extension-troubleshoot` | Diagnose and fix extension issues (imports, DB init, watcher perms) |
 
 ## Slash commands
 
-Common direct commands (no LLM round‑trip):
+Direct commands (no LLM round-trip):
 
-- `/model [provider/model]`
-- `/cycle-model [back]`
-- `/thinking [level]`
-- `/cycle-thinking`
-- `/tasks [active|paused|completed|all]`
-- `/scheduled [filter]`
-- `/stats`, `/context`, `/state`
-- `/compact [instructions]`, `/auto-compact on|off`
-- `/abort`, `/abort-retry`, `/abort-bash`
-- `/queue <msg>`, `/queue-all <msg>`
-- `/session-name`, `/new-session`, `/switch-session`
-- `/fork`, `/forks`, `/tree`, `/labels`
-- `/agent-name`, `/agent-avatar`
-- `/export-html`, `/search`, `/restart`, `/commands`
+| Command | Purpose |
+|---------|---------|
+| `/model [provider/model]` | Select model or list available models |
+| `/cycle-model [back]` | Cycle to the next available model |
+| `/thinking [level]` | Show or set thinking level |
+| `/cycle-thinking` | Cycle thinking level |
+| `/state` | Show current session state |
+| `/stats` | Show session token and cost stats |
+| `/context` (alias `/ctx`) | Show context window usage |
+| `/last` | Show last assistant response |
+| `/compact [instructions]` | Manually compact the session |
+| `/auto-compact on\|off` | Toggle auto-compaction |
+| `/auto-retry on\|off` | Toggle auto-retry |
+| `/abort` | Abort the current response |
+| `/abort-retry` | Abort retry backoff |
+| `/abort-bash` | Abort running bash command |
+| `/shell <cmd>` | Run a shell command and return output |
+| `/bash <cmd>` | Run a shell command and add output to context |
+| `/queue <msg>` | Queue a follow-up message (one at a time) |
+| `/queue-all <msg>` | Queue a follow-up message (batch all) |
+| `/steering-mode all\|one` | Set steering mode |
+| `/followup-mode all\|one` | Set follow-up mode |
+| `/session-name [name]` | Set or show the session name |
+| `/new-session` | Start a new session |
+| `/switch-session <file>` | Switch to a session file |
+| `/fork` | Fork from a previous message |
+| `/forks` | List forkable messages |
+| `/tree` | List the session tree and navigate branches |
+| `/label` | Set or clear a label on a tree entry |
+| `/labels` | List labelled entries |
+| `/agent-name [name]` | Set or show the agent display name |
+| `/agent-avatar [url]` | Set or show the agent avatar URL |
+| `/user-name [name]` | Set or show your display name |
+| `/user-avatar [url]` | Set or show your avatar URL |
+| `/user-github <url>` | Set your name/avatar from a GitHub profile |
+| `/export-html` | Export session to HTML |
+| `/search <query>` | Search notes and skills in the workspace |
+| `/restart` | Restart the agent and stop subprocesses |
+| `/commands` | List available commands |
+| `/tasks [filter]` | List scheduled tasks (via extension) |
+| `/scheduled [filter]` | Alias for `/tasks` |
 
 `/search` performs a workspace full‑text search (notes + skills) without calling the LLM:
 

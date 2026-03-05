@@ -36,18 +36,27 @@ piclaw/src/
 ├── index.ts                 # Entry point
 ├── cli.ts                   # CLI parsing
 ├── runtime.ts               # Service startup orchestration
-├── core/                    # Env/config + chat context
+├── runtime/                 # Message loop + state management
+├── core/                    # Env, config, chat context (AsyncLocalStorage)
 ├── router.ts                # Message routing
+├── queue.ts                 # Agent queue with retry
+├── queue/                   # Retry policy
 ├── agent-pool.ts            # AgentSession pool
-├── agent-pool/              # Session helpers
-├── agent-control/           # Slash command handling
-├── extensions/              # Inline extension factories (attach_file, search_messages, search_workspace, model tools)
+├── agent-pool/              # Session helpers, logging, slash commands
+├── agent-control/           # Slash command handling + parsers
+├── extensions/              # Inline extension factories
 ├── channels/                # WhatsApp + Web channels
-│   └── web/handlers/        # HTTP handlers (agent, posts, media, workspace)
-├── tools/                   # Bash tracking + optional context wrappers
+│   └── web/                 # HTTP handlers, SSE, workspace, auth
+├── tools/                   # Bash tracking + context wrappers
 ├── db/                      # SQLite schema + accessors
+├── db.ts                    # Legacy DB re-export
+├── secure/                  # Keychain (AES-256-GCM)
 ├── utils/                   # Shared helpers (ids, preview, model utils)
-└── task-scheduler.ts        # Cron/interval scheduling
+├── workspace-search.ts      # FTS over workspace files
+├── task-scheduler.ts        # Cron/interval scheduling
+├── tool-output.ts           # Stored tool output management
+├── ipc.ts                   # IPC file watcher
+└── types.ts                 # Shared type definitions
 ```
 
 ## Extensions
