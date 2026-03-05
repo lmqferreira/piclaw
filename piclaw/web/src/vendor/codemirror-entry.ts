@@ -1,5 +1,13 @@
-export { EditorState } from "@codemirror/state";
-export { EditorView, keymap, lineNumbers, highlightActiveLine, highlightSpecialChars } from "@codemirror/view";
+export { EditorState, Compartment } from "@codemirror/state";
+export {
+  EditorView,
+  keymap,
+  lineNumbers,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  highlightSpecialChars,
+  scrollPastEnd,
+} from "@codemirror/view";
 export { minimalSetup } from "codemirror";
 export { javascript } from "@codemirror/lang-javascript";
 export { python } from "@codemirror/lang-python";
@@ -11,8 +19,14 @@ export { html } from "@codemirror/lang-html";
 export { yaml } from "@codemirror/lang-yaml";
 export { sql } from "@codemirror/lang-sql";
 export { xml } from "@codemirror/lang-xml";
-export { StreamLanguage, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+export { StreamLanguage, HighlightStyle, syntaxHighlighting, indentOnInput } from "@codemirror/language";
 export { tags, classHighlighter } from "@lezer/highlight";
 export { shell } from "@codemirror/legacy-modes/mode/shell";
 export { indentWithTab } from "@codemirror/commands";
-export { search, openSearchPanel, closeSearchPanel, searchKeymap } from "@codemirror/search";
+export { search, openSearchPanel, closeSearchPanel, searchKeymap, highlightSelectionMatches } from "@codemirror/search";
+export { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
+export { foldGutter, foldKeymap } from "@codemirror/fold";
+export { lintGutter } from "@codemirror/lint";
+export { vim } from "@replit/codemirror-vim";
+export { indentationMarkers } from "@replit/codemirror-indentation-markers";
+export { githubLight, githubDark } from "@uiw/codemirror-theme-github";

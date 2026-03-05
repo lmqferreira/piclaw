@@ -3,10 +3,13 @@ import { html, useCallback, useEffect, useMemo, useRef, useState } from '../vend
 import {
     EditorState,
     EditorView,
+    Compartment,
     minimalSetup,
     lineNumbers,
     highlightActiveLine,
+    highlightActiveLineGutter,
     highlightSpecialChars,
+    scrollPastEnd,
     javascript,
     python,
     markdown,
@@ -20,6 +23,7 @@ import {
     StreamLanguage,
     HighlightStyle,
     syntaxHighlighting,
+    indentOnInput,
     tags,
     classHighlighter,
     shell,
@@ -27,6 +31,17 @@ import {
     indentWithTab,
     search,
     searchKeymap,
+    highlightSelectionMatches,
+    autocompletion,
+    completionKeymap,
+    closeBrackets,
+    closeBracketsKeymap,
+    foldGutter,
+    foldKeymap,
+    vim,
+    indentationMarkers,
+    githubLight,
+    githubDark,
 } from '../vendor/codemirror.js';
 
 const MONO_STACK = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
@@ -76,8 +91,62 @@ export function WorkspaceEditor({
 }) {
     const hostRef = useRef(null);
     const viewRef = useRef(null);
+    const paneRef = useRef(null);
     const initialContentRef = useRef(content || '');
     const [dirty, setDirty] = useState(false);
+
+    const vimCompartment = useMemo(() => new Compartment(), []);
+    const themeCompartment = useMemo(() => new Compartment(), []);
+
+    const [vimEnabled, setVimEnabled] = useState(() => {
+        try {
+            return localStorage.getItem('piclaw_vim_mode') === 'true';
+        } catch {
+            return false;
+        }
+    });
+
+    const [isDark, setIsDark] = useState(() => {
+        try {
+            return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        } catch {
+            return false;
+        }
+    });
+
+    useEffect(() => {
+        if (!window.matchMedia) return;
+        const media = window.matchMedia('(prefers-color-scheme: dark)');
+        const onChange = () => setIsDark(media.matches);
+        onChange();
+        if (media.addEventListener) {
+            media.addEventListener('change', onChange);
+            return () => media.removeEventListener('change', onChange);
+        }
+        media.addListener(onChange);
+        return () => media.removeListener(onChange);
+    }, []);
+
+    useEffect(() => {
+        try {
+            localStorage.setItem('piclaw_vim_mode', vimEnabled ? 'true' : 'false');
+        } catch {
+            // ignore
+        }
+        const view = viewRef.current;
+        if (!view) return;
+        view.dispatch({
+            effects: vimCompartment.reconfigure(vimEnabled ? vim() : []),
+        });
+    }, [vimEnabled, vimCompartment]);
+
+    useEffect(() => {
+        const view = viewRef.current;
+        if (!view) return;
+        view.dispatch({
+            effects: themeCompartment.reconfigure(isDark ? githubDark : githubLight),
+        });
+    }, [isDark, themeCompartment]);
 
     const languageExtension = useMemo(() => languageForPath(path), [path]);
 
@@ -112,12 +181,29 @@ export function WorkspaceEditor({
             minimalSetup,
             lineNumbers(),
             highlightActiveLine(),
+            highlightActiveLineGutter(),
             highlightSpecialChars(),
             EditorView.lineWrapping,
+            scrollPastEnd(),
+            indentOnInput(),
+            closeBrackets(),
+            autocompletion(),
+            highlightSelectionMatches(),
+            foldGutter(),
+            indentationMarkers(),
             syntaxHighlighting(headingStyle),
             syntaxHighlighting(classHighlighter),
             search(),
-            keymap.of([...searchKeymap, indentWithTab, { key: 'Mod-s', run: () => { handleSave(); return true; } }]),
+            vimCompartment.of(vimEnabled ? vim() : []),
+            themeCompartment.of(isDark ? githubDark : githubLight),
+            keymap.of([
+                ...searchKeymap,
+                ...completionKeymap,
+                ...closeBracketsKeymap,
+                ...foldKeymap,
+                indentWithTab,
+                { key: 'Mod-s', run: () => { handleSave(); return true; } },
+            ]),
             EditorView.updateListener.of((update) => {
                 if (update.docChanged) updateDirty();
             }),
@@ -141,7 +227,18 @@ export function WorkspaceEditor({
         initialContentRef.current = content || '';
         setDirty(false);
 
+        const updateGutterWidth = () => {
+            const pane = paneRef.current;
+            const gutters = view.dom.querySelector('.cm-gutters');
+            if (!pane || !gutters) return;
+            const width = Math.max(32, Math.round(gutters.getBoundingClientRect().width));
+            pane.style.setProperty('--cm-gutter-width', `${width}px`);
+        };
+        updateGutterWidth();
+        window.addEventListener('resize', updateGutterWidth);
+
         return () => {
+            window.removeEventListener('resize', updateGutterWidth);
             view.destroy();
             viewRef.current = null;
         };
@@ -169,6 +266,10 @@ export function WorkspaceEditor({
         onSave?.(value);
     }, [saving, loading, onSave]);
 
+    const handleToggleVim = useCallback(() => {
+        setVimEnabled((prev) => !prev);
+    }, []);
+
     // Escape to close when clean. Cmd/Ctrl+S to save (intercepts browser dialog).
     // Skips if CodeMirror already handled the event (e.g. closing the search panel).
     useEffect(() => {
@@ -187,62 +288,8 @@ export function WorkspaceEditor({
         return () => document.removeEventListener('keydown', onKeyDown);
     }, [dirty, onClose, handleSave]);
 
-    // Drag-to-resize: right edge handle (mouse + touch)
-    const resizeRef = useRef(null);
-    useEffect(() => {
-        const handle = resizeRef.current;
-        if (!handle) return;
-        let startX = 0;
-        let startW = 0;
-        const clamp = (v) => Math.max(280, Math.min(window.innerWidth * 0.7, v));
-        const applyWidth = (clientX) => {
-            const newW = clamp(startW + (clientX - startX));
-            handle.parentElement.style.width = newW + 'px';
-            handle.parentElement.style.minWidth = newW + 'px';
-        };
-        // Mouse
-        const onMouseMove = (e) => applyWidth(e.clientX);
-        const onMouseUp = () => {
-            document.removeEventListener('mousemove', onMouseMove);
-            document.removeEventListener('mouseup', onMouseUp);
-            document.body.style.cursor = '';
-            document.body.style.userSelect = '';
-        };
-        const onMouseDown = (e) => {
-            e.preventDefault();
-            startX = e.clientX;
-            startW = handle.parentElement.getBoundingClientRect().width;
-            document.body.style.cursor = 'col-resize';
-            document.body.style.userSelect = 'none';
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp);
-        };
-        // Touch
-        const onTouchMove = (e) => {
-            if (e.touches.length === 1) applyWidth(e.touches[0].clientX);
-        };
-        const onTouchEnd = () => {
-            document.removeEventListener('touchmove', onTouchMove);
-            document.removeEventListener('touchend', onTouchEnd);
-        };
-        const onTouchStart = (e) => {
-            if (e.touches.length !== 1) return;
-            startX = e.touches[0].clientX;
-            startW = handle.parentElement.getBoundingClientRect().width;
-            document.addEventListener('touchmove', onTouchMove, { passive: true });
-            document.addEventListener('touchend', onTouchEnd);
-        };
-        handle.addEventListener('mousedown', onMouseDown);
-        handle.addEventListener('touchstart', onTouchStart, { passive: true });
-        return () => {
-            handle.removeEventListener('mousedown', onMouseDown);
-            handle.removeEventListener('touchstart', onTouchStart);
-        };
-    }, []);
-
     return html`
-        <div class="editor-pane">
-            <div class="editor-resize-handle" ref=${resizeRef}></div>
+        <div class="editor-pane" ref=${paneRef}>
             <div class="editor-header">
                 <div class="editor-title" title=${path || ''}>${path || 'Untitled file'}</div>
                 <div class="editor-actions">
@@ -261,6 +308,14 @@ export function WorkspaceEditor({
             ${error && html`<div class="editor-error">${error}</div>`}
             <div class="editor-body${loading || error ? ' disabled' : ''}">
                 <div class="editor-codemirror" ref=${hostRef}></div>
+                <button
+                    class=${`editor-vim-toggle${vimEnabled ? ' active' : ''}`}
+                    onClick=${handleToggleVim}
+                    title="Toggle Vim mode"
+                    aria-pressed=${vimEnabled ? 'true' : 'false'}
+                >
+                    Vim
+                </button>
             </div>
             ${saveError && html`<div class="editor-error">${saveError}</div>`}
             ${!saveError && !error && html`
