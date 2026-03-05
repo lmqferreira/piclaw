@@ -1,12 +1,17 @@
 # Makefile – Top-level build/dev targets for the piclaw project.
 #
 # Targets:
-#   build-piclaw  – Compile TypeScript and copy web frontend to static/.
-#   lint/test     – Run ESLint and bun test suite.
-#   up/down/enter – Docker Compose lifecycle helpers.
-#   sync-version  – Sync package.json version to git tag.
-#   bump-*        – Version bump helpers.
-#   push          – Push Docker image to GHCR.
+#   vendor         – Bundle vendored CodeMirror (minified ESM).
+#   build-web      – Copy web frontend TS sources to static/js/.
+#   build-ts       – Compile TypeScript to dist/.
+#   build-piclaw   – Full build: vendor + build-web + build-ts.
+#   pack           – Pack piclaw into a .tgz (depends on build-piclaw).
+#   local-install  – Pack, install globally, and restart (full cycle).
+#   lint/test      – Run ESLint and bun test suite.
+#   up/down/enter  – Docker Compose lifecycle helpers.
+#   sync-version   – Sync package.json version to VERSION file.
+#   bump-*         – Version bump helpers.
+#   push           – Push commits and current tag to origin.
 
 IMAGE ?= pibox
 TAG ?= latest
@@ -15,10 +20,18 @@ REGISTRY ?= ghcr.io
 GHCR_OWNER ?= $(shell whoami)
 GHCR_IMAGE := $(REGISTRY)/$(GHCR_OWNER)/$(IMAGE):$(TAG)
 
-.PHONY: help up down enter build build-piclaw lint test test-coverage dual-tag tag-ghcr sync-version bump-minor bump-patch push
+GLOBAL_PKG := /home/agent/.bun/install/global/package.json
+GLOBAL_LOCK := /home/agent/.bun/install/global/bun.lock
+PI_AGENT_VERSION ?= ^0.55.4
+
+.PHONY: help up down enter build build-piclaw build-web build-ts vendor pack \
+        local-install restart lint test test-coverage \
+        dual-tag tag-ghcr sync-version bump-minor bump-patch push
 
 help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+
+# ── Docker ────────────────────────────────────────────────────────────
 
 up: ## Start the container in detached mode
 	docker compose up -d
@@ -32,8 +45,49 @@ enter: ## Enter the running container as agent
 build: ## Build Docker image
 	docker build -t $(FULL_IMAGE) .
 
-build-piclaw: ## Build piclaw dist + web assets
-	cd piclaw && bun run build && bun run build:web
+# ── Build pipeline ───────────────────────────────────────────────────
+
+vendor: ## Bundle vendored CodeMirror (minified ESM)
+	cd piclaw && bun build web/src/vendor/codemirror-entry.ts \
+		--target=browser --format=esm --minify \
+		--outfile web/static/js/vendor/codemirror.js
+	@ls -lh piclaw/web/static/js/vendor/codemirror.js
+
+build-web: ## Copy web TS sources to static/js/
+	cd piclaw && bun run build:web
+
+build-ts: ## Compile TypeScript to dist/
+	cd piclaw && bun run build
+
+build-piclaw: vendor build-web build-ts ## Full build: vendor + web + ts
+
+# ── Pack & install ───────────────────────────────────────────────────
+
+pack: build-piclaw ## Pack piclaw into a .tgz
+	cd piclaw && bun pm pack
+	@ls -lh piclaw/piclaw-*.tgz
+
+restart: ## Restart piclaw via supervisorctl
+	supervisorctl restart piclaw 2>/dev/null || true
+	@sleep 2
+	@supervisorctl status piclaw 2>/dev/null || true
+
+local-install: pack ## Pack, install globally, and restart piclaw
+	@set -e; \
+	VERSION=$$(jq -r .version piclaw/package.json); \
+	TGZ="$$(realpath piclaw/piclaw-$${VERSION}.tgz)"; \
+	echo "[local-install] Installing v$${VERSION} globally..."; \
+	printf '{"dependencies":{"@mariozechner/pi-coding-agent":"$(PI_AGENT_VERSION)","piclaw":"%s"}}\n' \
+		"$$TGZ" > $(GLOBAL_PKG); \
+	rm -f $(GLOBAL_LOCK); \
+	BUN_INSTALL_CACHE_DIR=/tmp/bun-cache bun install -g "$$TGZ" \
+		--registry https://registry.npmjs.org; \
+	rm -f "$$TGZ"; \
+	echo "[local-install] Restarting piclaw..."; \
+	$(MAKE) restart; \
+	echo "[local-install] Done (v$${VERSION})"
+
+# ── Quality ──────────────────────────────────────────────────────────
 
 lint: ## Lint piclaw sources
 	cd piclaw && bun run lint
@@ -44,10 +98,7 @@ test: ## Run piclaw tests
 test-coverage: ## Run piclaw tests with coverage
 	cd piclaw && bun run test:coverage
 
-dual-tag: build ## Tag image as ghcr.io/<user>/<image>:<tag>
-	docker tag $(FULL_IMAGE) $(GHCR_IMAGE)
-
-tag-ghcr: dual-tag ## Convenience alias for dual-tag
+# ── Versioning ───────────────────────────────────────────────────────
 
 sync-version: ## Sync piclaw/package.json version with VERSION
 	@set -e; \
@@ -57,7 +108,7 @@ sync-version: ## Sync piclaw/package.json version with VERSION
 	mv $$tmp piclaw/package.json; \
 	echo "Synced piclaw/package.json to version $$VERSION"
 
-bump-minor: ## Bump minor version and create git tag
+bump-minor: ## Bump minor version, build, commit, and tag
 	@OLD=$$(cat VERSION); \
 	MAJOR=$$(echo $$OLD | cut -d. -f1); \
 	MINOR=$$(echo $$OLD | cut -d. -f2); \
@@ -70,7 +121,7 @@ bump-minor: ## Bump minor version and create git tag
 	git tag "v$$NEW"; \
 	echo "Bumped version: $$OLD -> $$NEW (tagged v$$NEW)"
 
-bump-patch: ## Bump patch version and create git tag
+bump-patch: ## Bump patch version, build, commit, and tag
 	@OLD=$$(cat VERSION); \
 	MAJOR=$$(echo $$OLD | cut -d. -f1); \
 	MINOR=$$(echo $$OLD | cut -d. -f2); \
@@ -84,6 +135,8 @@ bump-patch: ## Bump patch version and create git tag
 	git tag "v$$NEW"; \
 	echo "Bumped version: $$OLD -> $$NEW (tagged v$$NEW)"
 
+# ── Release ──────────────────────────────────────────────────────────
+
 push: ## Push commits and current tag to origin
 	@TAG=$$(git describe --tags --exact-match 2>/dev/null); \
 	git push origin main; \
@@ -93,3 +146,8 @@ push: ## Push commits and current tag to origin
 	else \
 		echo "No tag on current commit"; \
 	fi
+
+dual-tag: build ## Tag image as ghcr.io/<user>/<image>:<tag>
+	docker tag $(FULL_IMAGE) $(GHCR_IMAGE)
+
+tag-ghcr: dual-tag ## Convenience alias for dual-tag

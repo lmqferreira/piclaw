@@ -18,6 +18,9 @@ import {
     sql,
     xml,
     StreamLanguage,
+    HighlightStyle,
+    syntaxHighlighting,
+    tags,
     shell,
     keymap,
     indentWithTab,
@@ -27,6 +30,15 @@ import {
 
 const MONO_STACK = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
 const shellLanguage = StreamLanguage.define(shell);
+
+const headingStyle = HighlightStyle.define([
+    { tag: tags.heading1, fontWeight: 'bold', fontSize: '1.3em', textDecoration: 'none' },
+    { tag: tags.heading2, fontWeight: 'bold', fontSize: '1.2em', textDecoration: 'none' },
+    { tag: tags.heading3, fontWeight: 'bold', fontSize: '1.1em', textDecoration: 'none' },
+    { tag: tags.heading4, fontWeight: 'bold', textDecoration: 'none' },
+    { tag: tags.heading5, fontWeight: 'bold', textDecoration: 'none' },
+    { tag: tags.heading6, fontWeight: 'bold', textDecoration: 'none' },
+]);
 
 const languageForPath = (path) => {
     const lower = String(path || '').toLowerCase();
@@ -101,6 +113,7 @@ export function WorkspaceEditor({
             highlightActiveLine(),
             highlightSpecialChars(),
             EditorView.lineWrapping,
+            syntaxHighlighting(headingStyle),
             search(),
             keymap.of([...searchKeymap, indentWithTab, { key: 'Mod-s', run: () => { handleSave(); return true; } }]),
             EditorView.updateListener.of((update) => {

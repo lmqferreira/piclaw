@@ -505,6 +505,38 @@ body {
     border-right: 1px solid var(--border-color);
 }
 
+/* Compact chat when editor is open */
+.app-shell.editor-open > .container {
+    font-size: 0.8em;
+}
+
+.app-shell.editor-open > .container .post-content {
+    font-size: inherit;
+}
+
+.app-shell.editor-open > .container .compose-input {
+    font-size: inherit;
+    min-height: 2em;
+    padding: 6px 8px;
+}
+
+.app-shell.editor-open > .container .agent-status {
+    font-size: inherit;
+}
+
+.app-shell.editor-open > .container .post-avatar {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    min-height: 28px;
+    font-size: 11px;
+}
+
+.app-shell.editor-open > .container .post-avatar.has-image img {
+    width: 28px;
+    height: 28px;
+}
+
 .editor-header {
     display: flex;
     align-items: center;
