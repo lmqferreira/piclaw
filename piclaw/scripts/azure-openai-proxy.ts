@@ -103,6 +103,10 @@ function matchTarget(requestUrl: URL): { target: string; pathPrefix: string } | 
 const server = Bun.serve({
   hostname: BIND,
   port: PORT,
+  // LLM streaming responses can have long pauses between chunks (reasoning,
+  // tool execution, etc.). The default Bun idle timeout of 10 s is far too
+  // short; set to Bun's maximum of 255 s so connections aren't killed mid-stream.
+  idleTimeout: 255,
 
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);

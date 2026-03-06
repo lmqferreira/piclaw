@@ -752,6 +752,10 @@ function streamAzureOpenAIResponses(model: any, context: any, options: any) {
       // Capture `phase` for assistant output items so we can persist it on stored messages.
       // This uses the Responses stream events to avoid any SDK version mismatches.
       const outputPhases = new Map<string, string>();
+      // Track the best error message extracted from stream events so we can
+      // override pi-ai's generic "Unknown error" with something actionable.
+      let streamErrorDetail = "";
+
       const loggingStream = (async function* () {
         for await (const event of openaiStream) {
           if (event?.type === "response.output_item.added" || event?.type === "response.output_item.done") {
@@ -761,6 +765,24 @@ function streamAzureOpenAIResponses(model: any, context: any, options: any) {
               outputPhases.set(item.id, phase);
             }
           }
+
+          // Extract a descriptive error from response.failed / error events
+          // BEFORE pi-ai's processResponsesStream throws the generic "Unknown error".
+          if (event?.type === "response.failed") {
+            const resp = (event as { response?: any }).response;
+            const errObj = resp?.error;
+            if (errObj && typeof errObj === "object") {
+              streamErrorDetail = `${errObj.code || "error"}: ${errObj.message || JSON.stringify(errObj)}`;
+            } else if (resp?.status) {
+              streamErrorDetail = `Azure response failed (status: ${resp.status})`;
+            } else {
+              streamErrorDetail = "Azure response failed (no error details returned)";
+            }
+          } else if (event?.type === "error") {
+            const { code, message } = event as { code?: string; message?: string };
+            streamErrorDetail = `${code || "stream_error"}: ${message || "unknown"}`;
+          }
+
           logStreamFailureEvent(event, requestSummary, loggedRef);
           yield event;
         }
@@ -777,7 +799,10 @@ function streamAzureOpenAIResponses(model: any, context: any, options: any) {
         throw new Error("Request was aborted");
       }
       if (output.stopReason === "aborted" || output.stopReason === "error") {
-        throw new Error(`Azure request failed: ${output.errorMessage || "unknown error"}`);
+        // Use the detailed error we extracted from the stream event if available,
+        // rather than the generic "unknown error" from pi-ai.
+        const detail = streamErrorDetail || output.errorMessage || "unknown error";
+        throw new Error(`Azure request failed: ${detail}`);
       }
 
       stream.push({ type: "done", reason: output.stopReason, message: output });
@@ -786,7 +811,9 @@ function streamAzureOpenAIResponses(model: any, context: any, options: any) {
       logAzureError(model.id, error, requestSummary, loggedRef);
       for (const block of output.content) delete (block as any).index;
       output.stopReason = options?.signal?.aborted ? "aborted" : "error";
-      output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+      // Prefer the stream-level error detail over the generic thrown message.
+      const rawMsg = error instanceof Error ? error.message : JSON.stringify(error);
+      output.errorMessage = streamErrorDetail || rawMsg;
       stream.push({ type: "error", reason: output.stopReason, error: output });
       stream.end();
     }

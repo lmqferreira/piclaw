@@ -239,5 +239,30 @@ export function createStreamingEventHandler(options: StreamingEventHandlerOption
         status: event.isError ? "Failed" : "Done",
       });
     }
+
+    // Surface provider/API errors and retries so the user sees what's happening
+    // instead of silent waiting. These events are emitted by the upstream
+    // agent-session for any provider (not just Azure).
+    if (event.type === "auto_retry_start") {
+      const e = event as { attempt?: number; maxAttempts?: number; delayMs?: number; errorMessage?: string };
+      const delaySec = e.delayMs ? Math.round(e.delayMs / 1000) : "?";
+      options.emitter.status({
+        ...base,
+        type: "intent",
+        title: `Retrying after error (attempt ${e.attempt ?? "?"}/${e.maxAttempts ?? "?"}, ${delaySec}s delay)`,
+        detail: e.errorMessage || undefined,
+      });
+    }
+
+    if (event.type === "auto_retry_end") {
+      const e = event as { success?: boolean; attempt?: number; finalError?: string };
+      if (!e.success) {
+        options.emitter.status({
+          ...base,
+          type: "error",
+          title: e.finalError || "Request failed after retries",
+        });
+      }
+    }
   };
 }
