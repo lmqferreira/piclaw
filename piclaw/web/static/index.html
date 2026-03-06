@@ -8,6 +8,20 @@
   vendor libraries (marked, KaTeX, Mermaid) for markdown rendering.
 
   Served by: channels/web/http/static.ts at the root URL.
+  Auth: This page is only served to authenticated users. The login page
+        (login.html) is a completely separate self-contained page with
+        inline JS for TOTP/WebAuthn — it does NOT load any of these scripts.
+
+  TODO: Bundle & segment
+  ──────────────────────
+  Currently web/src/*.ts files are copied as-is to static/js/*.js and
+  loaded as individual ES modules (~15 HTTP requests). Replace with:
+    1. `bun build web/src/app.ts --minify` → single app.bundle.js
+    2. Keep vendor libs (marked, katex, mermaid, preact-htm, codemirror)
+       as separate pre-built files — they're already minified.
+    3. Auth-gate the app bundle: move it to an auth-required path or
+       restrict the /static/ whitelist so unauthenticated visitors only
+       get CSS, fonts, and icons. See request-router-service.ts TODOs.
 -->
 <head>
     <meta charset="UTF-8">
