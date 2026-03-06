@@ -20,7 +20,7 @@ export const EXCLUDE_DIRS = new Set([
 ]);
 
 /** Maximum number of entries returned in a workspace tree response. */
-export const MAX_TREE_ENTRIES = 2000;
+export const MAX_TREE_ENTRIES = 5000;
 /** Maximum bytes to read for file preview in the explorer. */
 export const MAX_PREVIEW_BYTES = 64 * 1024;
 /** Maximum bytes allowed when editing a file via the web UI. */
