@@ -100,7 +100,7 @@ Ensure ports 80/443 are open and DNS points to the VM.
 
 If you want managed‑identity Azure OpenAI + Foundry providers:
 
-- Copy `docs/azure/azure-openai-token.ts` to `~/.pi/agent/extensions/azure-openai-token.ts`.
+- The extension is bundled at `piclaw/extensions/azure-openai.ts` inside the package — no manual copy needed.
 - Configure:
   - `AOAI_BASE_URL` (Responses API base URL)
   - `AOAI_MODEL_ID` / `AOAI_MODEL_NAME` / `AOAI_MODEL_IDS`
