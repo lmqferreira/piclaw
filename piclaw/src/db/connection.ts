@@ -336,6 +336,20 @@ function ensureWebSessionColumns(database: Database): void {
       // ignore if column already exists or cannot be added
     }
   }
+  if (!existing.has("user_id")) {
+    try {
+      database.exec("ALTER TABLE web_sessions ADD COLUMN user_id TEXT NOT NULL DEFAULT \'default\'");
+    } catch {
+      // ignore if column already exists or cannot be added
+    }
+  }
+  if (!existing.has("created_at")) {
+    try {
+      database.exec("ALTER TABLE web_sessions ADD COLUMN created_at TEXT NOT NULL DEFAULT \'\'");
+    } catch {
+      // ignore if column already exists or cannot be added
+    }
+  }
 }
 
 /**
