@@ -111,6 +111,15 @@ export async function getAgentStatus(chatJid = null) {
 }
 
 /**
+ * Get context window usage (tokens, contextWindow, percent).
+ * Returns null fields when the session has no usage data yet.
+ */
+export async function getAgentContext(chatJid = null) {
+    const query = chatJid ? `?chat_jid=${encodeURIComponent(chatJid)}` : '';
+    return request(`/agent/context${query}`);
+}
+
+/**
  * Upload media file
  */
 export async function uploadMedia(file) {
@@ -166,11 +175,13 @@ export async function addToWhitelist(pattern, description) {
     return response.json();
 }
 
+/** Fetch the agent thought/plan panel content for a given turn. */
 export async function getAgentThought(turnId, panel = 'thought') {
     const url = `/agent/thought?turn_id=${encodeURIComponent(turnId)}&panel=${encodeURIComponent(panel)}`;
     return request(url);
 }
 
+/** Toggle visibility of a thought/plan panel in the UI. */
 export async function setAgentThoughtVisibility(turnId, panel, expanded) {
     return request('/agent/thought/visibility', {
         method: 'POST',
@@ -212,9 +223,20 @@ export async function getWorkspaceTree(path = '', depth = 2, showHidden = false)
 /**
  * Get workspace file preview
  */
-export async function getWorkspaceFile(path, maxBytes = 20000) {
-    const url = `/workspace/file?path=${encodeURIComponent(path)}&max=${maxBytes}`;
+export async function getWorkspaceFile(path, maxBytes = 20000, mode = null) {
+    const modeParam = mode ? `&mode=${encodeURIComponent(mode)}` : '';
+    const url = `/workspace/file?path=${encodeURIComponent(path)}&max=${maxBytes}${modeParam}`;
     return request(url);
+}
+
+/**
+ * Update workspace file contents
+ */
+export async function updateWorkspaceFile(path, content) {
+    return request('/workspace/file', {
+        method: 'PUT',
+        body: JSON.stringify({ path, content }),
+    });
 }
 
 /**
@@ -227,10 +249,15 @@ export async function attachWorkspaceFile(path) {
     });
 }
 
-export async function uploadWorkspaceFile(file, targetPath = '') {
+/** Upload a file to the workspace via multipart form data. */
+export async function uploadWorkspaceFile(file, targetPath = '', options = {}) {
     const formData = new FormData();
     formData.append('file', file);
-    const url = `/workspace/upload?path=${encodeURIComponent(targetPath || '')}`;
+    const params = new URLSearchParams();
+    if (targetPath) params.set('path', targetPath);
+    if (options.overwrite) params.set('overwrite', '1');
+    const query = params.toString();
+    const url = query ? `/workspace/upload?${query}` : '/workspace/upload';
     const response = await fetch(API_BASE + url, {
         method: 'POST',
         body: formData,
@@ -238,12 +265,16 @@ export async function uploadWorkspaceFile(file, targetPath = '') {
 
     if (!response.ok) {
         const error = await response.json().catch(() => ({ error: 'Upload failed' }));
-        throw new Error(error.error || `HTTP ${response.status}`);
+        const err = new Error(error.error || `HTTP ${response.status}`);
+        err.status = response.status;
+        err.code = error.code;
+        throw err;
     }
 
     return response.json();
 }
 
+/** Toggle workspace explorer visibility and hidden-file display. */
 export async function setWorkspaceVisibility(visible, showHidden = false) {
     return request('/workspace/visibility', {
         method: 'POST',
@@ -279,9 +310,13 @@ export class SSEClient {
         this.status = 'disconnected';
         this.reconnectAttempts = 0;
         this.cooldownUntil = 0;
+        this.connecting = false;
     }
     
     connect() {
+        if (this.connecting) return;
+        if (this.eventSource && this.status === 'connected') return;
+        this.connecting = true;
         if (this.eventSource) {
             this.eventSource.close();
         }
@@ -289,6 +324,7 @@ export class SSEClient {
         this.eventSource = new EventSource(API_BASE + '/sse/stream');
         
         this.eventSource.onopen = () => {
+            this.connecting = false;
             this.reconnectDelay = 1000;
             this.reconnectAttempts = 0;
             this.cooldownUntil = 0;
@@ -297,6 +333,7 @@ export class SSEClient {
         };
         
         this.eventSource.onerror = () => {
+            this.connecting = false;
             this.status = 'disconnected';
             this.onStatusChange('disconnected');
             this.reconnectAttempts += 1;
@@ -407,6 +444,7 @@ export class SSEClient {
     }
     
     disconnect() {
+        this.connecting = false;
         if (this.eventSource) {
             this.eventSource.close();
             this.eventSource = null;

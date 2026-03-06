@@ -1,3 +1,14 @@
+/**
+ * web/link-previews.ts – OpenGraph metadata fetching for URLs in messages.
+ *
+ * When a user posts a message containing URLs, this module fetches the
+ * OpenGraph title, description, and image for each URL and stores them
+ * as link_previews on the message. Results are broadcast via SSE so the
+ * timeline can render rich link cards.
+ *
+ * Consumers: web/posts-service.ts triggers link preview fetching after
+ *            a new user message is stored.
+ */
 import { getMessageByRowId, updateMessageLinkPreviews } from "../../db.js";
 import { lookup } from "dns/promises";
 import { isIP } from "net";
@@ -114,6 +125,7 @@ async function isSafeUrl(raw) {
         return false;
     }
 }
+/** Extract HTTP/HTTPS URLs from a text string. */
 export function extractUrls(text, limit = MAX_URLS) {
     if (!text)
         return [];
@@ -176,6 +188,7 @@ function normalizeImage(url, baseUrl) {
         return url;
     }
 }
+/** Fetch OpenGraph metadata for a single URL. */
 export async function fetchLinkPreview(url) {
     const allowed = await isSafeUrl(url);
     if (!allowed)
@@ -228,6 +241,7 @@ export async function fetchLinkPreview(url) {
         clearTimeout(timeoutId);
     }
 }
+/** Fetch OpenGraph metadata for multiple URLs in parallel. */
 export async function fetchLinkPreviews(urls) {
     const previews = [];
     for (const url of urls) {
@@ -237,6 +251,7 @@ export async function fetchLinkPreviews(urls) {
     }
     return previews;
 }
+/** Asynchronously fetch link previews for a message and broadcast updates. */
 export function scheduleLinkPreviews(channel, chatJid, rowId, content, existingPreviews) {
     if (existingPreviews && existingPreviews.length > 0)
         return;

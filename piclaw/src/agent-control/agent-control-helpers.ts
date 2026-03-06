@@ -1,17 +1,35 @@
+/**
+ * agent-control/agent-control-helpers.ts – Shared helpers for control handlers.
+ *
+ * Provides utility functions used across multiple handler modules:
+ *   - THINKING_LEVELS constant array.
+ *   - Shell command formatting (formatShellBlock, resolveShellCwd).
+ *   - Session state inspection (getModelLabel, formatSessionState).
+ *   - Config file persistence for identity changes.
+ *   - Context usage and stats formatting.
+ *
+ * Consumers:
+ *   - All handler modules under handlers/*.ts.
+ *   - agent-pool.ts for model label resolution.
+ */
+
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
 import type { Model } from "@mariozechner/pi-ai";
 import { existsSync } from "fs";
 import { PICLAW_CONFIG_PATH } from "../core/config.js";
 import { readJsonConfig, writeJsonConfig } from "../core/config-store.js";
 
+/** Ordered list of supported thinking levels from off to xhigh. */
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 
+/** Return the preferred working directory for shell commands (/workspace or cwd). */
 export function resolveShellCwd(): string {
   const preferred = "/workspace";
   if (existsSync(preferred)) return preferred;
   return process.cwd();
 }
 
+/** Format a shell command and its output as a markdown-style code block. */
 export function formatShellBlock(command: string, output: string, meta: string[] = []): string {
   const lines: string[] = [`$ ${command}`];
   const trimmed = output.trimEnd();
@@ -26,6 +44,7 @@ export function formatShellBlock(command: string, output: string, meta: string[]
   return ["```", ...lines, "```"].join("\n");
 }
 
+/** Format a number with K/M suffixes for compact display. */
 export function formatCompactNumber(value: number): string {
   if (!Number.isFinite(value)) return String(value);
   const abs = Math.abs(value);
@@ -40,6 +59,7 @@ export function formatCompactNumber(value: number): string {
   return String(value);
 }
 
+/** Format a number as a USD currency string. */
 export function formatCurrency(value: number): string {
   if (!Number.isFinite(value)) return String(value);
   if (value === 0) return "$0";
@@ -47,11 +67,13 @@ export function formatCurrency(value: number): string {
   return `$${value.toFixed(2)}`;
 }
 
+/** Truncate text to maxLen characters, appending '…' if truncated. */
 export function truncateText(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text;
   return `${text.slice(0, Math.max(0, maxLength - 1))}…`;
 }
 
+/** Extract plain text from a pi-agent content block array. */
 export function extractTextFromContent(content: any): string {
   if (!content) return "";
   if (typeof content === "string") return content;
@@ -64,6 +86,7 @@ export function extractTextFromContent(content: any): string {
   return "";
 }
 
+/** Persist assistant identity changes (name, avatar) to the config file. */
 export function updateAssistantConfig(patch: { name?: string | null; avatar?: string | null }): {
   name?: string;
   avatar?: string;
@@ -117,6 +140,7 @@ export function updateAssistantConfig(patch: { name?: string | null; avatar?: st
   };
 }
 
+/** Persist user identity changes (name, avatar, github) to the config file. */
 export function updateUserConfig(patch: {
   name?: string | null;
   avatar?: string | null;
@@ -186,6 +210,7 @@ export function updateUserConfig(patch: {
   };
 }
 
+/** Inject a prompt into the session and capture the streamed response text. */
 export async function runPromptAndCapture(session: AgentSession, text: string): Promise<string> {
   let assistantBuffer = "";
   const customBuffers: string[] = [];
@@ -222,6 +247,7 @@ export async function runPromptAndCapture(session: AgentSession, text: string): 
   return finalText || "(no output)";
 }
 
+/** Fuzzy-match a model input string against available models. */
 export function normalizeModelMatch(models: Model<any>[], provider: string, modelId: string): Model<any> | undefined {
   const providerLower = provider.toLowerCase();
   const modelLower = modelId.toLowerCase();

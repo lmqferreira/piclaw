@@ -1,3 +1,10 @@
+/**
+ * test/extensions/attachments.test.ts – Tests for the file-attachments extension.
+ *
+ * Verifies the attach_file tool creates media entries, handles missing
+ * files, respects size limits, and correctly detects MIME types.
+ */
+
 import { afterEach, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
@@ -130,6 +137,7 @@ test("web processChat stores attachment content blocks", async () => {
           },
         ],
       }),
+      getContextUsageForChat: async () => null,
     },
   });
 
@@ -144,4 +152,58 @@ test("web processChat stores attachment content blocks", async () => {
     mime_type: "text/plain",
     size: 6,
   });
+});
+
+test("read_attachment tool returns text content", async () => {
+  const ws = getTestWorkspace();
+  restoreEnv = setEnv({ PICLAW_WORKSPACE: ws.workspace, PICLAW_STORE: ws.store, PICLAW_DATA: ws.data });
+
+  const db = await import("../../src/db.js");
+  db.initDatabase();
+
+  const mediaId = db.createMedia(
+    "note.txt",
+    "text/plain",
+    new TextEncoder().encode("hello world"),
+    null,
+    { size: 11 }
+  );
+
+  const { fileAttachments } = await import("../../src/extensions/file-attachments.js");
+  const fake = makeFakeApi();
+  fileAttachments(fake.api);
+
+  const tool = fake.tools.get("read_attachment");
+  expect(tool).toBeDefined();
+
+  const result = await tool.execute("call", { id: mediaId, mode: "text" });
+  const text = result.content?.[0]?.text || "";
+  expect(text).toContain("hello world");
+});
+
+test("export_attachment tool writes to workspace tmp", async () => {
+  const ws = getTestWorkspace();
+  restoreEnv = setEnv({ PICLAW_WORKSPACE: ws.workspace, PICLAW_STORE: ws.store, PICLAW_DATA: ws.data });
+
+  const db = await import("../../src/db.js");
+  db.initDatabase();
+
+  const mediaId = db.createMedia(
+    "note.txt",
+    "text/plain",
+    new TextEncoder().encode("hello world"),
+    null,
+    { size: 11 }
+  );
+
+  const { fileAttachments } = await import("../../src/extensions/file-attachments.js");
+  const fake = makeFakeApi();
+  fileAttachments(fake.api);
+
+  const tool = fake.tools.get("export_attachment");
+  expect(tool).toBeDefined();
+
+  const result = await tool.execute("call", { id: mediaId });
+  const outputPath = result.details?.output_path;
+  expect(typeof outputPath).toBe("string");
 });

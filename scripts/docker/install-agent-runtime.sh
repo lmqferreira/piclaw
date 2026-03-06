@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# scripts/docker/install-agent-runtime.sh – Install Homebrew, Bun, and pi globally.
+#
+# Installs bun under /usr/local/lib/bun (via BUN_INSTALL). The directory is
+# root-owned and world-readable so all users can run bun/pi/piclaw.
+# All `bun add -g` calls use sudo to write into the system prefix.
 set -euo pipefail
 
 DEFAULT_BREW_REMOTE="https://github.com/Homebrew/brew.git"
@@ -60,20 +65,30 @@ for attempt in 1 2 3 4 5; do
 done
 
 brew install lazygit
-curl -fsSL https://bun.sh/install | bash
 
-export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
-export PATH="$BUN_INSTALL/bin:$PATH"
-bun add -g @mariozechner/pi-coding-agent
+# Install Bun globally under /usr/local/lib/bun (root-owned, world-readable)
+export BUN_INSTALL="/usr/local/lib/bun"
+sudo mkdir -p "$BUN_INSTALL"
+curl -fsSL https://bun.sh/install | sudo BUN_INSTALL="$BUN_INSTALL" bash
 
-PI_LINK="$BUN_INSTALL/bin/pi"
-if [ ! -e "$PI_LINK" ]; then
-  echo "pi CLI was not installed at $PI_LINK" >&2
-  exit 1
-fi
+# Ensure world-readable so all users can run bun
+sudo chmod -R a+rX "$BUN_INSTALL"
 
-PI_CLI="$(readlink -f "$PI_LINK")"
+# Symlink bun/bunx into /usr/local/bin
+sudo ln -sf "$BUN_INSTALL/bin/bun"  /usr/local/bin/bun
+sudo ln -sf "$BUN_INSTALL/bin/bunx" /usr/local/bin/bunx
+
+# Install pi-coding-agent globally (sudo so it writes to root-owned prefix)
+sudo BUN_INSTALL="$BUN_INSTALL" "$BUN_INSTALL/bin/bun" add -g @mariozechner/pi-coding-agent
+
+# Ensure world-readable after install
+sudo chmod -R a+rX "$BUN_INSTALL"
+
+# Symlink pi into /usr/local/bin
+sudo ln -sf "$BUN_INSTALL/bin/pi" /usr/local/bin/pi
+
+PI_CLI="$(readlink -f "$BUN_INSTALL/bin/pi")"
 if [ -f "$PI_CLI" ] && head -n1 "$PI_CLI" | grep -q 'env node'; then
-  sed -i '1s/env node/env bun/' "$PI_CLI"
+  sudo sed -i '1s/env node/env bun/' "$PI_CLI"
 fi
-chmod +x "$PI_CLI"
+sudo chmod +x "$PI_CLI"

@@ -1,6 +1,16 @@
+/**
+ * agent-control/handlers/info.ts – Handlers for informational / read-only commands.
+ *
+ * Handles /commands, /state, /stats, /context, /last, /search-workspace,
+ * /labels, and /label. These commands display session state, token usage,
+ * and search results without modifying the session.
+ *
+ * Consumers: agent-control-handlers.ts dispatches to these handlers.
+ */
 import { formatCompactNumber, formatCurrency } from "../agent-control-helpers.js";
 import { CONTROL_COMMAND_DEFINITIONS } from "../command-registry.js";
 import { searchWorkspace } from "../../workspace-search.js";
+/** Handle /state: display current session state summary. */
 export async function handleState(session, _command) {
     const modelLabel = session.model ? `${session.model.provider}/${session.model.id}` : "none";
     const steeringCount = session.getSteeringMessages().length;
@@ -22,6 +32,7 @@ export async function handleState(session, _command) {
     ];
     return { status: "success", message: lines.join("\n") };
 }
+/** Handle /stats: display token usage and cost statistics. */
 export async function handleStats(session, _command) {
     const stats = session.getSessionStats();
     const tokens = stats.tokens;
@@ -34,6 +45,7 @@ export async function handleStats(session, _command) {
     ];
     return { status: "success", message: lines.join("\n") };
 }
+/** Handle /context: display context window usage breakdown. */
 export async function handleContext(session, _command) {
     const usage = session.getContextUsage();
     if (!usage) {
@@ -51,6 +63,7 @@ export async function handleContext(session, _command) {
         message: `Context usage: ${formatCompactNumber(usage.tokens)} / ${formatCompactNumber(usage.contextWindow)} (${percent.toFixed(1)}%).`,
     };
 }
+/** Handle /last: display the last assistant response. */
 export async function handleLast(session, _command) {
     const last = session.getLastAssistantText();
     if (!last) {
@@ -58,6 +71,7 @@ export async function handleLast(session, _command) {
     }
     return { status: "success", message: `Last assistant response:\n\n${last}` };
 }
+/** Handle /search-workspace: full-text search across workspace files. */
 export async function handleSearchWorkspace(_session, command) {
     const query = command.query?.trim();
     if (!query) {
@@ -84,6 +98,7 @@ export async function handleSearchWorkspace(_session, command) {
     const lines = rows.map((row) => `• ${row.path} — ${row.snippet}`);
     return { status: "success", message: `${header}\n${lines.join("\n")}` };
 }
+/** Handle /commands: list all available control commands. */
 export async function handleCommands(session, _command) {
     const describeSource = (source, detail) => {
         const base = source === "core" ? "core"

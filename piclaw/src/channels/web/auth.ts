@@ -1,4 +1,15 @@
-import { createHmac, randomBytes } from "node:crypto";
+/**
+ * web/auth.ts – TOTP-based authentication for the web UI.
+ *
+ * Implements HMAC-based TOTP (RFC 6238) verification, session token
+ * generation, and cookie-based session management. When WEB_TOTP_SECRET
+ * is configured, all web requests must be authenticated.
+ *
+ * Consumers: channels/web.ts uses these helpers in its request handler
+ *            to gate access to all API and static endpoints.
+ */
+
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
@@ -46,18 +57,34 @@ function totpAtTime(secret: string, stepSeconds: number, digits: number, timeMs:
   return (code % mod).toString().padStart(digits, "0");
 }
 
+/** Verify a 6-digit TOTP code against the configured secret. */
 export function verifyTotp(secret: string, code: string, windowSteps = 1, stepSeconds = 30, digits = 6): boolean {
   const normalized = code.replace(/\D/g, "").slice(0, digits);
   if (normalized.length !== digits) return false;
 
   const now = Date.now();
+  let valid = false;
   for (let offset = -windowSteps; offset <= windowSteps; offset += 1) {
     const expected = totpAtTime(secret, stepSeconds, digits, now + offset * stepSeconds * 1000);
-    if (expected === normalized) return true;
+    // Constant-time comparison to prevent timing side-channels.
+    const a = Buffer.from(expected, "utf8");
+    const b = Buffer.from(normalized, "utf8");
+    if (a.length === b.length && timingSafeEqual(a, b)) {
+      valid = true;
+    }
   }
-  return false;
+  return valid;
 }
 
+/** Constant-time string comparison for secrets. */
+export function safeEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a, "utf8");
+  const bufB = Buffer.from(b, "utf8");
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
+}
+
+/** Generate a cryptographically random hex session token. */
 export function randomSessionToken(): string {
   return randomBytes(32).toString("base64url");
 }

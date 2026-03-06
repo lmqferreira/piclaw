@@ -1,10 +1,37 @@
 // @ts-nocheck
+/**
+ * app.ts – Main web UI entry point.
+ *
+ * This file is the root of the authenticated SPA. It imports all components,
+ * the API client, and the markdown renderer. Today it's copied to
+ * web/static/js/app.js and loaded as an ES module by index.html.
+ *
+ * Build plan (TODO):
+ *   Bundle this file and all its local imports into a single minified
+ *   app.bundle.js using `bun build --target=browser --format=esm --minify`.
+ *   Mark vendor/codemirror.js as --external (loaded separately).
+ *   The vendor/preact-htm.js re-export can be inlined by the bundler.
+ *
+ * Auth segmentation (TODO):
+ *   The resulting bundle should be served from an auth-gated path so
+ *   unauthenticated users (login.html) never receive it. login.html is
+ *   fully self-contained with inline JS for TOTP/WebAuthn and does not
+ *   import anything from this module tree.
+ */
 import { html, render, useState, useEffect, useCallback, useRef } from './vendor/preact-htm.js';
-import { getTimeline, getPostsByHashtag, searchPosts, deletePost, getAgents, getAgentThought, setAgentThoughtVisibility, getAgentStatus, SSEClient } from './api.js';
+import { searchPosts, deletePost, getAgents, getAgentThought, setAgentThoughtVisibility, getAgentStatus, getAgentContext, getWorkspaceFile, updateWorkspaceFile } from './api.js';
 import { ComposeBox } from './components/compose-box.js';
 import { AgentRequestModal, AgentStatus, ConnectionStatus } from './components/status.js';
 import { Timeline } from './components/timeline.js';
 import { WorkspaceExplorer } from './components/workspace-explorer.js';
+import { WorkspaceEditor } from './components/editor.js';
+import { getLocalStorageBoolean, getLocalStorageNumber, setLocalStorageItem } from './utils/storage.js';
+import { useSseConnection } from './ui/use-sse-connection.js';
+import { useNotifications } from './ui/use-notifications.js';
+import { useTimeline } from './ui/use-timeline.js';
+import { dedupePosts } from './ui/timeline-utils.js';
+import { useAgentState } from './ui/use-agent-state.js';
+import { useSplitters } from './ui/use-splitters.js';
 
 function readSilenceOverride(key, fallback) {
     try {
@@ -78,14 +105,6 @@ function updateThemeColor(dark) {
     }
 }
 
-const dedupePosts = (items) => {
-    const seen = new Set();
-    return (items || []).filter((post) => {
-        if (!post || seen.has(post.id)) return false;
-        seen.add(post.id);
-        return true;
-    });
-};
 
 const estimatePreviewLines = (text, maxCharsPerLine = 160) => {
     const value = String(text || '').replace(/\r\n/g, '\n');
@@ -99,54 +118,63 @@ const estimatePreviewLines = (text, maxCharsPerLine = 160) => {
  * Main App component
  */
 function App() {
-    const [posts, setPosts] = useState(null);
-    const [hasMore, setHasMore] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState('disconnected');
     const [currentHashtag, setCurrentHashtag] = useState(null);
     const [searchQuery, setSearchQuery] = useState(null);
     const [searchOpen, setSearchOpen] = useState(false);
     const [fileRefs, setFileRefs] = useState([]);
-    const [agentStatus, setAgentStatus] = useState(null);
-    const [agentDraft, setAgentDraft] = useState({ text: '', totalLines: 0 });
-    const [agentPlan, setAgentPlan] = useState('');
-    const [agentThought, setAgentThought] = useState({ text: '', totalLines: 0 });
-    const [pendingRequest, setPendingRequest] = useState(null);
-    const [currentTurnId, setCurrentTurnId] = useState(null);
-    const [steerQueuedTurnId, setSteerQueuedTurnId] = useState(null);
+    const {
+        agentStatus,
+        setAgentStatus,
+        agentDraft,
+        setAgentDraft,
+        agentPlan,
+        setAgentPlan,
+        agentThought,
+        setAgentThought,
+        pendingRequest,
+        setPendingRequest,
+        currentTurnId,
+        setCurrentTurnId,
+        steerQueuedTurnId,
+        setSteerQueuedTurnId,
+        lastAgentEventRef,
+        lastSilenceNoticeRef,
+        isAgentRunningRef,
+        draftBufferRef,
+        thoughtBufferRef,
+        pendingRequestRef,
+        stalledPostIdRef,
+        currentTurnIdRef,
+        steerQueuedTurnIdRef,
+        thoughtExpandedRef,
+        draftExpandedRef,
+    } = useAgentState();
     const [agents, setAgents] = useState({});
     const [activeModel, setActiveModel] = useState(null);
-    const [notificationsEnabled, setNotificationsEnabled] = useState(false);
-    const [notificationPermission, setNotificationPermission] = useState('default');
+    const [contextUsage, setContextUsage] = useState(null);
+    const {
+        notificationsEnabled,
+        notificationPermission,
+        toggleNotifications: handleToggleNotifications,
+        notify,
+    } = useNotifications();
     const [removingPostIds, setRemovingPostIds] = useState(() => new Set());
-    const [workspaceOpen, setWorkspaceOpen] = useState(() => {
-        if (typeof window === 'undefined') return true;
-        const stored = localStorage.getItem('workspaceOpen');
-        return stored === null ? true : stored === 'true';
-    });
+    const [workspaceOpen, setWorkspaceOpen] = useState(() => getLocalStorageBoolean('workspaceOpen', true));
+    const [editorState, setEditorState] = useState({ open: false, path: null, content: '', loading: false, error: null, mtime: null, size: null });
+    const [editorSaving, setEditorSaving] = useState(false);
+    const [editorSaveError, setEditorSaveError] = useState(null);
+    const [editorSavedAt, setEditorSavedAt] = useState(null);
     const [userProfile, setUserProfile] = useState({ name: 'You', avatar_url: null, avatar_background: null });
     const hasConnectedOnceRef = useRef(false);
+    const wasAgentActiveRef = useRef(false); // tracks active→idle transition for timeline refresh
     const agentsRef = useRef({});
     const userProfileRef = useRef({ name: null, avatar_url: null });
     const viewStateRef = useRef({ currentHashtag: null, searchQuery: null });
-    const hasMoreRef = useRef(false);
-    const loadMoreRef = useRef(null);
-    const loadingMoreRef = useRef(false);
-    const lastBeforeIdRef = useRef(null);
     const timelineRef = useRef(null);
-    const lastAgentEventRef = useRef(null);
-    const lastSilenceNoticeRef = useRef(0);
-    const isAgentRunningRef = useRef(false);
-    const draftBufferRef = useRef('');
-    const thoughtBufferRef = useRef('');
-    const pendingRequestRef = useRef(null);
-    const stalledPostIdRef = useRef(null);
-    const currentTurnIdRef = useRef(null);
-    const steerQueuedTurnIdRef = useRef(null);
     const appShellRef = useRef(null);
     const sidebarWidthRef = useRef(0);
-    const thoughtExpandedRef = useRef(false);
-    const draftExpandedRef = useRef(false);
-    const notificationsEnabledRef = useRef(false);
+    const editorWidthRef = useRef(0);
     const lastNotifiedIdRef = useRef(null);
     const lastAgentResponseRef = useRef(null);
     const lastActivityTimerRef = useRef(null);
@@ -158,13 +186,6 @@ function App() {
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
-        const stored = localStorage.getItem('notificationsEnabled');
-        const enabled = stored === 'true';
-        notificationsEnabledRef.current = enabled;
-        setNotificationsEnabled(enabled);
-        if (typeof Notification !== 'undefined') {
-            setNotificationPermission(Notification.permission);
-        }
 
         const media = window.matchMedia('(prefers-color-scheme: dark)');
         const applyTheme = () => updateThemeColor(media.matches);
@@ -184,12 +205,7 @@ function App() {
     }, []);
 
     useEffect(() => {
-        notificationsEnabledRef.current = notificationsEnabled;
-    }, [notificationsEnabled]);
-
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-        localStorage.setItem('workspaceOpen', String(workspaceOpen));
+        setLocalStorageItem('workspaceOpen', String(workspaceOpen));
     }, [workspaceOpen]);
 
     useEffect(() => {
@@ -277,7 +293,8 @@ function App() {
         clearLastActivityTimer();
         const token = Date.now();
         lastActivityTokenRef.current = token;
-        setAgentStatus({ ...payload, last_activity: true });
+        // Strip tool/intent details — only show a minimal "last active" hint
+        setAgentStatus({ type: payload.type || 'active', last_activity: true });
         lastActivityTimerRef.current = setTimeout(() => {
             if (lastActivityTokenRef.current !== token) return;
             setAgentStatus((prev) => {
@@ -323,50 +340,8 @@ function App() {
         draftExpandedRef.current = false;
     }, [setCurrentTurnId, setSteerQueuedTurnId]);
 
-    const requestNotificationPermission = useCallback(() => {
-        if (typeof Notification === 'undefined') return Promise.resolve('denied');
-        try {
-            const result = Notification.requestPermission();
-            if (result && typeof result.then === 'function') {
-                return result;
-            }
-            return Promise.resolve(result);
-        } catch {
-            return Promise.resolve('default');
-        }
-    }, []);
-
-    const handleToggleNotifications = useCallback(async () => {
-        if (typeof window === 'undefined' || typeof Notification === 'undefined') return;
-        if (!window.isSecureContext) {
-            alert('Notifications require a secure context (HTTPS or installed app).');
-            return;
-        }
-        if (Notification.permission === 'denied') {
-            setNotificationPermission('denied');
-            alert('Browser notifications are blocked. Enable them in your browser settings.');
-            return;
-        }
-        if (Notification.permission === 'default') {
-            const result = await requestNotificationPermission();
-            setNotificationPermission(result || 'default');
-            if (result !== 'granted') {
-                notificationsEnabledRef.current = false;
-                setNotificationsEnabled(false);
-                localStorage.setItem('notificationsEnabled', 'false');
-                return;
-            }
-        }
-        const next = !notificationsEnabledRef.current;
-        notificationsEnabledRef.current = next;
-        setNotificationsEnabled(next);
-        localStorage.setItem('notificationsEnabled', String(next));
-    }, [requestNotificationPermission]);
 
     const notifyForFinalResponse = useCallback((turnId) => {
-        if (!notificationsEnabledRef.current) return;
-        if (typeof Notification === 'undefined') return;
-        if (Notification.permission !== 'granted') return;
         if (typeof document !== 'undefined') {
             const hasFocus = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
             if (!document.hidden && hasFocus) return;
@@ -384,19 +359,8 @@ function App() {
         const agentsMap = agentsRef.current || {};
         const agent = post?.data?.agent_id ? agentsMap[post.data.agent_id] : null;
         const title = agent?.name || 'Pi';
-        try {
-            const notification = new Notification(title, { body });
-            notification.onclick = () => {
-                try {
-                    window.focus();
-                } catch {
-                    // ignore focus errors
-                }
-            };
-        } catch {
-            // ignore notification failures
-        }
-    }, []);
+        notify(title, body);
+    }, [notify]);
 
     const handlePanelToggle = useCallback(async (panelKey, expanded) => {
         if (panelKey !== 'thought' && panelKey !== 'draft') return;
@@ -450,12 +414,6 @@ function App() {
         }
     }, []);
 
-    const removeStalledPost = useCallback(() => {
-        const stalledId = stalledPostIdRef.current;
-        if (!stalledId) return;
-        setPosts((prev) => (prev ? prev.filter((post) => post.id !== stalledId) : prev));
-        stalledPostIdRef.current = null;
-    }, []);
 
     // Scroll to bottom of timeline (column-reverse: bottom is scrollTop=0)
     const scrollToBottomRef = useRef(null);
@@ -508,6 +466,32 @@ function App() {
         });
     }, []);
 
+    const {
+        posts,
+        setPosts,
+        hasMore,
+        setHasMore,
+        hasMoreRef,
+        loadPosts,
+        refreshTimeline,
+        loadMore,
+        loadMoreRef,
+    } = useTimeline({ preserveTimelineScroll, preserveTimelineScrollTop });
+
+    const removeStalledPost = useCallback(() => {
+        const stalledId = stalledPostIdRef.current;
+        if (!stalledId) return;
+        setPosts((prev) => (prev ? prev.filter((post) => post.id !== stalledId) : prev));
+        stalledPostIdRef.current = null;
+    }, [setPosts]);
+
+    const {
+        handleSplitterMouseDown,
+        handleSplitterTouchStart,
+        handleEditorSplitterMouseDown,
+        handleEditorSplitterTouchStart,
+    } = useSplitters({ appShellRef, sidebarWidthRef, editorWidthRef });
+
     const finalizeStalledResponse = useCallback(() => {
         if (!isAgentRunningRef.current) return;
         isAgentRunningRef.current = false;
@@ -558,9 +542,6 @@ function App() {
         viewStateRef.current = { currentHashtag, searchQuery };
     }, [currentHashtag, searchQuery]);
 
-    useEffect(() => {
-        hasMoreRef.current = hasMore;
-    }, [hasMore]);
 
     useEffect(() => {
         const intervalMs = Math.min(1000, Math.max(100, Math.floor(SILENCE_WARNING_MS / 2)));
@@ -593,50 +574,55 @@ function App() {
     }, [finalizeStalledResponse]);
 
     
-    // Load timeline or hashtag posts
-    const loadPosts = useCallback(async (hashtag = null) => {
-        try {
-            if (hashtag) {
-                const result = await getPostsByHashtag(hashtag);
-                setPosts(result.posts);
-                setHasMore(false);
-            } else {
-                const result = await getTimeline(10);
-                setPosts(result.posts);
-                setHasMore(result.has_more);
-            }
-        } catch (error) {
-            console.error('Failed to load posts:', error);
-        }
-    }, []);
-
-    const refreshTimeline = useCallback(async () => {
-        try {
-            const result = await getTimeline(10);
-            setPosts((prev) => {
-                if (!prev || prev.length === 0) return result.posts;
-                return dedupePosts([...result.posts, ...prev]);
-            });
-            setHasMore((prev) => prev || result.has_more);
-        } catch (error) {
-            console.error('Failed to refresh timeline:', error);
-        }
-    }, []);
 
     const refreshAgentStatus = useCallback(async () => {
         try {
             const res = await getAgentStatus('web:default');
-            if (!res || res.status !== 'active' || !res.data) return;
+            if (!res || res.status !== 'active' || !res.data) {
+                // If the agent just transitioned active → idle, refresh the timeline
+                // to catch any final response that arrived while SSE was gapped.
+                if (wasAgentActiveRef.current) {
+                    const { currentHashtag: ah, searchQuery: sq } = viewStateRef.current || {};
+                    if (!ah && !sq) refreshTimeline();
+                }
+                wasAgentActiveRef.current = false;
+                clearAgentRunState();
+                setAgentStatus(null);
+                setAgentDraft({ text: '', totalLines: 0 });
+                setAgentPlan('');
+                setAgentThought({ text: '', totalLines: 0 });
+                setPendingRequest(null);
+                pendingRequestRef.current = null;
+                return;
+            }
+            wasAgentActiveRef.current = true;
             const payload = res.data;
             const activeTurn = payload.turn_id || payload.turnId;
             if (activeTurn) setActiveTurn(activeTurn);
             noteAgentActivity({ running: true, clearSilence: true });
             clearLastActivityFlag();
             setAgentStatus(payload);
+
+            // Restore draft/thought buffers if the server has them and the
+            // client doesn't (e.g. after reconnect or SSE gap).
+            if (res.thought && res.thought.text) {
+                setAgentThought((prev) => {
+                    if (prev && prev.text && prev.text.length >= res.thought.text.length) return prev;
+                    thoughtBufferRef.current = res.thought.text;
+                    return { text: res.thought.text, totalLines: res.thought.totalLines || 0 };
+                });
+            }
+            if (res.draft && res.draft.text) {
+                setAgentDraft((prev) => {
+                    if (prev && prev.text && prev.text.length >= res.draft.text.length) return prev;
+                    draftBufferRef.current = res.draft.text;
+                    return { text: res.draft.text, totalLines: res.draft.totalLines || 0 };
+                });
+            }
         } catch (err) {
             console.warn('Failed to fetch agent status:', err);
         }
-    }, [clearLastActivityFlag, noteAgentActivity, setActiveTurn]);
+    }, [clearAgentRunState, clearLastActivityFlag, noteAgentActivity, refreshTimeline, setActiveTurn]);
 
     const handleConnectionStatusChange = useCallback((status) => {
         setConnectionStatus(status);
@@ -652,81 +638,35 @@ function App() {
         }
         if (!hasConnectedOnceRef.current) {
             hasConnectedOnceRef.current = true;
+            // On initial page load, fetch agent status immediately so any
+            // in-progress turn (e.g. auto-compaction) is shown right away.
+            refreshAgentStatus();
             return;
         }
+        // On reconnect: refresh timeline for any missed posts and restore
+        // in-progress agent state (status + draft/thought buffers).
         const { currentHashtag: activeHashtag, searchQuery: activeSearch } = viewStateRef.current;
         if (!activeHashtag && !activeSearch) {
             refreshTimeline();
         }
-    }, [clearAgentRunState, refreshTimeline]);
+        refreshAgentStatus();
+    }, [clearAgentRunState, refreshTimeline, refreshAgentStatus]);
     
-    // Load older messages (prepend)
-    const loadMore = useCallback(async (options = {}) => {
-        if (!posts || posts.length === 0) return;
-        if (loadingMoreRef.current) return;
-        const { preserveScroll = true, preserveMode = 'top', allowRepeat = false } = options;
-        const applyUpdate = (fn) => {
-            if (!preserveScroll) {
-                fn();
-                return;
-            }
-            if (preserveMode === 'top') preserveTimelineScrollTop(fn);
-            else preserveTimelineScroll(fn);
-        };
-        const sortedPosts = posts.slice().sort((a, b) => a.id - b.id);
-        const oldestId = sortedPosts[0]?.id;
-        if (!Number.isFinite(oldestId)) return;
-        if (!allowRepeat && lastBeforeIdRef.current === oldestId) return;
-
-        loadingMoreRef.current = true;
-        lastBeforeIdRef.current = oldestId;
-        try {
-            const result = await getTimeline(10, oldestId);
-            if (result.posts.length > 0) {
-                applyUpdate(() => {
-                    setPosts(prev => dedupePosts([...result.posts, ...(prev || [])]));
-                    setHasMore(result.has_more);
-                });
-            } else {
-                setHasMore(false);
-            }
-        } catch (error) {
-            console.error('Failed to load more posts:', error);
-        } finally {
-            loadingMoreRef.current = false;
-        }
-    }, [posts, preserveTimelineScroll, preserveTimelineScrollTop]);
-
-    useEffect(() => {
-        loadMoreRef.current = loadMore;
-    }, [loadMore]);
     
     // Handle hashtag click
     const handleHashtagClick = useCallback(async (hashtag) => {
         setCurrentHashtag(hashtag);
         setPosts(null); // Show loading
-        try {
-            const result = await getPostsByHashtag(hashtag);
-            setPosts(result.posts);
-            setHasMore(false);
-        } catch (error) {
-            console.error('Failed to load hashtag posts:', error);
-        }
-    }, []);
+        await loadPosts(hashtag);
+    }, [loadPosts]);
     
     // Go back to timeline
     const handleBackToTimeline = useCallback(async () => {
         setCurrentHashtag(null);
         setSearchQuery(null);
         setPosts(null);
-        try {
-            const result = await getTimeline(10);
-            setPosts(result.posts);
-            setHasMore(result.has_more);
-        } catch (error) {
-            console.error('Failed to load timeline:', error);
-        }
-    }, []);
+        await loadPosts();
+    }, [loadPosts]);
 
     // Handle search
     const handleSearch = useCallback(async (query) => {
@@ -833,12 +773,17 @@ function App() {
         } catch (e) {
             console.warn('Failed to load agents:', e);
         }
+        // Fetch initial context usage for the pie chart indicator
+        try {
+            const ctx = await getAgentContext();
+            if (ctx) setContextUsage(ctx);
+        } catch {}
     }, [applyBranding]);
 
     useEffect(() => {
         loadAgents();
         // Also apply saved sidebar width imperatively (no state → no re-render)
-        const saved = parseInt(localStorage.getItem('sidebarWidth') || '', 10);
+        const saved = getLocalStorageNumber('sidebarWidth', null);
         const w = Number.isFinite(saved) ? Math.min(Math.max(saved, 160), 600) : 280;
         sidebarWidthRef.current = w;
         if (appShellRef.current) {
@@ -947,6 +892,16 @@ function App() {
                     if (activeTurn) setActiveTurn(activeTurn);
                     noteAgentActivity({ clearSilence: true });
                     showLastActivity(payload);
+
+                    // Restore draft/thought buffers from enriched status
+                    if (res.thought && res.thought.text) {
+                        thoughtBufferRef.current = res.thought.text;
+                        setAgentThought({ text: res.thought.text, totalLines: res.thought.totalLines || 0 });
+                    }
+                    if (res.draft && res.draft.text) {
+                        draftBufferRef.current = res.draft.text;
+                        setAgentDraft({ text: res.draft.text, totalLines: res.draft.totalLines || 0 });
+                    }
                 })
                 .catch((err) => {
                     console.warn('Failed to fetch agent status:', err);
@@ -955,14 +910,20 @@ function App() {
         }
 
         if (eventType === 'agent_status') {
-            console.log('Agent status:', data);
             if (data.type === 'done' || data.type === 'error') {
                 if (turnId && currentTurnIdRef.current && turnId !== currentTurnIdRef.current) {
                     return;
                 }
                 if (data.type === 'done') {
                     notifyForFinalResponse(turnId || currentTurnIdRef.current);
+                    // Refresh timeline to surface any final response that arrived
+                    // during an SSE gap (agent_response event may have been missed).
+                    const { currentHashtag: ah, searchQuery: sq } = viewStateRef.current || {};
+                    if (!ah && !sq) refreshTimeline();
+                    // Update context usage indicator from the done event payload
+                    if (data.context_usage) setContextUsage(data.context_usage);
                 }
+                wasAgentActiveRef.current = false;
                 clearAgentRunState();
                 setAgentStatus(null);
                 setAgentDraft({ text: '', totalLines: 0 });
@@ -1158,7 +1119,7 @@ function App() {
                 }
             }
         }
-    }, [clearAgentRunState, clearLastActivityFlag, noteAgentActivity, notifyForFinalResponse, preserveTimelineScrollTop, removeStalledPost, setActiveTurn, showLastActivity, updateAgentProfile, updateUserProfile]);
+    }, [clearAgentRunState, clearLastActivityFlag, noteAgentActivity, notifyForFinalResponse, preserveTimelineScrollTop, refreshTimeline, removeStalledPost, setActiveTurn, showLastActivity, updateAgentProfile, updateUserProfile]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -1183,114 +1144,111 @@ function App() {
     }, [clearAgentRunState, finalizeStalledResponse, handleSseEvent, removeStalledPost]);
 
     // Set up SSE connection
-    useEffect(() => {
-        loadPosts();
+    useSseConnection({ handleSseEvent, handleConnectionStatusChange, loadPosts });
 
-        const sse = new SSEClient(handleSseEvent, handleConnectionStatusChange);
-
-        sse.connect();
-
-        const handleWindowFocus = () => {
-            sse.reconnectIfNeeded();
-        };
-        window.addEventListener('focus', handleWindowFocus);
-        document.addEventListener('visibilitychange', handleWindowFocus);
-
-        return () => {
-            window.removeEventListener('focus', handleWindowFocus);
-            document.removeEventListener('visibilitychange', handleWindowFocus);
-            sse.disconnect();
-        };
-    }, [handleConnectionStatusChange, handleSseEvent, loadPosts]);
-
-    // Poll for latest posts periodically as a backstop (main timeline only).
+    // Adaptive backstop poller — SSE is the primary event source; this is
+    // a safety net only. 15 s when a turn is active (keeps compaction status
+    // visible and catches any SSE-gap missed turn completion). 60 s when
+    // idle (timeline + status refresh as a general backstop).
+    const isAgentActive = agentStatus !== null;
     useEffect(() => {
         if (connectionStatus !== 'connected') return;
+        const intervalMs = isAgentActive ? 15000 : 60000;
         const interval = setInterval(() => {
-            const { currentHashtag: activeHashtag, searchQuery: activeSearch } = viewStateRef.current || {};
-            if (!activeHashtag && !activeSearch) {
-                refreshTimeline();
+            if (isAgentActive) {
+                // Active: only refresh status; avoid noisy timeline fetches.
+                refreshAgentStatus();
+            } else {
+                const { currentHashtag: activeHashtag, searchQuery: activeSearch } = viewStateRef.current || {};
+                if (!activeHashtag && !activeSearch) {
+                    refreshTimeline();
+                }
+                refreshAgentStatus();
             }
-            refreshAgentStatus();
-        }, 60000);
+        }, intervalMs);
         return () => clearInterval(interval);
-    }, [connectionStatus, refreshAgentStatus, refreshTimeline]);
-
-    // ── Splitter drag: zero re-renders, direct CSS var manipulation ───────────
-    const handleSplitterMouseDown = useRef((e) => {
-        e.preventDefault();
-        const shell = appShellRef.current;
-        if (!shell) return;
-        const startX = e.clientX;
-        const startW = sidebarWidthRef.current || 280;
-        const splitter = e.currentTarget;
-        splitter.classList.add('dragging');
-        document.body.style.cursor = 'col-resize';
-        document.body.style.userSelect = 'none';
-
-        let lastX = startX;
-        const onMove = (me) => {
-            lastX = me.clientX;
-            const w = Math.min(Math.max(startW + (me.clientX - startX), 160), 600);
-            shell.style.setProperty('--sidebar-width', `${w}px`);
-            sidebarWidthRef.current = w;
-        };
-        const onUp = () => {
-            const w = Math.min(Math.max(startW + (lastX - startX), 160), 600);
-            sidebarWidthRef.current = w;
-            splitter.classList.remove('dragging');
-            document.body.style.cursor = '';
-            document.body.style.userSelect = '';
-            localStorage.setItem('sidebarWidth', String(Math.round(w)));
-            document.removeEventListener('mousemove', onMove);
-            document.removeEventListener('mouseup', onUp);
-        };
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
-    }).current;
-
-    const handleSplitterTouchStart = useRef((e) => {
-        e.preventDefault();
-        const shell = appShellRef.current;
-        if (!shell) return;
-        const touch = e.touches[0];
-        if (!touch) return;
-        const startX = touch.clientX;
-        const startW = sidebarWidthRef.current || 280;
-        const splitter = e.currentTarget;
-        splitter.classList.add('dragging');
-        document.body.style.userSelect = 'none';
-
-        const onMove = (te) => {
-            const t = te.touches[0];
-            if (!t) return;
-            te.preventDefault();
-            const w = Math.min(Math.max(startW + (t.clientX - startX), 160), 600);
-            shell.style.setProperty('--sidebar-width', `${w}px`);
-            sidebarWidthRef.current = w;
-        };
-        const onUp = () => {
-            splitter.classList.remove('dragging');
-            document.body.style.userSelect = '';
-            localStorage.setItem('sidebarWidth', String(Math.round(sidebarWidthRef.current || startW)));
-            document.removeEventListener('touchmove', onMove);
-            document.removeEventListener('touchend', onUp);
-            document.removeEventListener('touchcancel', onUp);
-        };
-        document.addEventListener('touchmove', onMove, { passive: false });
-        document.addEventListener('touchend', onUp);
-        document.addEventListener('touchcancel', onUp);
-    }).current;
+    }, [connectionStatus, isAgentActive, refreshAgentStatus, refreshTimeline]);
 
     const toggleWorkspace = useCallback(() => {
         setWorkspaceOpen((prev) => !prev);
     }, []);
 
+    useEffect(() => {
+        if (!editorState.open) return;
+        if (typeof window === 'undefined') return;
+        const shell = appShellRef.current;
+        if (!shell) return;
+        if (!editorWidthRef.current) {
+            const stored = getLocalStorageNumber('editorWidth', null);
+            const fallback = sidebarWidthRef.current || 280;
+            editorWidthRef.current = Number.isFinite(stored) ? stored : fallback;
+        }
+        shell.style.setProperty('--editor-width', `${editorWidthRef.current}px`);
+    }, [editorState.open]);
+
+    const EDITOR_MAX_BYTES = 256 * 1024;
+
+    const openEditor = useCallback(async (path) => {
+        if (!path) return;
+        setEditorSaveError(null);
+        setEditorSavedAt(null);
+        setEditorState({ open: true, path, content: '', loading: true, error: null, mtime: null, size: null });
+        try {
+            const data = await getWorkspaceFile(path, EDITOR_MAX_BYTES, 'edit');
+            if (data?.error) {
+                setEditorState({ open: true, path, content: '', loading: false, error: data.error, mtime: null, size: null });
+                return;
+            }
+            if (data?.kind && data.kind !== 'text') {
+                setEditorState({ open: true, path, content: '', loading: false, error: 'File is not editable', mtime: data.mtime, size: data.size });
+                return;
+            }
+            setEditorState({
+                open: true,
+                path,
+                content: data?.text || '',
+                loading: false,
+                error: null,
+                mtime: data?.mtime || null,
+                size: data?.size || null,
+            });
+        } catch (err) {
+            setEditorState({ open: true, path, content: '', loading: false, error: err.message || 'Failed to load file', mtime: null, size: null });
+        }
+    }, []);
+
+    const closeEditor = useCallback(() => {
+        setEditorState({ open: false, path: null, content: '', loading: false, error: null, mtime: null, size: null });
+        setEditorSaveError(null);
+        setEditorSavedAt(null);
+    }, []);
+
+    const handleEditorSave = useCallback(async (value) => {
+        if (!editorState?.path || editorSaving) return;
+        setEditorSaving(true);
+        setEditorSaveError(null);
+        try {
+            const result = await updateWorkspaceFile(editorState.path, value);
+            setEditorState((prev) => ({
+                ...prev,
+                content: value,
+                mtime: result?.mtime || prev.mtime,
+                size: result?.size || prev.size,
+            }));
+            setEditorSavedAt(Date.now());
+        } catch (err) {
+            setEditorSaveError(err.message || 'Failed to save file');
+        } finally {
+            setEditorSaving(false);
+        }
+    }, [editorState?.path, editorSaving]);
+
     const steerQueued = Boolean(steerQueuedTurnId && (steerQueuedTurnId === (agentStatus?.turn_id || currentTurnId)));
+    const editorOpen = Boolean(editorState.open);
 
     return html`
-        <div class=${`app-shell${workspaceOpen ? '' : ' workspace-collapsed'}`} ref=${appShellRef}>
-            <${WorkspaceExplorer} onFileSelect=${addFileRef} visible=${workspaceOpen} />
+        <div class=${`app-shell${workspaceOpen ? '' : ' workspace-collapsed'}${editorOpen ? ' editor-open' : ''}`} ref=${appShellRef}>
+            <${WorkspaceExplorer} onFileSelect=${addFileRef} visible=${workspaceOpen} onOpenEditor=${openEditor} />
             <button
                 class=${`workspace-toggle-tab${workspaceOpen ? ' open' : ' closed'}`}
                 onClick=${toggleWorkspace}
@@ -1302,6 +1260,20 @@ function App() {
                 </svg>
             </button>
             <div class="workspace-splitter" onMouseDown=${handleSplitterMouseDown} onTouchStart=${handleSplitterTouchStart}></div>
+            ${editorOpen && html`
+                <${WorkspaceEditor}
+                    path=${editorState.path}
+                    content=${editorState.content}
+                    loading=${editorState.loading}
+                    error=${editorState.error}
+                    saving=${editorSaving}
+                    saveError=${editorSaveError}
+                    savedAt=${editorSavedAt}
+                    onSave=${handleEditorSave}
+                    onClose=${closeEditor}
+                />
+                <div class="editor-splitter" onMouseDown=${handleEditorSplitterMouseDown} onTouchStart=${handleEditorSplitterTouchStart}></div>
+            `}
             <div class="container">
                 ${searchQuery && isIOSDevice() && html`<div class="search-results-spacer"></div>`}
                 ${(currentHashtag || searchQuery) && html`
@@ -1348,6 +1320,7 @@ function App() {
                     onRemoveFileRef=${removeFileRef}
                     onClearFileRefs=${clearFileRefs}
                     activeModel=${activeModel}
+                    contextUsage=${contextUsage}
                     notificationsEnabled=${notificationsEnabled}
                     notificationPermission=${notificationPermission}
                     onToggleNotifications=${handleToggleNotifications}

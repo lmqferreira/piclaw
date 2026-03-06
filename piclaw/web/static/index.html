@@ -1,5 +1,28 @@
 <!DOCTYPE html>
 <html lang="en">
+<!--
+  index.html – Main web UI shell for PiClaw.
+
+  Single-page app entry point that loads the Preact-based timeline,
+  compose box, workspace explorer, and status components. Also loads
+  vendor libraries (marked, KaTeX, Mermaid) for markdown rendering.
+
+  Served by: channels/web/http/static.ts at the root URL.
+  Auth: This page is only served to authenticated users. The login page
+        (login.html) is a completely separate self-contained page with
+        inline JS for TOTP/WebAuthn — it does NOT load any of these scripts.
+
+  TODO: Bundle & segment
+  ──────────────────────
+  Currently web/src/*.ts files are copied as-is to static/js/*.js and
+  loaded as individual ES modules (~15 HTTP requests). Replace with:
+    1. `bun build web/src/app.ts --minify` → single app.bundle.js
+    2. Keep vendor libs (marked, katex, mermaid, preact-htm, codemirror)
+       as separate pre-built files — they're already minified.
+    3. Auth-gate the app bundle: move it to an auth-required path or
+       restrict the /static/ whitelist so unauthenticated visitors only
+       get CSS, fonts, and icons. See request-router-service.ts TODOs.
+-->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
@@ -9,8 +32,8 @@
     <title>PiClaw</title>
     <meta name="apple-mobile-web-app-title" content="PiClaw">
     <link rel="stylesheet" href="/static/css/katex.min.css">
-    <link rel="stylesheet" href="/static/css/styles.css?v=52">
-    <link rel="manifest" href="/manifest.json?v=7">
+    <link rel="stylesheet" href="/static/css/styles.css?v=54">
+    <link rel="manifest" href="/manifest.json?v=8">
     <link id="dynamic-favicon" rel="icon" href="/favicon.ico" data-default="/favicon.ico">
     <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png">
@@ -34,10 +57,10 @@
     <script src="/static/js/marked.min.js"></script>
     <script src="/static/js/vendor/katex.min.js"></script>
     <script src="/static/js/vendor/beautiful-mermaid.js"></script>
-    <script type="module" src="/static/js/app.js?v=63"></script>
+    <script type="module" src="/static/js/app.js?v=65"></script>
     <script type="module">
         // Fallback error display for module errors
-        import('./static/js/app.js?v=63').catch(function(e) {
+        import('./static/js/app.js?v=65').catch(function(e) {
             document.getElementById('app').innerHTML = '<pre style="padding:20px;color:red;">Module Error: ' + e.message + '</pre>';
         });
     </script>

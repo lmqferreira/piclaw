@@ -1,7 +1,19 @@
+/**
+ * web/agent-events.ts – Transforms pi-agent session events into SSE broadcasts.
+ *
+ * Subscribes to the agent session's event stream and translates events
+ * (text deltas, tool calls, message completions) into SSE payloads for the
+ * web UI. Also manages draft/thought buffer accumulation and auto-compaction
+ * status broadcasts.
+ *
+ * Consumers: channels/web.ts wires this up during agent runs.
+ */
+
 import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import type { WebChannel } from "../web.js";
 import { buildPreview, createToolTitleTracker, type AgentProfileBuilder } from "./agent-utils.js";
 
+/** Interface for broadcasting agent events to SSE clients. */
 export interface AgentEventEmitter {
   status: (payload: Record<string, unknown>) => void;
   thought: (payload: Record<string, unknown>) => void;
@@ -11,6 +23,7 @@ export interface AgentEventEmitter {
   response: (payload: object) => void;
 }
 
+/** Create an AgentEventEmitter that broadcasts via the given SSE hub. */
 export function createAgentEventEmitter(
   channel: WebChannel,
   withAgentProfile: AgentProfileBuilder
@@ -25,6 +38,7 @@ export function createAgentEventEmitter(
   };
 }
 
+/** Options for the streaming event handler: emitter, callbacks, buffers. */
 export interface StreamingEventHandlerOptions {
   emitter: AgentEventEmitter;
   agentId: string;
@@ -39,6 +53,7 @@ export interface StreamingEventHandlerOptions {
   onDraftBuffer?: (text: string, totalLines: number) => void;
 }
 
+/** Create an event handler that translates agent session events to SSE broadcasts. */
 export function createStreamingEventHandler(options: StreamingEventHandlerOptions): (event: AgentSessionEvent) => void {
   const thoughtPreviewLines = options.thoughtPreviewLines ?? 8;
   const draftPreviewLines = options.draftPreviewLines ?? 8;
@@ -223,6 +238,31 @@ export function createStreamingEventHandler(options: StreamingEventHandlerOption
         title,
         status: event.isError ? "Failed" : "Done",
       });
+    }
+
+    // Surface provider/API errors and retries so the user sees what's happening
+    // instead of silent waiting. These events are emitted by the upstream
+    // agent-session for any provider (not just Azure).
+    if (event.type === "auto_retry_start") {
+      const e = event as { attempt?: number; maxAttempts?: number; delayMs?: number; errorMessage?: string };
+      const delaySec = e.delayMs ? Math.round(e.delayMs / 1000) : "?";
+      options.emitter.status({
+        ...base,
+        type: "intent",
+        title: `Retrying after error (attempt ${e.attempt ?? "?"}/${e.maxAttempts ?? "?"}, ${delaySec}s delay)`,
+        detail: e.errorMessage || undefined,
+      });
+    }
+
+    if (event.type === "auto_retry_end") {
+      const e = event as { success?: boolean; attempt?: number; finalError?: string };
+      if (!e.success) {
+        options.emitter.status({
+          ...base,
+          type: "error",
+          title: e.finalError || "Request failed after retries",
+        });
+      }
     }
   };
 }

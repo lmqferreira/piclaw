@@ -1,3 +1,13 @@
+/**
+ * web/handlers/agent.ts – HTTP handlers for agent-related API endpoints.
+ *
+ * Handles GET /agents, GET /agent/status, GET /agent/thought,
+ * POST /agent/thought/visibility, avatar upload/retrieval, user profile,
+ * and branding endpoints.
+ *
+ * Consumers: web/request-router.ts routes agent paths to these handlers.
+ */
+
 import type { WebChannel } from "../../web.js";
 import {
   ASSISTANT_AVATAR,
@@ -23,6 +33,7 @@ import { storeAgentTurn } from "../agent-message-store.js";
 import { resolveThreadId, resolveThreadRootId } from "../threading.js";
 import { createUuid } from "../../../utils/ids.js";
 
+/** Handle POST to create an agent message and start an agent run. */
 export async function handleAgentMessage(
   channel: WebChannel,
   req: Request,
@@ -35,10 +46,16 @@ export async function handleAgentMessage(
   if (parsed.error || !parsed.payload) return channel.json({ error: parsed.error }, 400);
 
   const normalized = normalizeAgentMessagePayload(parsed.payload);
-  if (!normalized.content) return channel.json({ error: "Missing 'content' field" }, 400);
+  const content = typeof normalized.content === "string" ? normalized.content : "";
+  const hasAttachments =
+    normalized.mediaIds.length > 0 ||
+    (Array.isArray(normalized.contentBlocks) && normalized.contentBlocks.length > 0) ||
+    (Array.isArray(normalized.linkPreviews) && normalized.linkPreviews.length > 0);
+  const hasPayload = content.trim().length > 0 || hasAttachments;
+  if (!hasPayload) return channel.json({ error: "Missing 'content' field" }, 400);
 
   const interaction = storeAgentUserMessage(channel, chatJid, {
-    content: normalized.content,
+    content,
     mediaIds: normalized.mediaIds,
     contentBlocks: normalized.contentBlocks,
     linkPreviews: normalized.linkPreviews,
@@ -57,7 +74,7 @@ export async function handleAgentMessage(
     }
   };
 
-  const command = parseControlCommand(normalized.content, TRIGGER_PATTERN);
+  const command = parseControlCommand(content, TRIGGER_PATTERN);
   if (command) {
     const result = await channel.agentPool.applyControlCommand(chatJid, command);
     const formatted = formatOutbound(result.message, "web");
@@ -84,6 +101,10 @@ export async function handleAgentMessage(
       channel.broadcastEvent("model_changed", { chat_jid: chatJid, model: nextModel ?? null });
     }
 
+    if (result.status === "success" && (command.type === "model" || command.type === "cycle_model")) {
+      channel.skipFailedOnModelSwitch(chatJid);
+    }
+
     markCommandHandled();
     return channel.json(
       { user_message: interaction, thread_id: threadId, command: result },
@@ -92,7 +113,7 @@ export async function handleAgentMessage(
   }
 
   // If message looks like an extension slash command (starts with '/'), execute it directly
-  const trimmed = (normalized.content || "").trim();
+  const trimmed = content.trim();
   if (trimmed.startsWith("/")) {
     channel.lastCommandInteractionId = interaction.id;
     let cmdResult;
@@ -114,7 +135,7 @@ export async function handleAgentMessage(
     );
   }
 
-  const steerResult = await channel.agentPool.queueStreamingMessage(chatJid, normalized.content, "steer");
+  const steerResult = await channel.agentPool.queueStreamingMessage(chatJid, content, "steer");
   if (steerResult.queued) {
     channel.queuePendingSteering(chatJid, interaction.timestamp);
     channel.broadcastEvent("agent_steer_queued", { chat_jid: chatJid });
@@ -139,6 +160,7 @@ export async function handleAgentMessage(
   return channel.json({ user_message: interaction, thread_id: threadId }, 201);
 }
 
+/** Process a chat message: detect commands, queue agent run, or store post. */
 export async function processChat(
   channel: WebChannel,
   chatJid: string,
@@ -275,11 +297,14 @@ export async function processChat(
   });
 
   if (output.status === "error") {
-    channel.state.lastAgentTimestamp[chatJid] = prevCursor;
+    // Keep lastAgentTimestamp advanced past the failed message — do NOT roll
+    // it back to prevCursor. Rolling back causes the failed user turn to be
+    // re-processed on every reload or model switch, creating an infinite loop.
+    // The failedRun record preserves the failure details for diagnostics.
     channel.state.clearPendingResume(chatJid);
-    channel.saveState();
 
     if (output.error && output.error.includes("already processing")) {
+      channel.saveState();
       trackedEmitter.status({
         thread_id: threadId,
         agent_id: agentId,
@@ -289,6 +314,15 @@ export async function processChat(
       });
       throw new Error(output.error);
     }
+
+    channel.state.setFailedRun(chatJid, {
+      prevTimestamp: prevCursor,
+      failedTimestamp: lastMessage.timestamp,
+      messageId: lastMessage.id,
+      threadRootId: resolvedThreadRootId,
+      createdAt: new Date().toISOString(),
+    });
+    channel.saveState();
 
     trackedEmitter.status({
       thread_id: threadId,
@@ -312,6 +346,8 @@ export async function processChat(
     });
   }
 
+  channel.state.clearFailedRun(chatJid);
+
   const pendingSteerTimestamp = channel.consumePendingSteering(chatJid);
   if (pendingSteerTimestamp) {
     const current = channel.state.lastAgentTimestamp[chatJid] || "";
@@ -324,10 +360,15 @@ export async function processChat(
   channel.state.clearPendingResume(chatJid);
   channel.saveState();
 
+  // Include context usage in the done event so the UI can update its indicator.
+  const contextUsage = await channel.agentPool.getContextUsageForChat(chatJid);
   trackedEmitter.status({
     thread_id: threadId,
     agent_id: agentId,
     type: "done",
     turn_id: turnId,
+    context_usage: contextUsage
+      ? { tokens: contextUsage.tokens, contextWindow: contextUsage.contextWindow, percent: contextUsage.percent }
+      : null,
   });
 }

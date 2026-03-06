@@ -1,8 +1,21 @@
+/**
+ * web/link-previews.ts – OpenGraph metadata fetching for URLs in messages.
+ *
+ * When a user posts a message containing URLs, this module fetches the
+ * OpenGraph title, description, and image for each URL and stores them
+ * as link_previews on the message. Results are broadcast via SSE so the
+ * timeline can render rich link cards.
+ *
+ * Consumers: web/posts-service.ts triggers link preview fetching after
+ *            a new user message is stored.
+ */
+
 import type { WebChannel } from "../web.js";
 import { getMessageByRowId, updateMessageLinkPreviews } from "../../db.js";
 import { lookup } from "dns/promises";
 import { isIP } from "net";
 
+/** OpenGraph metadata for a URL: title, description, image, site name. */
 export interface LinkPreview {
   url: string;
   title?: string;
@@ -110,6 +123,7 @@ async function isSafeUrl(raw: string): Promise<boolean> {
   }
 }
 
+/** Extract HTTP/HTTPS URLs from a text string. */
 export function extractUrls(text: string, limit = MAX_URLS): string[] {
   if (!text) return [];
   const matches = text.match(URL_REGEX) ?? [];
@@ -168,6 +182,7 @@ function normalizeImage(url: string, baseUrl: string): string {
   }
 }
 
+/** Fetch OpenGraph metadata for a single URL. */
 export async function fetchLinkPreview(url: string): Promise<LinkPreview | null> {
   const allowed = await isSafeUrl(url);
   if (!allowed) return null;
@@ -223,6 +238,7 @@ export async function fetchLinkPreview(url: string): Promise<LinkPreview | null>
   }
 }
 
+/** Fetch OpenGraph metadata for multiple URLs in parallel. */
 export async function fetchLinkPreviews(urls: string[]): Promise<LinkPreview[]> {
   const previews: LinkPreview[] = [];
   for (const url of urls) {
@@ -232,6 +248,7 @@ export async function fetchLinkPreviews(urls: string[]): Promise<LinkPreview[]> 
   return previews;
 }
 
+/** Asynchronously fetch link previews for a message and broadcast updates. */
 export function scheduleLinkPreviews(
   channel: WebChannel,
   chatJid: string,

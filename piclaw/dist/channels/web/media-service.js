@@ -1,4 +1,13 @@
+/**
+ * web/media-service.ts – File upload and retrieval service.
+ *
+ * Wraps db/media.ts operations with additional validation (file size,
+ * content type detection) for the web channel's upload endpoint.
+ *
+ * Consumers: web/handlers/media.ts delegates to MediaService methods.
+ */
 import { createMedia, getMediaById, getMediaInfoById } from "../../db.js";
+/** File upload/download service wrapping db/media.ts operations. */
 export class MediaService {
     async createFromFile(file) {
         const arrayBuffer = await file.arrayBuffer();

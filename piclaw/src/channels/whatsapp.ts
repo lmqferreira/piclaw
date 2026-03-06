@@ -1,3 +1,22 @@
+/**
+ * channels/whatsapp.ts – WhatsApp channel adapter using Baileys.
+ *
+ * Connects to WhatsApp Web via the Baileys library, receives inbound
+ * messages, stores them in the database, and provides sendMessage()
+ * for outbound delivery.
+ *
+ * Features:
+ *   - QR code authentication (printed to terminal on first connect).
+ *   - Multi-file auth state persistence under STORE_DIR.
+ *   - Automatic reconnection on disconnect.
+ *   - Phone number filtering (WHATSAPP_PHONE) to restrict inbound handling.
+ *
+ * Consumers:
+ *   - runtime.ts creates a WhatsAppChannel at startup (if WHATSAPP_PHONE
+ *     is configured) and wires its callbacks.
+ *   - runtime/message-loop.ts polls for new WhatsApp messages via the DB.
+ */
+
 import { mkdirSync } from "fs";
 import { join } from "path";
 
@@ -26,6 +45,7 @@ const silentLogger = {
   fatal: () => {},
 } as any;
 
+/** Configuration for the WhatsApp channel: phone, callbacks. */
 export interface WhatsAppChannelOpts {
   onMessage: OnInboundMessage;
   onChatMetadata: OnChatMetadata;
@@ -37,6 +57,7 @@ export interface WhatsAppChannelOpts {
 const MAX_RECONNECT_ATTEMPTS = 5;
 const BASE_RECONNECT_DELAY_MS = 2_000; // 2s, 4s, 8s, 16s, 32s
 
+/** WhatsApp Web channel adapter using the Baileys library. */
 export class WhatsAppChannel {
   private sock!: WASocket;
   private connected = false;

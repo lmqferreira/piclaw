@@ -1,4 +1,13 @@
+/**
+ * web/agent-utils.ts – Utility functions for agent event processing.
+ *
+ * Provides helpers for building previews of agent drafts/thoughts, tracking
+ * tool call titles, and constructing agent profile metadata objects.
+ *
+ * Consumers: web/agent-events.ts, web/agent-message-store.ts.
+ */
 import { buildPreviewLines, countSoftLines, splitLines } from "../../utils/preview.js";
+/** Create a profile builder from the current agent name and avatar config. */
 export function createAgentProfileBuilder(agentName, agentAvatar, userName, userAvatar, userAvatarBackground) {
     return (payload) => ({
         ...payload,
@@ -9,6 +18,7 @@ export function createAgentProfileBuilder(agentName, agentAvatar, userName, user
         user_avatar_background: userAvatarBackground ?? null,
     });
 }
+/** Build a truncated preview of text for SSE draft/thought events. */
 export function buildPreview(text, maxLines, maxCharsPerLine) {
     const lines = splitLines(text || "");
     if (!lines.length)
@@ -75,6 +85,7 @@ function formatToolTitle(toolName, args) {
     const clipped = normalized.length > maxLen ? `${normalized.slice(0, maxLen)}…` : normalized;
     return `${toolName}: ${clipped}`;
 }
+/** Track and return the title of the last tool call for status display. */
 export function createToolTitleTracker() {
     const toolTitles = new Map();
     const remember = (toolCallId, toolName, args) => {

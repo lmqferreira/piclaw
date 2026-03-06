@@ -1,8 +1,19 @@
+/**
+ * web/channel-state.ts – Persistent state for the web channel.
+ *
+ * Stores per-chat state like pending resume prompts, steering queue
+ * timestamps, and followup modes in the router_state DB table.
+ *
+ * Consumers: channels/web.ts reads/writes state during request handling
+ *            and agent run orchestration.
+ */
 import { getRouterState, setRouterState } from "../../db.js";
+/** Persistent per-chat state manager for the web channel. */
 export class WebChannelState {
     stateKey;
     lastAgentTimestamp = {};
     pendingResumes = {};
+    failedRuns = {};
     agentStatuses = {};
     queuedFollowupPlaceholders = new Map();
     constructor(stateKey) {
@@ -20,24 +31,30 @@ export class WebChannelState {
                 this.pendingResumes = record.pendingResumes && typeof record.pendingResumes === "object"
                     ? record.pendingResumes
                     : {};
-                this.agentStatuses = record.agentStatuses && typeof record.agentStatuses === "object"
-                    ? record.agentStatuses
+                this.failedRuns = record.failedRuns && typeof record.failedRuns === "object"
+                    ? record.failedRuns
                     : {};
+                // Agent statuses are NOT restored on startup — any "running" status from before
+                // a restart/crash is stale and would incorrectly show "Last activity" in the UI.
+                this.agentStatuses = {};
             }
             else if (parsed && typeof parsed === "object") {
                 this.lastAgentTimestamp = parsed;
                 this.pendingResumes = {};
+                this.failedRuns = {};
                 this.agentStatuses = {};
             }
             else {
                 this.lastAgentTimestamp = {};
                 this.pendingResumes = {};
+                this.failedRuns = {};
                 this.agentStatuses = {};
             }
         }
         catch {
             this.lastAgentTimestamp = {};
             this.pendingResumes = {};
+            this.failedRuns = {};
             this.agentStatuses = {};
         }
     }
@@ -45,6 +62,7 @@ export class WebChannelState {
         setRouterState(this.stateKey, JSON.stringify({
             lastAgentTimestamp: this.lastAgentTimestamp,
             pendingResumes: this.pendingResumes,
+            failedRuns: this.failedRuns,
             agentStatuses: this.agentStatuses,
         }));
     }
@@ -59,6 +77,15 @@ export class WebChannelState {
     }
     getPendingResumes() {
         return { ...this.pendingResumes };
+    }
+    setFailedRun(chatJid, info) {
+        this.failedRuns[chatJid] = info;
+    }
+    clearFailedRun(chatJid) {
+        delete this.failedRuns[chatJid];
+    }
+    getFailedRun(chatJid) {
+        return this.failedRuns[chatJid];
     }
     setAgentStatus(chatJid, status) {
         if (!status) {

@@ -1,3 +1,16 @@
+/**
+ * workspace-search.ts – Full-text search over workspace files using FTS5.
+ *
+ * Indexes text files (markdown, scripts, config) from configurable workspace
+ * directories into the `workspace_fts` and `workspace_files` SQLite tables.
+ * Supports incremental indexing (only re-indexes files whose mtime/size changed)
+ * and scoped search (notes, skills, or all).
+ *
+ * Consumers:
+ *   - extensions/workspace-search.ts exposes searchWorkspace() as a tool
+ *     the agent can invoke to search its own workspace files.
+ *   - agent-control/handlers/info.ts may query workspace search results.
+ */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getDb } from "./db.js";
@@ -123,6 +136,7 @@ async function indexWorkspace(roots, maxBytes) {
         }
     }
 }
+/** Full-text search across indexed workspace files. */
 export async function searchWorkspace(params) {
     const query = params.query.trim();
     const limit = clampNumber(params.limit, 10, 1, 50);

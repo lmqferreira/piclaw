@@ -1,3 +1,13 @@
+/**
+ * db.ts – Public barrel export for the database layer.
+ *
+ * Re-exports everything from the db/* sub-modules so consumers can import
+ * from a single path:
+ *   import { initDatabase, storeMessage, getTimeline, ... } from "./db.js";
+ *
+ * This keeps internal module boundaries hidden from the rest of the codebase.
+ */
+
 export { initDatabase, getDb } from "./db/connection.js";
 export { clampWebContent } from "./db/web-content.js";
 export {
@@ -42,14 +52,27 @@ export {
   searchToolOutputSnippets,
 } from "./db/tool-outputs.js";
 export { getRouterState, setRouterState } from "./db/router-state.js";
+export { storeTokenUsage } from "./db/token-usage.js";
 export {
-  insertWebSession,
+  DEFAULT_PASSKEY_USER_ID,
+  createWebauthnEnrollment,
+  getWebauthnEnrollment,
+  consumeWebauthnEnrollment,
+  listWebauthnCredentials,
+  getWebauthnCredentialsForRpId,
+  getWebauthnCredentialById,
+  findWebauthnCredentialsByPrefix,
+  storeWebauthnCredential,
+  updateWebauthnCredentialCounter,
+  deleteWebauthnCredential,
+} from "./db/webauthn.js";
+export {
+  DEFAULT_WEB_USER_ID,
+  createWebSession,
   getWebSession,
   deleteWebSession,
-  pruneExpiredWebSessions,
-  loadActiveWebSessions,
-} from "./db/sessions.js";
-export { storeTokenUsage } from "./db/token-usage.js";
+  deleteExpiredWebSessions,
+} from "./db/web-sessions.js";
 export type {
   ChatInfo,
   InteractionContentMeta,

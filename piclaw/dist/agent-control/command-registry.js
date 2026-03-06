@@ -1,5 +1,17 @@
+/**
+ * agent-control/command-registry.ts – Command metadata and alias resolution.
+ *
+ * Defines the list of all known control commands, their descriptions, and
+ * aliases (e.g. /models → /model, /ctx → /context). Provides
+ * normalizeControlCommandName() to resolve aliases before parser lookup.
+ *
+ * Consumers:
+ *   - agent-control-parser.ts uses normalizeControlCommandName().
+ *   - handlers/info.ts uses CONTROL_COMMAND_DEFINITIONS for /commands output.
+ */
+/** Metadata for all control commands: name, description, aliases. */
 export const CONTROL_COMMAND_DEFINITIONS = [
-    { name: "/model", description: "Select model or list available models", aliases: ["/models"] },
+    { name: "/model", description: "Select model or list available models (alias /models)", aliases: ["/models"] },
     { name: "/cycle-model", description: "Cycle to the next available model" },
     { name: "/thinking", description: "Show or set thinking level" },
     { name: "/cycle-thinking", description: "Cycle thinking level" },
@@ -33,6 +45,9 @@ export const CONTROL_COMMAND_DEFINITIONS = [
     { name: "/user-avatar", description: "Set or show your avatar URL" },
     { name: "/user-github", description: "Set your name/avatar from a GitHub profile URL" },
     { name: "/export-html", description: "Export session to HTML" },
+    { name: "/passkey", description: "Manage passkeys (enrol/list/delete)", aliases: ["/passkeys"] },
+    { name: "/totp", description: "Show a TOTP enrolment QR code" },
+    { name: "/qr", description: "Generate a QR code for text or a URL" },
     { name: "/search", description: "Search notes and skills in the workspace" },
     { name: "/restart", description: "Restart the agent and stop subprocesses" },
     { name: "/commands", description: "List available commands" },
@@ -47,6 +62,7 @@ for (const def of CONTROL_COMMAND_DEFINITIONS) {
         ALIAS_MAP.set(alias, def.name);
     }
 }
+/** Resolve command aliases (e.g. /models → /model, /ctx → /context). */
 export function normalizeControlCommandName(name) {
     const normalized = name.trim().toLowerCase().replace(/_/g, "-");
     return ALIAS_MAP.get(normalized) ?? normalized;

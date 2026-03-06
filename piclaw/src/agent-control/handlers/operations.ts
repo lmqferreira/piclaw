@@ -1,3 +1,12 @@
+/**
+ * agent-control/handlers/operations.ts – Handlers for /shell and /bash commands.
+ *
+ * Executes shell commands from the control interface and returns formatted
+ * output blocks. Uses the tracked-bash infrastructure for process management.
+ *
+ * Consumers: agent-control-handlers.ts dispatches to these handlers.
+ */
+
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
 import type { AgentControlCommand, AgentControlResult } from "../agent-control-types.js";
 import { createTrackedBashOperations } from "../../tools/tracked-bash.js";
@@ -9,6 +18,7 @@ const SHELL_TIMEOUT_SECONDS = 30;
 type ShellCommand = Extract<AgentControlCommand, { type: "shell" }>;
 type BashCommand = Extract<AgentControlCommand, { type: "bash" }>;
 
+/** Handle /shell: execute a shell command with process tracking. */
 export async function handleShell(session: AgentSession, command: ShellCommand): Promise<AgentControlResult> {
   const rawCommand = command.command?.trim();
   if (!rawCommand) {
@@ -72,6 +82,7 @@ export async function handleShell(session: AgentSession, command: ShellCommand):
   };
 }
 
+/** Handle /bash: execute a raw bash command. */
 export async function handleBash(session: AgentSession, command: BashCommand): Promise<AgentControlResult> {
   const rawCommand = command.command?.trim();
   if (!rawCommand) {

@@ -1,3 +1,11 @@
+/**
+ * docs/azure/azure-openai-token.ts – Azure OpenAI provider implementation.
+ *
+ * Reference/example code showing how to implement a custom pi-ai Model
+ * provider that talks to Azure OpenAI endpoints using token-based auth
+ * instead of API keys. Supports streaming, tool calls, and thinking levels.
+ */
+
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import OpenAI from "openai";
 import {
@@ -13,6 +21,7 @@ import {
   convertResponsesTools,
   processResponsesStream,
 } from "@mariozechner/pi-ai/dist/providers/openai-responses-shared.js";
+import { applyToolCallLimit } from "../src/utils/azure-tool-call-limit.js";
 import { streamSimpleOpenAICompletions } from "@mariozechner/pi-ai/dist/providers/openai-completions.js";
 import { buildBaseOptions, clampReasoning } from "@mariozechner/pi-ai/dist/providers/simple-options.js";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -64,17 +73,25 @@ const FOUNDRY_IMAGE_BASE_URL = process.env.FOUNDRY_IMAGE_BASE_URL || "";
 const FOUNDRY_TEXT_MODEL_IDS = FOUNDRY_MODEL_IDS.filter(
   (id) => id !== FOUNDRY_IMAGE_MODEL_ID && !id.startsWith("flux-")
 );
-// Managed identity only: fetch AAD tokens from the VM metadata service.
-// This extension ONLY works with AAD managed identity (Azure OpenAI + Foundry), not API key auth.
+// Auth: managed identity by default — fetches AAD tokens from the VM metadata service.
+// When AOAI_API_KEY is set, uses the static key instead (proxy mode — a remote proxy
+// handles MI auth and this instance just passes the shared secret as a Bearer token).
 const IMDS_URL = "http://169.254.169.254/metadata/identity/oauth2/token";
 const IMDS_API_VERSION = "2018-02-01";
 const RESOURCE = process.env.AOAI_RESOURCE || process.env.FOUNDRY_RESOURCE || "https://cognitiveservices.azure.com/";
 const CACHE_DIR = process.env.AOAI_TOKEN_CACHE_DIR || "/workspace/.piclaw/cache";
 const CACHE_FILE = process.env.AOAI_TOKEN_CACHE_FILE || `${CACHE_DIR}/aoai-token.json`;
 const SKEW_SECONDS = Number(process.env.AOAI_TOKEN_SKEW_SECONDS || "300");
+// When AOAI_API_KEY is set, use it directly instead of fetching managed-identity tokens.
+// This is used when connecting through a proxy that handles MI auth on our behalf.
+const STATIC_API_KEY = process.env.AOAI_API_KEY || "";
 const TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode", PROVIDER, FOUNDRY_PROVIDER]);
 const DISABLE_TOOLS = /^(1|true|yes)$/i.test(process.env.AOAI_DISABLE_TOOLS || "");
 const DISABLE_REASONING = /^(1|true|yes)$/i.test(process.env.AOAI_DISABLE_REASONING || "");
+const TOOL_CALL_LIMIT = parseInt(process.env.AOAI_MAX_TOOL_CALLS || "96", 10);
+const TOOL_CALL_SUMMARY_MAX = parseInt(process.env.AOAI_TOOL_CALL_SUMMARY_MAX || "12", 10);
+const TOOL_CALL_OUTPUT_CHARS = parseInt(process.env.AOAI_TOOL_CALL_OUTPUT_CHARS || "200", 10);
+const DEDUPE_TOOL_OUTPUT_SEARCH = !/^(0|false|no)$/i.test(process.env.AOAI_DEDUPE_TOOL_OUTPUT_SEARCH || "1");
 const DISABLE_REASONING_MODELS = new Set(
   (process.env.AOAI_DISABLE_REASONING_MODELS || "")
     .split(",")
@@ -110,6 +127,7 @@ function logExtensionLoaded(): void {
     foundryBaseUrl: FOUNDRY_BASE_URL,
     modelIds: MODEL_IDS,
     foundryModelIds: FOUNDRY_MODEL_IDS,
+    authMode: STATIC_API_KEY ? "api-key (proxy)" : "managed-identity",
     disableTools: DISABLE_TOOLS,
     disableReasoning: DISABLE_REASONING,
     disableReasoningModels: Array.from(DISABLE_REASONING_MODELS),
@@ -220,6 +238,22 @@ function applyPhasesToResponseInput(items: Array<any>, phases: Map<string, strin
     const phase = phases.get(item.id);
     if (phase) item.phase = phase;
   }
+}
+
+function stripOrphanReasoningItems(items: Array<any>): Array<any> {
+  if (!Array.isArray(items) || items.length === 0) return items;
+  const cleaned: Array<any> = [];
+  for (let i = 0; i < items.length; i += 1) {
+    const item = items[i];
+    if (item?.type === "reasoning") {
+      const next = items[i + 1];
+      if (!next || next.type !== "message") {
+        continue;
+      }
+    }
+    cleaned.push(item);
+  }
+  return cleaned;
 }
 
 // After streaming completes, copy the phase from Responses output items onto our stored text blocks
@@ -355,6 +389,9 @@ async function ensureToken(force = false): Promise<TokenCache> {
 }
 
 async function getAccessToken(): Promise<string> {
+  // When a static API key is configured (proxy mode), skip IMDS entirely.
+  if (STATIC_API_KEY) return STATIC_API_KEY;
+
   const token = await ensureToken();
   if (!token.accessToken) {
     throw new Error("Missing Azure access token. Ensure IMDS is available.");
@@ -474,10 +511,7 @@ function parseSize(size?: string): { width: number; height: number } {
 }
 
 async function generateFoundryImage(model: string, args: ImageArgs) {
-  const token = await ensureToken();
-  if (!token.accessToken) {
-    throw new Error("Missing Azure access token. Ensure IMDS is available.");
-  }
+  const accessToken = await getAccessToken();
 
   const endpoint = getFoundryImageEndpoint();
   const url = `${endpoint}/providers/blackforestlabs/v1/${encodeURIComponent(model)}?api-version=${encodeURIComponent(FOUNDRY_IMAGE_API_VERSION)}`;
@@ -493,7 +527,7 @@ async function generateFoundryImage(model: string, args: ImageArgs) {
   const res = await fetch(url, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token.accessToken}`,
+      Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
@@ -598,6 +632,11 @@ function streamAzureOpenAIResponses(model: any, context: any, options: any) {
     let requestSummary: Record<string, unknown> | undefined;
     const loggedRef = { logged: false };
 
+    // Track the best error message extracted from stream events so we can
+    // override pi-ai's generic "Unknown error" with something actionable.
+    // Declared here so it's accessible in the catch block.
+    let streamErrorDetail = "";
+
     try {
       const headers = { ...model.headers };
       if (options?.headers) {
@@ -613,8 +652,15 @@ function streamAzureOpenAIResponses(model: any, context: any, options: any) {
       // Pull any stored phase metadata from prior assistant messages, then apply it to the
       // reconstructed ResponseInput so gpt-5.3-codex sees the same phases on replay.
       const phaseById = collectMessagePhases(context.messages || []);
-      const messages = convertResponsesMessages(model, context, TOOL_CALL_PROVIDERS);
-      applyPhasesToResponseInput(messages as Array<any>, phaseById);
+      const rawMessages = convertResponsesMessages(model, context, TOOL_CALL_PROVIDERS);
+      applyPhasesToResponseInput(rawMessages as Array<any>, phaseById);
+      const toolCallTrim = applyToolCallLimit(rawMessages as Array<any>, {
+        limit: TOOL_CALL_LIMIT,
+        summaryMax: TOOL_CALL_SUMMARY_MAX,
+        outputChars: TOOL_CALL_OUTPUT_CHARS,
+        dedupeToolOutputSearch: DEDUPE_TOOL_OUTPUT_SEARCH,
+      });
+      const messages = stripOrphanReasoningItems(toolCallTrim.messages);
       const phaseReplaySummary = LOG_PHASES ? summarizeResponseInputPhases(messages as Array<any>) : null;
 
       const messageTypeCounts = messages.reduce<Record<string, number>>((acc, item: any) => {
@@ -633,6 +679,12 @@ function streamAzureOpenAIResponses(model: any, context: any, options: any) {
         messageTypes: messageTypeCounts,
         toolCount: toolsEnabled && context.tools ? context.tools.length : 0,
         hasToolCalls: messages.some((item: any) => item?.type === "function_call"),
+        toolCallLimit: TOOL_CALL_LIMIT,
+        toolCallTotal: toolCallTrim.toolCallTotal,
+        toolCallKept: toolCallTrim.toolCallKept,
+        toolCallRemoved: toolCallTrim.toolCallRemoved,
+        toolCallDeduped: toolCallTrim.toolCallDeduped,
+        toolCallSummary: Boolean(toolCallTrim.summaryText),
         reasoning: reasoningEnabled ? { effort: options?.reasoningEffort ?? null, summary: options?.reasoningSummary ?? null } : null,
         toolsEnabled,
         reasoningEnabled,
@@ -643,12 +695,17 @@ function streamAzureOpenAIResponses(model: any, context: any, options: any) {
 
       // Post-conversion sanitization for Azure OpenAI compatibility.
       // Azure requires: id/call_id max 64 chars, only [a-zA-Z0-9_-].
-      // Upstream normalization misses some edge cases (cross-provider IDs without "|",
-      // stale encrypted signatures, etc.). We sanitize ALL items here.
+      // Additionally, Azure pairs fc_ IDs with rs_ reasoning items and rejects
+      // function_calls whose reasoning partner is missing. Stripping all fc_ IDs
+      // bypasses this validation entirely (same as cross-provider replay).
       for (const item of messages) {
         if (item.id && typeof item.id === "string") {
-          const nextId = sanitizeOpenAIId(item.id);
-          if (nextId) item.id = nextId;
+          if ((item as any).type === "function_call" && (item.id as string).startsWith("fc_")) {
+            (item as any).id = undefined;
+          } else {
+            const nextId = sanitizeOpenAIId(item.id);
+            if (nextId) item.id = nextId;
+          }
         }
         if (item.call_id && typeof item.call_id === "string") {
           const nextCallId = sanitizeOpenAIId(item.call_id);
@@ -681,11 +738,14 @@ function streamAzureOpenAIResponses(model: any, context: any, options: any) {
 
       if (reasoningEnabled) {
         if (options?.reasoningEffort || options?.reasoningSummary) {
+          // Azure OpenAI only supports a minimal reasoning payload.
+          // Unsupported fields like `summary` and `include` cause silent
+          // failures (response.failed with error: null). Some models
+          // (e.g. gpt-5.3-chat) also restrict effort to "medium" only.
+          // We send effort but omit summary and include for Azure.
           params.reasoning = {
             effort: options?.reasoningEffort || "medium",
-            summary: options?.reasoningSummary || "auto",
           };
-          params.include = ["reasoning.encrypted_content"];
         } else if (String(model.name).toLowerCase().startsWith("gpt-5")) {
           messages.push({
             role: "developer",
@@ -713,13 +773,15 @@ function streamAzureOpenAIResponses(model: any, context: any, options: any) {
         openaiStream = await createStream();
       } catch (error) {
         if (!isAuthError(error)) throw error;
-        await ensureToken(true);
+        // Force-refresh MI token on auth errors (no-op in proxy/api-key mode)
+        if (!STATIC_API_KEY) await ensureToken(true);
         openaiStream = await createStream();
       }
 
       // Capture `phase` for assistant output items so we can persist it on stored messages.
       // This uses the Responses stream events to avoid any SDK version mismatches.
       const outputPhases = new Map<string, string>();
+
       const loggingStream = (async function* () {
         for await (const event of openaiStream) {
           if (event?.type === "response.output_item.added" || event?.type === "response.output_item.done") {
@@ -729,6 +791,24 @@ function streamAzureOpenAIResponses(model: any, context: any, options: any) {
               outputPhases.set(item.id, phase);
             }
           }
+
+          // Extract a descriptive error from response.failed / error events
+          // BEFORE pi-ai's processResponsesStream throws the generic "Unknown error".
+          if (event?.type === "response.failed") {
+            const resp = (event as { response?: any }).response;
+            const errObj = resp?.error;
+            if (errObj && typeof errObj === "object") {
+              streamErrorDetail = `${errObj.code || "error"}: ${errObj.message || JSON.stringify(errObj)}`;
+            } else if (resp?.status) {
+              streamErrorDetail = `Azure response failed (status: ${resp.status})`;
+            } else {
+              streamErrorDetail = "Azure response failed (no error details returned)";
+            }
+          } else if (event?.type === "error") {
+            const { code, message } = event as { code?: string; message?: string };
+            streamErrorDetail = `${code || "stream_error"}: ${message || "unknown"}`;
+          }
+
           logStreamFailureEvent(event, requestSummary, loggedRef);
           yield event;
         }
@@ -745,7 +825,10 @@ function streamAzureOpenAIResponses(model: any, context: any, options: any) {
         throw new Error("Request was aborted");
       }
       if (output.stopReason === "aborted" || output.stopReason === "error") {
-        throw new Error(`Azure request failed: ${output.errorMessage || "unknown error"}`);
+        // Use the detailed error we extracted from the stream event if available,
+        // rather than the generic "unknown error" from pi-ai.
+        const detail = streamErrorDetail || output.errorMessage || "unknown error";
+        throw new Error(`Azure request failed: ${detail}`);
       }
 
       stream.push({ type: "done", reason: output.stopReason, message: output });
@@ -754,7 +837,9 @@ function streamAzureOpenAIResponses(model: any, context: any, options: any) {
       logAzureError(model.id, error, requestSummary, loggedRef);
       for (const block of output.content) delete (block as any).index;
       output.stopReason = options?.signal?.aborted ? "aborted" : "error";
-      output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+      // Prefer the stream-level error detail over the generic thrown message.
+      const rawMsg = error instanceof Error ? error.message : JSON.stringify(error);
+      output.errorMessage = streamErrorDetail || rawMsg;
       stream.push({ type: "error", reason: output.stopReason, error: output });
       stream.end();
     }
@@ -781,7 +866,7 @@ function streamSimpleFoundryOpenAICompletions(model: any, context: any, options:
   return streamSimpleOpenAICompletions(overrideModel, context, options);
 }
 
-function registerProvider(pi: ExtensionAPI, token: string) {
+export function registerAzureProviders(register: (name: string, config: any) => void, token: string) {
   const openaiModels = MODEL_IDS.map((id, idx) => {
     const spec = MODEL_SPECS[id] || DEFAULT_AZURE_SPEC;
     return {
@@ -796,7 +881,7 @@ function registerProvider(pi: ExtensionAPI, token: string) {
     };
   });
 
-  pi.registerProvider(PROVIDER, {
+  register(PROVIDER, {
     baseUrl: BASE_URL,
     api: AZURE_API,
     apiKey: token,
@@ -819,7 +904,7 @@ function registerProvider(pi: ExtensionAPI, token: string) {
   });
 
   if (foundryModels.length > 0) {
-    pi.registerProvider(FOUNDRY_PROVIDER, {
+    register(FOUNDRY_PROVIDER, {
       baseUrl: FOUNDRY_BASE_URL,
       api: FOUNDRY_API,
       apiKey: token,
@@ -827,6 +912,10 @@ function registerProvider(pi: ExtensionAPI, token: string) {
       models: foundryModels,
     });
   }
+}
+
+function registerProvider(pi: ExtensionAPI, token: string) {
+  registerAzureProviders((name, config) => pi.registerProvider(name, config), token);
 }
 
 export default function (pi: ExtensionAPI) {
@@ -970,6 +1059,12 @@ export default function (pi: ExtensionAPI) {
 
   const refresh = async () => {
     logExtensionLoaded();
+    // In proxy/api-key mode, register once with the static key and don't
+    // schedule periodic refreshes — the remote proxy handles MI tokens.
+    if (STATIC_API_KEY) {
+      registerProvider(pi, STATIC_API_KEY);
+      return;
+    }
     const cache = await ensureToken();
     if (cache.accessToken) {
       registerProvider(pi, cache.accessToken);

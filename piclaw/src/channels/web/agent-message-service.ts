@@ -1,7 +1,17 @@
+/**
+ * web/agent-message-service.ts – Stores agent responses as timeline posts.
+ *
+ * After an agent run completes, this service persists the response as a
+ * message in the database and broadcasts it to SSE clients.
+ *
+ * Consumers: channels/web.ts calls this after agent runs complete.
+ */
+
 import type { WebChannel } from "../web.js";
 import type { InteractionRow } from "../../db.js";
 import { normalizeMediaIds } from "./posts-service.js";
 
+/** AgentMessagePayload type definition. */
 export interface AgentMessagePayload {
   content?: string;
   thread_id?: number | null;
@@ -10,6 +20,7 @@ export interface AgentMessagePayload {
   link_previews?: unknown[];
 }
 
+/** Parse and validate an agent message API request body. */
 export async function parseAgentMessageRequest(req: Request): Promise<{
   payload?: AgentMessagePayload;
   error?: string;
@@ -22,6 +33,7 @@ export async function parseAgentMessageRequest(req: Request): Promise<{
   }
 }
 
+/** Normalize an agent message payload for storage (trim, defaults). */
 export function normalizeAgentMessagePayload(payload: AgentMessagePayload): {
   content?: string;
   threadId?: number | null;
@@ -38,6 +50,7 @@ export function normalizeAgentMessagePayload(payload: AgentMessagePayload): {
   };
 }
 
+/** Store the user portion of an agent interaction in the database. */
 export function storeAgentUserMessage(
   channel: WebChannel,
   chatJid: string,

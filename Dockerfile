@@ -15,8 +15,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HOMEBREW_NO_INSTALL_CLEANUP=1 \
     HOMEBREW_BREW_GIT_REMOTES=${HOMEBREW_BREW_GIT_REMOTES} \
     HOMEBREW_CORE_GIT_REMOTES=${HOMEBREW_CORE_GIT_REMOTES} \
-    BUN_INSTALL=/home/agent/.bun \
-    PATH=/home/agent/.bun/bin:/home/linuxbrew/.linuxbrew/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    BUN_INSTALL=/usr/local/lib/bun \
+    PATH=/usr/local/lib/bun/bin:/home/linuxbrew/.linuxbrew/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 WORKDIR /tmp
 
@@ -52,18 +52,21 @@ COPY supervisor/conf.d/ /etc/supervisor/conf.d/
 COPY supervisor/run-piclaw.sh /usr/local/bin/run-piclaw.sh
 COPY supervisor/supervisord.workspace.conf /usr/local/share/piclaw/supervisor/supervisord.conf
 COPY supervisor/conf.d/ /usr/local/share/piclaw/supervisor/conf.d/
-COPY --chown=agent:agent scripts/docker/install-agent-runtime.sh /home/agent/scripts/install-agent-runtime.sh
-COPY --chown=agent:agent scripts/docker/build-piclaw-package.sh /home/agent/scripts/build-piclaw-package.sh
-RUN chmod +x /entrypoint.sh /usr/local/bin/run-piclaw.sh /home/agent/scripts/install-agent-runtime.sh /home/agent/scripts/build-piclaw-package.sh
+COPY scripts/docker/install-agent-runtime.sh /tmp/install-agent-runtime.sh
+COPY scripts/docker/build-piclaw-package.sh /tmp/build-piclaw-package.sh
+RUN chmod +x /entrypoint.sh /usr/local/bin/run-piclaw.sh /tmp/install-agent-runtime.sh /tmp/build-piclaw-package.sh
 
-# Layer 4: Install Homebrew, Bun, and Pi Coding Agent as agent
+# Layer 4: Install Homebrew, Bun, and Pi Coding Agent globally
+#   Homebrew needs the agent user; bun/pi/piclaw go into /usr/local/lib/bun/
 USER agent
 WORKDIR /home/agent
-RUN /home/agent/scripts/install-agent-runtime.sh
+RUN /tmp/install-agent-runtime.sh
 
-# Set up pi config directories and global AGENTS.md
-RUN mkdir -p ~/.pi/agent/skills ~/.pi/agent/sessions \
-             ~/.pi/agent/extensions ~/.pi/agent/prompts ~/.pi/agent/themes
+# Set up pi config directories
+USER root
+RUN mkdir -p /home/agent/.pi/agent/skills /home/agent/.pi/agent/sessions \
+             /home/agent/.pi/agent/extensions /home/agent/.pi/agent/prompts /home/agent/.pi/agent/themes && \
+    chown -R agent:agent /home/agent/.pi
 
 # Ship workspace skeleton (includes .pi/skills/ and AGENTS.md)
 COPY --chown=agent:agent skel/ /home/agent/workspace-skel/
@@ -71,20 +74,12 @@ COPY --chown=agent:agent skel/ /home/agent/workspace-skel/
 # Ship piclaw global skills (IPC: schedule, send-message)
 COPY --chown=agent:agent piclaw/skills/ /home/agent/.pi/agent/skills/
 
-# Ship piclaw orchestrator and install as global binary
+# Ship piclaw orchestrator and install globally
 COPY --chown=agent:agent piclaw/ /home/agent/piclaw/
-RUN /home/agent/scripts/build-piclaw-package.sh
+RUN /tmp/build-piclaw-package.sh && rm -f /tmp/install-agent-runtime.sh /tmp/build-piclaw-package.sh
 
-# Layer 5: Save skeleton + global shims
-USER root
-RUN set -eux; \
-    for bin in bun bunx pi piclaw; do \
-        target="/home/agent/.bun/bin/${bin}"; \
-        if [ -f "${target}" ]; then \
-            ln -sf "${target}" "/usr/local/bin/${bin}"; \
-        fi; \
-    done; \
-    cp -a /home/agent/. /etc/skel.agent/; \
+# Layer 5: Save skeleton
+RUN cp -a /home/agent/. /etc/skel.agent/ && \
     echo "Skeleton: $(find /etc/skel.agent -type f | wc -l) files"
 
 ENTRYPOINT ["/entrypoint.sh"]

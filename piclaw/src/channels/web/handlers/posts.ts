@@ -1,6 +1,17 @@
+/**
+ * web/handlers/posts.ts – HTTP handlers for timeline post endpoints.
+ *
+ * Handles GET /timeline, GET /hashtag/:tag, GET /search, POST /post,
+ * PUT /post/:id, DELETE /post/:id. Delegates to timeline-service.ts
+ * and posts-service.ts for data operations.
+ *
+ * Consumers: web/request-router.ts routes post paths here.
+ */
+
 import type { WebChannel } from "../../web.js";
 import { parsePostPayload, storePost } from "../posts-service.js";
 
+/** Route post requests to create, update, delete, or query handlers. */
 export async function handlePost(channel: WebChannel, req: Request, isReply: boolean, chatJid: string): Promise<Response> {
   let data: unknown;
   try {

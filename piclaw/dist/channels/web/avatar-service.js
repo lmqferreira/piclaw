@@ -1,3 +1,12 @@
+/**
+ * web/avatar-service.ts – Manages agent and user avatar images.
+ *
+ * Handles avatar upload, retrieval, and storage on disk. Supports both
+ * URL-based avatars and file-upload avatars stored under the workspace's
+ * .piclaw/data/avatars directory.
+ *
+ * Consumers: web/handlers/agent.ts serves and updates avatar images.
+ */
 import { mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from "fs";
 import { resolve, extname } from "path";
 import { fileURLToPath } from "url";
@@ -132,6 +141,7 @@ async function loadAvatarSource(source) {
     }
     return loadLocalAvatar(source);
 }
+/** Ensure the avatar cache directory exists on disk. */
 export async function ensureAvatarCache(kind, source) {
     const sanitized = sanitizeAvatarSource(source);
     if (!sanitized)
@@ -160,6 +170,7 @@ export async function ensureAvatarCache(kind, source) {
     writeMeta(kind, meta);
     return meta;
 }
+/** Build an HTTP response serving an avatar image with caching headers. */
 export async function buildAvatarResponse(kind, source, req) {
     const sanitized = sanitizeAvatarSource(source);
     if (!sanitized)
@@ -185,6 +196,7 @@ export async function buildAvatarResponse(kind, source, req) {
     }
     return new Response(file, { status: 200, headers });
 }
+/** Resolve an avatar config value to a servable URL path. */
 export function resolveAvatarUrl(kind, source) {
     if (!source)
         return null;

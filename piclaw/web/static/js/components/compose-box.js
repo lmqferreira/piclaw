@@ -1,6 +1,103 @@
 // @ts-nocheck
-import { html, useRef, useState } from '../vendor/preact-htm.js';
+import { html, useRef, useState, useEffect, useCallback } from '../vendor/preact-htm.js';
 import { sendAgentMessage, uploadMedia } from '../api.js';
+import { getLocalStorageItem, setLocalStorageItem } from '../utils/storage.js';
+import { FilePill } from './file-pill.js';
+
+/**
+ * Slash command definitions for autocomplete.
+ * Kept in sync with agent-control/command-registry.ts.
+ */
+const SLASH_COMMANDS = [
+  { name: "/model", description: "Select model or list available models" },
+  { name: "/cycle-model", description: "Cycle to the next available model" },
+  { name: "/thinking", description: "Show or set thinking level" },
+  { name: "/cycle-thinking", description: "Cycle thinking level" },
+  { name: "/state", description: "Show current session state" },
+  { name: "/stats", description: "Show session token and cost stats" },
+  { name: "/context", description: "Show context window usage" },
+  { name: "/last", description: "Show last assistant response" },
+  { name: "/compact", description: "Manually compact the session" },
+  { name: "/auto-compact", description: "Toggle auto-compaction" },
+  { name: "/auto-retry", description: "Toggle auto-retry" },
+  { name: "/abort", description: "Abort the current response" },
+  { name: "/abort-retry", description: "Abort retry backoff" },
+  { name: "/abort-bash", description: "Abort running bash command" },
+  { name: "/shell", description: "Run a shell command and return output" },
+  { name: "/bash", description: "Run a shell command and add output to context" },
+  { name: "/queue", description: "Queue a follow-up message (one-at-a-time)" },
+  { name: "/queue-all", description: "Queue a follow-up message (batch all)" },
+  { name: "/steering-mode", description: "Set steering mode (all|one)" },
+  { name: "/followup-mode", description: "Set follow-up mode (all|one)" },
+  { name: "/session-name", description: "Set or show the session name" },
+  { name: "/new-session", description: "Start a new session" },
+  { name: "/switch-session", description: "Switch to a session file" },
+  { name: "/fork", description: "Fork from a previous message" },
+  { name: "/forks", description: "List forkable messages" },
+  { name: "/tree", description: "List the session tree" },
+  { name: "/label", description: "Set or clear a label on a tree entry" },
+  { name: "/labels", description: "List labeled entries" },
+  { name: "/agent-name", description: "Set or show the agent display name" },
+  { name: "/agent-avatar", description: "Set or show the agent avatar URL" },
+  { name: "/user-name", description: "Set or show your display name" },
+  { name: "/user-avatar", description: "Set or show your avatar URL" },
+  { name: "/user-github", description: "Set name/avatar from GitHub profile" },
+  { name: "/export-html", description: "Export session to HTML" },
+  { name: "/passkey", description: "Manage passkeys (enrol/list/delete)" },
+  { name: "/totp", description: "Show a TOTP enrolment QR code" },
+  { name: "/qr", description: "Generate a QR code for text or URL" },
+  { name: "/search", description: "Search notes and skills in the workspace" },
+  { name: "/restart", description: "Restart the agent and stop subprocesses" },
+  { name: "/commands", description: "List available commands" },
+];
+
+/**
+ * Tiny SVG pie chart showing context window usage.
+ * Green when <75%, amber 75–90%, red >90%. Tooltip shows exact numbers.
+ */
+function ContextPie({ usage }) {
+    const pct = Math.min(100, Math.max(0, usage.percent || 0));
+    const tokens = usage.tokens;
+    const window = usage.contextWindow;
+    const label = tokens != null
+        ? `Context: ${formatK(tokens)} / ${formatK(window)} tokens (${pct.toFixed(0)}%)`
+        : `Context: ${pct.toFixed(0)}%`;
+
+    // Pie arc: SVG circle with stroke-dasharray trick.
+    // Circle circumference = 2πr = 2π×8 ≈ 50.27
+    const r = 8;
+    const circ = 2 * Math.PI * r;
+    const filled = (pct / 100) * circ;
+
+    const color = pct > 90 ? 'var(--context-red, #ef4444)'
+                : pct > 75 ? 'var(--context-amber, #f59e0b)'
+                : 'var(--context-green, #22c55e)';
+
+    return html`
+        <span class="compose-context-pie" title=${label}>
+            <svg width="18" height="18" viewBox="0 0 20 20">
+                <circle cx="10" cy="10" r=${r}
+                    fill="none"
+                    stroke="var(--context-track, rgba(128,128,128,0.2))"
+                    stroke-width="3" />
+                <circle cx="10" cy="10" r=${r}
+                    fill="none"
+                    stroke=${color}
+                    stroke-width="3"
+                    stroke-dasharray=${`${filled} ${circ}`}
+                    stroke-linecap="round"
+                    transform="rotate(-90 10 10)" />
+            </svg>
+        </span>
+    `;
+}
+
+function formatK(n) {
+    if (n == null) return '?';
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
+    return String(n);
+}
 
 /**
  * Compose box component
@@ -16,6 +113,7 @@ export function ComposeBox({
     onRemoveFileRef,
     onClearFileRefs,
     activeModel = null,
+    contextUsage = null,
     notificationsEnabled = false,
     notificationPermission = 'default',
     onToggleNotifications,
@@ -25,7 +123,43 @@ export function ComposeBox({
     const [searchText, setSearchText] = useState('');
     const [loading, setLoading] = useState(false);
     const [mediaFiles, setMediaFiles] = useState([]);
+    const [isDragActive, setIsDragActive] = useState(false);
+    const [slashMatches, setSlashMatches] = useState([]);
+    const [slashIndex, setSlashIndex] = useState(0);
+    const [showSlash, setShowSlash] = useState(false);
     const textareaRef = useRef(null);
+    const slashRef = useRef(null);
+    const dragCounterRef = useRef(0);
+    const historyMax = 200;
+    const normaliseHistory = (items) => {
+        const seen = new Set();
+        const cleaned = [];
+        for (const item of items || []) {
+            if (typeof item !== 'string') continue;
+            const trimmed = item.trim();
+            if (!trimmed || seen.has(trimmed)) continue;
+            seen.add(trimmed);
+            cleaned.push(trimmed);
+        }
+        return cleaned;
+    };
+    const loadHistory = () => {
+        const raw = getLocalStorageItem('piclaw_compose_history');
+        if (!raw) return [];
+        try {
+            const parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed)) return [];
+            return normaliseHistory(parsed);
+        } catch {
+            return [];
+        }
+    };
+    const saveHistory = (history) => {
+        setLocalStorageItem('piclaw_compose_history', JSON.stringify(history));
+    };
+    const historyRef = useRef(loadHistory());
+    const historyIndexRef = useRef(-1);
+    const historyDraftRef = useRef('');
     const canSend = !loading && (content.trim() || mediaFiles.length > 0 || fileRefs.length > 0);
     const canShareLocation = typeof window !== 'undefined'
         && typeof navigator !== 'undefined'
@@ -45,11 +179,62 @@ export function ComposeBox({
         textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
     };
 
+    /** Update slash autocomplete matches based on current input. */
+    const updateSlashAutocomplete = (value) => {
+        // Only trigger when the entire input is a slash command (starts with /)
+        // and contains no newlines (single-line command)
+        if (!value.startsWith('/') || value.includes('\n')) {
+            setShowSlash(false);
+            setSlashMatches([]);
+            return;
+        }
+        const prefix = value.toLowerCase().split(' ')[0]; // only match the command part
+        if (prefix.length < 1) {
+            setShowSlash(false);
+            setSlashMatches([]);
+            return;
+        }
+        const matches = SLASH_COMMANDS.filter(cmd =>
+            cmd.name.startsWith(prefix) || cmd.name.replace(/-/g, '').startsWith(prefix.replace(/-/g, ''))
+        );
+        if (matches.length > 0 && !(matches.length === 1 && matches[0].name === prefix)) {
+            setSlashMatches(matches);
+            setSlashIndex(0);
+            setShowSlash(true);
+        } else {
+            setShowSlash(false);
+            setSlashMatches([]);
+        }
+    };
+
+    /** Accept the currently highlighted slash command. */
+    const acceptSlashCommand = (cmd) => {
+        const current = content;
+        // Replace the command portion, keep any args after a space
+        const spaceIdx = current.indexOf(' ');
+        const args = spaceIdx >= 0 ? current.slice(spaceIdx) : '';
+        const newVal = cmd.name + args;
+        setContent(newVal);
+        setShowSlash(false);
+        setSlashMatches([]);
+        requestAnimationFrame(() => {
+            const textarea = textareaRef.current;
+            if (!textarea) return;
+            // Place cursor at end
+            const len = newVal.length;
+            textarea.selectionStart = len;
+            textarea.selectionEnd = len;
+            textarea.focus();
+            resizeTextarea();
+        });
+    };
+
     const updateValue = (value) => {
         if (searchMode) {
             setSearchText(value);
         } else {
             setContent(value);
+            updateSlashAutocomplete(value);
         }
         requestAnimationFrame(resizeTextarea);
     };
@@ -77,12 +262,32 @@ export function ComposeBox({
             const fileBlock = fileRefs.length
                 ? `Files:\n${fileRefs.map((path) => `- ${path}`).join('\n')}`
                 : '';
-            const message = [baseContent, fileBlock].filter(Boolean).join('\n\n');
+            const mediaBlock = mediaIds.length
+                ? `Images:\n${mediaIds.map((id, index) => {
+                    const file = mediaFiles[index];
+                    const label = file?.name || `image-${index + 1}`;
+                    return `- attachment:${id} (${label})`;
+                }).join('\n')}`
+                : '';
+            const message = [baseContent, fileBlock, mediaBlock].filter(Boolean).join('\n\n');
 
             // Send to agent by default
             const response = await sendAgentMessage('default', message, null, mediaIds);
             if (response?.command?.model_label && typeof onModelChange === 'function') {
                 onModelChange(response.command.model_label);
+            }
+
+            if (baseContent) {
+                const current = historyRef.current;
+                const deduped = normaliseHistory(current.filter((item) => item !== baseContent));
+                deduped.push(baseContent);
+                if (deduped.length > historyMax) {
+                    deduped.splice(0, deduped.length - historyMax);
+                }
+                historyRef.current = deduped;
+                saveHistory(deduped);
+                historyIndexRef.current = -1;
+                historyDraftRef.current = '';
             }
 
             setContent('');
@@ -104,6 +309,72 @@ export function ComposeBox({
             onExitSearch?.();
             return;
         }
+        // Slash autocomplete navigation
+        if (showSlash && slashMatches.length > 0) {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setSlashIndex(i => (i + 1) % slashMatches.length);
+                return;
+            }
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setSlashIndex(i => (i - 1 + slashMatches.length) % slashMatches.length);
+                return;
+            }
+            if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+                e.preventDefault();
+                acceptSlashCommand(slashMatches[slashIndex]);
+                return;
+            }
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                setShowSlash(false);
+                setSlashMatches([]);
+                return;
+            }
+        }
+        if (!searchMode && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+            const textarea = textareaRef.current;
+            if (!textarea) return;
+            const value = textarea.value || '';
+            const atStart = textarea.selectionStart === 0 && textarea.selectionEnd === 0;
+            const atEnd = textarea.selectionStart === value.length && textarea.selectionEnd === value.length;
+            if ((e.key === 'ArrowUp' && atStart) || (e.key === 'ArrowDown' && atEnd)) {
+                const history = historyRef.current;
+                if (!history.length) return;
+                e.preventDefault();
+                let idx = historyIndexRef.current;
+                if (e.key === 'ArrowUp') {
+                    if (idx === -1) {
+                        historyDraftRef.current = value;
+                        idx = history.length - 1;
+                    } else if (idx > 0) {
+                        idx -= 1;
+                    }
+                    historyIndexRef.current = idx;
+                    updateValue(history[idx] || '');
+                } else {
+                    if (idx === -1) return;
+                    if (idx < history.length - 1) {
+                        idx += 1;
+                        historyIndexRef.current = idx;
+                        updateValue(history[idx] || '');
+                    } else {
+                        historyIndexRef.current = -1;
+                        updateValue(historyDraftRef.current || '');
+                        historyDraftRef.current = '';
+                    }
+                }
+                requestAnimationFrame(() => {
+                    const target = textareaRef.current;
+                    if (!target) return;
+                    const len = target.value.length;
+                    target.selectionStart = len;
+                    target.selectionEnd = len;
+                });
+                return;
+            }
+        }
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             if (searchMode) {
@@ -116,8 +387,52 @@ export function ComposeBox({
         }
     };
 
+    const addMediaFiles = (files) => {
+        const list = Array.from(files || []).filter((file) => file && file.type && file.type.startsWith('image/'));
+        if (!list.length) return;
+        setMediaFiles((current) => [...current, ...list]);
+    };
+
     const handleFileChange = (e) => {
-        setMediaFiles([...e.target.files]);
+        addMediaFiles(e.target.files);
+        e.target.value = '';
+    };
+
+    const handleDragEnter = (e) => {
+        if (searchMode) return;
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounterRef.current += 1;
+        setIsDragActive(true);
+    };
+
+    const handleDragLeave = (e) => {
+        if (searchMode) return;
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
+        if (dragCounterRef.current === 0) setIsDragActive(false);
+    };
+
+    const handleDragOver = (e) => {
+        if (searchMode) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+        setIsDragActive(true);
+    };
+
+    const handleDrop = (e) => {
+        if (searchMode) return;
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounterRef.current = 0;
+        setIsDragActive(false);
+        addMediaFiles(e.dataTransfer?.files || []);
+    };
+
+    const removeMediaFile = (index) => {
+        setMediaFiles((current) => current.filter((_, idx) => idx !== index));
     };
 
     const handleLocation = () => {
@@ -151,34 +466,39 @@ export function ComposeBox({
 
     return html`
         <div class="compose-box">
-            <div class="compose-input-wrapper">
+            <div
+                class=${`compose-input-wrapper${isDragActive ? ' drag-active' : ''}`}
+                onDragEnter=${handleDragEnter}
+                onDragOver=${handleDragOver}
+                onDragLeave=${handleDragLeave}
+                onDrop=${handleDrop}
+            >
                 <div class="compose-input-main">
-                    ${!searchMode && fileRefs.length > 0 && html`
+                    ${!searchMode && (fileRefs.length > 0 || mediaFiles.length > 0) && html`
                         <div class="compose-file-refs">
                             ${fileRefs.map((path) => {
                                 const label = path.split('/').pop() || path;
                                 return html`
-                                    <span class="compose-file-pill" title=${path}>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                                            <polyline points="14 2 14 8 20 8"/>
-                                        </svg>
-                                        <span class="compose-file-name">${label}</span>
-                                        <button
-                                            class="compose-file-remove"
-                                            onClick=${(event) => {
-                                                event.preventDefault();
-                                                event.stopPropagation();
-                                                onRemoveFileRef?.(path);
-                                            }}
-                                            title="Remove file"
-                                            type="button"
-                                        >
-                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                                <path d="M18 6L6 18M6 6l12 12"/>
-                                            </svg>
-                                        </button>
-                                    </span>
+                                    <${FilePill}
+                                        prefix="compose"
+                                        label=${label}
+                                        title=${path}
+                                        removeTitle="Remove file"
+                                        onRemove=${() => onRemoveFileRef?.(path)}
+                                    />
+                                `;
+                            })}
+                            ${mediaFiles.map((file, index) => {
+                                const label = file?.name || `image-${index + 1}`;
+                                return html`
+                                    <${FilePill}
+                                        key=${label + index}
+                                        prefix="compose"
+                                        label=${label}
+                                        title=${label}
+                                        removeTitle="Remove image"
+                                        onRemove=${() => removeMediaFile(index)}
+                                    />
                                 `;
                             })}
                         </div>
@@ -194,10 +514,28 @@ export function ComposeBox({
                         disabled=${loading}
                         rows="1"
                     />
+                    ${showSlash && slashMatches.length > 0 && html`
+                        <div class="slash-autocomplete" ref=${slashRef}>
+                            ${slashMatches.map((cmd, i) => html`
+                                <div
+                                    key=${cmd.name}
+                                    class=${`slash-item${i === slashIndex ? ' active' : ''}`}
+                                    onMouseDown=${(e) => { e.preventDefault(); acceptSlashCommand(cmd); }}
+                                    onMouseEnter=${() => setSlashIndex(i)}
+                                >
+                                    <span class="slash-name">${cmd.name}</span>
+                                    <span class="slash-desc">${cmd.description}</span>
+                                </div>
+                            `)}
+                        </div>
+                    `}
                     ${!searchMode && activeModel && html`
                         <span class="compose-model-hint" title=${activeModel}>
                             ${activeModel}
                         </span>
+                    `}
+                    ${!searchMode && contextUsage && contextUsage.percent != null && html`
+                        <${ContextPie} usage=${contextUsage} />
                     `}
                 </div>
                 <div class="compose-actions ${searchMode ? 'search-mode' : ''}">
@@ -261,11 +599,6 @@ export function ComposeBox({
                     `}
                 </div>
             </div>
-            ${mediaFiles.length > 0 && html`
-                <div class="media-files-preview">
-                    ${mediaFiles.map(f => html`<span key=${f.name} class="media-file-tag">${f.name}</span>`)}
-                </div>
-            `}
         </div>
     `;
 }

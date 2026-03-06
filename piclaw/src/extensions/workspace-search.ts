@@ -56,6 +56,7 @@ async function execute(
   return { content: [{ type: "text", text: `${header}\n${lines.join("\n")}` }], details: { count: rows.length, results: rows } };
 }
 
+/** Extension factory that registers the search_workspace tool. */
 export const workspaceSearch: ExtensionFactory = (api) => {
   api.registerTool({
     name: "search_workspace",

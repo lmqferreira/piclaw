@@ -1,5 +1,16 @@
+/**
+ * web/request-router-service.ts – High-level request processing logic.
+ *
+ * Contains the business logic for handling compose-box submissions:
+ * detecting control commands, routing agent runs, managing steering/followup
+ * modes, and coordinating with the agent queue.
+ *
+ * Consumers: web/request-router.ts delegates to functions defined here.
+ */
+
 import { extname, resolve } from "path";
 import type { WebChannel } from "../web.js";
+import { rememberWebOrigin } from "./request-origin.js";
 
 const STATIC_DIR = resolve(import.meta.dir, "..", "..", "..", "..", "web", "static");
 const STATIC_MIME_TYPES: Record<string, string> = {
@@ -16,6 +27,56 @@ const APPLE_ICON_PATHS = new Set([
   "/apple-touch-icon-152x152.png",
 ]);
 
+const ENROLL_RATE_WINDOW_MS = 5 * 60 * 1000;
+const ENROLL_RATE_LIMIT = 20;
+const AUTH_RATE_WINDOW_MS = 5 * 60 * 1000;
+const AUTH_RATE_LIMIT = 10;
+const rateBuckets = new Map<string, number[]>();
+
+// Prune stale IP entries every 10 minutes to prevent unbounded memory growth.
+const RATE_PRUNE_INTERVAL_MS = 10 * 60 * 1000;
+let lastRatePrune = Date.now();
+
+function pruneRateBuckets(): void {
+  const now = Date.now();
+  if (now - lastRatePrune < RATE_PRUNE_INTERVAL_MS) return;
+  lastRatePrune = now;
+  const maxWindow = Math.max(ENROLL_RATE_WINDOW_MS, AUTH_RATE_WINDOW_MS);
+  const cutoff = now - maxWindow;
+  for (const [key, entries] of rateBuckets.entries()) {
+    const live = entries.filter((ts) => ts > cutoff);
+    if (live.length === 0) {
+      rateBuckets.delete(key);
+    } else {
+      rateBuckets.set(key, live);
+    }
+  }
+}
+
+function getClientKey(req: Request): string {
+  const forwarded = req.headers.get("x-forwarded-for");
+  if (forwarded) {
+    const first = forwarded.split(",")[0]?.trim();
+    if (first) return first;
+  }
+  const realIp = req.headers.get("x-real-ip");
+  if (realIp) return realIp.trim();
+  return "unknown";
+}
+
+function isRateLimited(req: Request, bucket: string, windowMs: number, limit: number): boolean {
+  pruneRateBuckets();
+  const key = `${getClientKey(req)}:${bucket}`;
+  const now = Date.now();
+  const cutoff = now - windowMs;
+  const entries = rateBuckets.get(key) || [];
+  const trimmed = entries.filter((ts) => ts > cutoff);
+  trimmed.push(now);
+  rateBuckets.set(key, trimmed);
+  return trimmed.length > limit;
+}
+
+/** Business logic for handling compose-box submissions and agent runs. */
 export class RequestRouterService {
   constructor(private channel: WebChannel) {}
 
@@ -50,11 +111,19 @@ export class RequestRouterService {
     const url = new URL(req.url);
     const pathname = url.pathname;
 
+    // Track the last seen origin so slash commands can build absolute links.
+    rememberWebOrigin("web:default", req);
+
     const isGetOrHead = req.method === "GET" || req.method === "HEAD";
     const authEnabled = this.channel.isAuthEnabled();
     const internalSecretEnabled = this.channel.isInternalSecretEnabled();
     const isLoginPage = isGetOrHead && (pathname === "/login" || pathname === "/login.html");
     const isAuthVerify = req.method === "POST" && pathname === "/auth/verify";
+    const isWebauthnLoginStart = req.method === "POST" && pathname === "/auth/webauthn/login/start";
+    const isWebauthnLoginFinish = req.method === "POST" && pathname === "/auth/webauthn/login/finish";
+    const isWebauthnRegisterStart = req.method === "POST" && pathname === "/auth/webauthn/register/start";
+    const isWebauthnRegisterFinish = req.method === "POST" && pathname === "/auth/webauthn/register/finish";
+    const isWebauthnEnrollPage = isGetOrHead && pathname === "/auth/webauthn/enrol";
     const isInternalPost = req.method === "POST" && pathname === "/internal/post";
     const isInternalPatch = req.method === "PATCH" && pathname.startsWith("/post/");
     const hasInternalAccess = internalSecretEnabled && this.channel.verifyInternalSecret(req);
@@ -62,29 +131,74 @@ export class RequestRouterService {
     const isManifest = isGetOrHead && pathname === "/manifest.json";
     const isFavicon = isGetOrHead && pathname === "/favicon.ico";
     const isAppleIcon = isGetOrHead && APPLE_ICON_PATHS.has(pathname);
+    // TODO: Auth-gate the app bundle
+    // ─────────────────────────────
+    // isStaticAsset currently whitelists ALL /static/ paths past auth. This
+    // means the full app JS (app.js, api.js, components/, etc.) is served to
+    // unauthenticated visitors. The login page (login.html) is self-contained
+    // with inline JS and does NOT load any /static/js/ files.
+    //
+    // To fix, either:
+    //   (a) Move the app bundle to an auth-gated path (e.g. /app/bundle.js)
+    //       and only whitelist /static/css/, /static/fonts/, and vendor libs, OR
+    //   (b) Replace the blanket isStaticAsset check with an allowlist of public
+    //       paths (CSS, icons, vendor libs) and require auth for app JS.
+    //
+    // The app bundle exposes API endpoint paths, component structure, and
+    // workspace logic that should not be visible to unauthenticated users.
     const isStaticAsset = pathname.startsWith("/static/");
     const isDocsAsset = pathname.startsWith("/docs/");
     const isAvatar = isGetOrHead && pathname === "/avatar/agent";
 
-    if (internalSecretEnabled && (isInternalPost || isInternalPatch)) {
-      if (!hasInternalAccess) {
-        return this.channel.json({ error: "Unauthorized" }, 401);
+    // Internal post/patch: require internal secret when configured, otherwise
+    // fall through to normal TOTP auth (do NOT skip auth).
+    if (isInternalPost || isInternalPatch) {
+      if (internalSecretEnabled) {
+        if (!hasInternalAccess) {
+          return this.channel.json({ error: "Unauthorized" }, 401);
+        }
+        // hasInternalAccess is true → skipAuthCheck will include it below
       }
+      // If internal secret is NOT enabled, these are treated as normal
+      // endpoints and must pass TOTP auth like everything else.
     }
 
     if (!authEnabled && isAuthVerify) {
       return this.channel.json({ error: "Auth disabled" }, 404);
     }
 
+    // Rate-limit auth endpoints to prevent brute-force attacks.
+    if (isAuthVerify) {
+      if (isRateLimited(req, "auth/verify", AUTH_RATE_WINDOW_MS, AUTH_RATE_LIMIT)) {
+        console.warn(`[auth] Rate limit exceeded for /auth/verify (ip=${getClientKey(req)})`);
+        return this.channel.json({ error: "Too many login attempts. Try again later." }, 429);
+      }
+    }
+    if (isWebauthnLoginStart || isWebauthnLoginFinish) {
+      if (isRateLimited(req, "webauthn/login", AUTH_RATE_WINDOW_MS, AUTH_RATE_LIMIT)) {
+        console.warn(`[auth] Rate limit exceeded for WebAuthn login (ip=${getClientKey(req)})`);
+        return this.channel.json({ error: "Too many login attempts. Try again later." }, 429);
+      }
+    }
+    if (isWebauthnEnrollPage || isWebauthnRegisterStart || isWebauthnRegisterFinish) {
+      if (isRateLimited(req, "webauthn/enrol", ENROLL_RATE_WINDOW_MS, ENROLL_RATE_LIMIT)) {
+        console.warn(`[auth] Rate limit exceeded for WebAuthn enrol (ip=${getClientKey(req)})`);
+        return this.channel.json({ error: "Too many enrol attempts. Try again later." }, 429);
+      }
+    }
+
     const skipAuthCheck =
       hasInternalAccess ||
       isLoginPage ||
       isAuthVerify ||
+      isWebauthnLoginStart ||
+      isWebauthnLoginFinish ||
+      isWebauthnRegisterStart ||
+      isWebauthnRegisterFinish ||
       isManifest ||
       isFavicon ||
       isAppleIcon ||
       isStaticAsset ||
-      isDocsAsset ||
       isAvatar;
 
     if (authEnabled) {
@@ -94,7 +208,7 @@ export class RequestRouterService {
       if (isLoginPage) {
         return this.channel.serveLoginPage();
       }
-      if (!skipAuthCheck && !hasInternalAccess && !this.channel.isAuthenticated(req) && !isInternalPost && !isInternalPatch) {
+      if (!skipAuthCheck && !this.channel.isAuthenticated(req)) {
         if (isIndex) {
           return this.channel.serveLoginPage();
         }
@@ -105,6 +219,32 @@ export class RequestRouterService {
       }
     } else if (isLoginPage) {
       return this.channel.json({ error: "Not found" }, 404);
+    }
+
+    if (isWebauthnEnrollPage) {
+      if (!this.channel.isTotpSession(req)) {
+        if (isGetOrHead) {
+          return this.channel.redirectToLogin();
+        }
+        return this.channel.json({ error: "TOTP session required" }, 401);
+      }
+      return this.channel.handleWebauthnEnrollPage(req);
+    }
+
+    if (isWebauthnLoginStart) {
+      return this.channel.handleWebauthnLoginStart(req);
+    }
+
+    if (isWebauthnLoginFinish) {
+      return this.channel.handleWebauthnLoginFinish(req);
+    }
+
+    if (isWebauthnRegisterStart) {
+      return this.channel.handleWebauthnRegisterStart(req);
+    }
+
+    if (isWebauthnRegisterFinish) {
+      return this.channel.handleWebauthnRegisterFinish(req);
     }
 
     if (isIndex) {
@@ -161,6 +301,10 @@ export class RequestRouterService {
 
     if (req.method === "GET" && pathname === "/workspace/file") {
       return this.channel.handleWorkspaceFile(req);
+    }
+
+    if (req.method === "PUT" && pathname === "/workspace/file") {
+      return await this.channel.handleWorkspaceUpdate(req);
     }
 
     if (req.method === "GET" && pathname === "/workspace/raw") {
@@ -241,6 +385,10 @@ export class RequestRouterService {
 
     if (req.method === "GET" && pathname === "/agent/status") {
       return this.channel.handleAgentStatus(req);
+    }
+
+    if (req.method === "GET" && pathname === "/agent/context") {
+      return this.channel.handleAgentContext(req);
     }
 
     if (req.method === "POST" && pathname === "/agent/respond") {

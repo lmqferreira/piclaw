@@ -1,4 +1,13 @@
+/**
+ * agent-control/handlers/tree.ts – Handler for the /tree command.
+ *
+ * Renders the session message tree in a compact text format, supporting
+ * head/tail modes, pagination, summarisation, and label display.
+ *
+ * Consumers: agent-control-handlers.ts dispatches to this handler.
+ */
 import { extractTextFromContent, formatCompactNumber, truncateText } from "../agent-control-helpers.js";
+/** Handle /tree: render the session message tree in text format. */
 export async function handleTree(session, command) {
     const sessionManager = session.sessionManager;
     const leafId = sessionManager.getLeafId();
@@ -112,6 +121,7 @@ export async function handleTree(session, command) {
         return { status: "error", message };
     }
 }
+/** Handle /label: set or clear a label on a specific entry. */
 export async function handleLabel(session, command) {
     if (!command.targetId) {
         return { status: "error", message: "Usage: /label <entryId> <label|clear>" };
@@ -124,6 +134,7 @@ export async function handleLabel(session, command) {
         message: label ? `Label set on ${command.targetId}: ${label}` : `Label cleared on ${command.targetId}.`,
     };
 }
+/** Handle /label: set or clear a label on a specific entry. */
 export async function handleLabels(session, _command) {
     const roots = session.sessionManager.getTree();
     const labels = [];

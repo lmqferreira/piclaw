@@ -1,3 +1,26 @@
+/**
+ * agent-pool.ts – Manages per-chat pi-agent sessions and orchestrates agent runs.
+ *
+ * The AgentPool is the central coordinator between inbound messages and the
+ * pi-coding-agent SDK. It:
+ *   - Maintains a map of chat JID → AgentSession (lazy-initialised).
+ *   - Provides runAgent() which prompts the agent, streams events, records
+ *     token usage, detects auto-compaction needs, and returns the result.
+ *   - Handles slash commands by delegating to agent-pool/slash-command.ts.
+ *   - Forwards agent-control commands (model switch, session management, etc.)
+ *     to the agent-control module.
+ *   - Manages session lifecycle: save/restore position (for scheduled tasks),
+ *     clear sessions, reload resources.
+ *   - Integrates the attachment registry for file-delivery tools.
+ *
+ * Consumers:
+ *   - runtime.ts / runtime/message-loop.ts creates the AgentPool at startup
+ *     and calls runAgent() for each inbound message.
+ *   - task-scheduler.ts calls runAgent() for scheduled task execution.
+ *   - channels/web.ts uses applyControlCommand() and agent status queries.
+ *   - agent-control handlers call methods on AgentPool for session/model ops.
+ */
+
 import { mkdirSync } from "fs";
 import { join } from "path";
 import {
@@ -27,6 +50,7 @@ import { resolveModelLabel } from "./utils/model-utils.js";
 import { withChatContext } from "./core/chat-context.js";
 import { clearAutoCompactState, getAutoCompactState, setAutoCompactState } from "./db/auto-compaction.js";
 
+/** Output from an agent run: response text, status, and token usage. */
 export interface AgentOutput {
   status: "success" | "error";
   result: string | null;
@@ -40,6 +64,7 @@ export interface TurnOutput {
   attachments: AttachmentInfo[];
 }
 
+/** Notification payload when auto-compaction occurs. */
 export interface AutoCompactNotice {
   phase: "pre" | "post";
   status: "start" | "end" | "error";
@@ -50,6 +75,7 @@ export interface AutoCompactNotice {
   error?: string;
 }
 
+/** Options for AgentPool.runAgent(): chatJid, messages, callbacks. */
 export interface RunAgentOptions {
   onEvent?: (event: AgentSessionEvent) => void;
   onAutoCompact?: (notice: AutoCompactNotice) => void;
@@ -60,6 +86,7 @@ export interface RunAgentOptions {
   timeoutMs?: number;
 }
 
+/** Construction options for creating an AgentPool. */
 export interface AgentPoolOptions {
   createSession?: (chatJid: string, sessionDir: string) => Promise<AgentSession>;
   modelRegistry?: ModelRegistry;
@@ -245,6 +272,17 @@ export class AgentPool {
     return model ? `${model.provider}/${model.id}` : null;
   }
 
+  /** Return the current context token usage for a chat session, or null if unknown. */
+  async getContextUsageForChat(chatJid: string): Promise<{
+    tokens: number | null;
+    contextWindow: number;
+    percent: number | null;
+  } | null> {
+    const entry = this.pool.get(chatJid);
+    if (!entry) return null;
+    return entry.session.getContextUsage() ?? null;
+  }
+
   /**
    * Save the current session tree position so it can be restored later.
    * Used by the scheduler to isolate task execution in a side branch.
@@ -397,7 +435,8 @@ export class AgentPool {
     const current = session.model;
     if (current && current.provider === provider && current.id === modelId) return;
 
-    const resolved = this.modelRegistry.find(provider, modelId);
+    const sessionRegistry = (session as AgentSession & { modelRegistry?: ModelRegistry }).modelRegistry ?? this.modelRegistry;
+    const resolved = sessionRegistry.find(provider, modelId);
     if (!resolved) return;
 
     const setModel = (session as { setModel?: (model: typeof resolved) => Promise<void> }).setModel;

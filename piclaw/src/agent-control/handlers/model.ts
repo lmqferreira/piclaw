@@ -1,3 +1,12 @@
+/**
+ * agent-control/handlers/model.ts – Handlers for model and thinking level commands.
+ *
+ * Handles /model (set/list), /cycle-model, /thinking (set/query),
+ * /cycle-thinking, /steering-mode, and /followup-mode commands.
+ *
+ * Consumers: agent-control-handlers.ts dispatches to these handlers.
+ */
+
 import type { AgentSession, ModelRegistry } from "@mariozechner/pi-coding-agent";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Model } from "@mariozechner/pi-ai";
@@ -9,11 +18,13 @@ type ThinkingCommand = Extract<AgentControlCommand, { type: "thinking" }>;
 type CycleModelCommand = Extract<AgentControlCommand, { type: "cycle_model" }>;
 type CycleThinkingCommand = Extract<AgentControlCommand, { type: "cycle_thinking" }>;
 
+/** Handle /model: switch model, list models, or show current model. */
 export async function handleModel(session: AgentSession, modelRegistry: ModelRegistry, command: ModelCommand): Promise<AgentControlResult> {
-  modelRegistry.refresh();
+  const registry = ((session as AgentSession & { modelRegistry?: ModelRegistry }).modelRegistry ?? modelRegistry);
+  registry.refresh();
 
   if (!command.modelId) {
-    const available = modelRegistry.getAvailable();
+    const available = registry.getAvailable();
     if (available.length === 0) {
       return {
         status: "error",
@@ -45,7 +56,7 @@ export async function handleModel(session: AgentSession, modelRegistry: ModelReg
     };
   }
 
-  const models = modelRegistry.getAll();
+  const models = registry.getAll();
   let selected: Model<any> | undefined;
 
   if (command.provider) {
@@ -96,6 +107,7 @@ export async function handleModel(session: AgentSession, modelRegistry: ModelReg
   };
 }
 
+/** Handle /thinking: set or query the thinking level. */
 export async function handleThinking(session: AgentSession, _modelRegistry: ModelRegistry, command: ThinkingCommand): Promise<AgentControlResult> {
   if (!session.model) {
     return {
@@ -151,6 +163,7 @@ export async function handleThinking(session: AgentSession, _modelRegistry: Mode
   };
 }
 
+/** Handle /cycle-model: switch to the next/previous model. */
 export async function handleCycleModel(session: AgentSession, _modelRegistry: ModelRegistry, command: CycleModelCommand): Promise<AgentControlResult> {
   try {
     const result = await session.cycleModel(command.direction);
@@ -172,6 +185,7 @@ export async function handleCycleModel(session: AgentSession, _modelRegistry: Mo
   }
 }
 
+/** Handle /cycle-thinking: cycle through thinking levels. */
 export async function handleCycleThinking(session: AgentSession, _modelRegistry: ModelRegistry, _command: CycleThinkingCommand): Promise<AgentControlResult> {
   const level = session.cycleThinkingLevel();
   if (!level) {

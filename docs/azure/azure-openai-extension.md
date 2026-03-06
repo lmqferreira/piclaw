@@ -1,6 +1,10 @@
-# Azure OpenAI + Foundry managed-identity extension (piclaw)
+# Azure OpenAI + Foundry managed-identity extension (experimental)
 
-This note documents the piclaw extension that registers Azure OpenAI and Azure AI Foundry providers using **managed identity (IMDS)**. It also explains the **custom API names** required to avoid overriding global OpenAI handlers.
+> **Status: experimental** — this extension is bundled with piclaw but its API surface and configuration may change between releases.
+
+> **Caveat:** This extension is primarily designed for running inside **private Azure VNets** with **private Azure OpenAI endpoints** and **managed identity** authentication. It may shadow or conflict with future first-party Azure OpenAI support in [pi-mono](https://github.com/badlogic/pi-mono) — if upstream adds native Azure provider support, this extension should be reviewed and potentially retired.
+
+This note documents the piclaw extension that registers Azure OpenAI and Azure AI Foundry providers using **managed identity (IMDS)** or a static API key. It also explains the **custom API names** required to avoid overriding global OpenAI handlers.
 
 ## Purpose
 
@@ -11,7 +15,7 @@ This note documents the piclaw extension that registers Azure OpenAI and Azure A
 
 ## Key design choices
 
-- **Managed identity token** via Azure IMDS (no `az` CLI dependency).
+- **Managed identity token** via Azure IMDS (no `az` CLI dependency), or a static API key (`AOAI_API_KEY`) for environments where a separate service handles token acquisition.
 - **Token cache** written to `${AOAI_TOKEN_CACHE_DIR}` with a refresh skew.
 - **OpenAI client** from the `openai` package, configured with the Azure Responses API base URL.
 - **Custom API names** so this extension does *not* replace the global `openai-responses` / `openai-completions` handlers.
@@ -21,6 +25,7 @@ This note documents the piclaw extension that registers Azure OpenAI and Azure A
 - **Runtime flags** to disable tools or reasoning (`AOAI_DISABLE_TOOLS`, `AOAI_DISABLE_REASONING`, `AOAI_DISABLE_REASONING_MODELS`).
 - **Phase capture + replay** for GPT‑5.3 Codex output metadata (`AOAI_LOG_PHASES` for debug).
 - **Stream failure logging** for `response.failed` / `error` events with request summaries.
+- **Tool-call trimming + summarisation** to stay under Azure’s 128 tool-call limit (default cap 96, with optional dedupe of `tool_output_search`). Summary messages use `msg_`-prefixed IDs to satisfy Responses API validation.
 - **Text output forcing** via `text: { format: { type: "text" }, verbosity: "medium" }`.
 
 ## Pitfalls / guardrails
@@ -28,7 +33,7 @@ This note documents the piclaw extension that registers Azure OpenAI and Azure A
 - **Do not use** `api: "openai-responses"` or `api: "openai-completions"` in this extension. That overrides global handlers and breaks other providers (e.g., GitHub Copilot).
 - **Always set per-model `api`** to the custom API names. If you omit it, the model routes through global handlers and fails with auth errors.
 - The OpenAI SDK always injects `Authorization: Bearer <apiKey>`. **Do not** add `Authorization` / `api-key` headers yourself or enable `authHeader`.
-- This extension is **managed identity only**. `AOAI_RESOURCE` / `FOUNDRY_RESOURCE` must match the target resource or tokens will be invalid (401/403).
+- This extension is **managed identity by default**. When `AOAI_API_KEY` is set, it uses the static key instead (skipping IMDS). `AOAI_RESOURCE` / `FOUNDRY_RESOURCE` must match the target resource or MI tokens will be invalid (401/403).
 - `MODEL_SPECS.reasoning=false` will clamp thinking to off for that model.
 - Do not remove tool-call ID sanitization or `TOOL_CALL_PROVIDERS`; Azure Responses rejects non‑compliant IDs.
 
@@ -139,7 +144,8 @@ include: ["reasoning.encrypted_content"]
 
 ## Environment variables
 
-- `AOAI_BASE_URL` – Azure OpenAI Responses API base URL
+- `AOAI_BASE_URL` – Azure OpenAI Responses API base URL (required to activate the extension)
+- `AOAI_API_KEY` – static API key; when set, skips managed-identity token fetch (useful when a separate service handles authentication)
 - `AOAI_MODEL_ID` – model deployment ID
 - `AOAI_MODEL_IDS` – comma‑separated list of model IDs
 - `AOAI_MODEL_NAME` / `AOAI_MODEL_NAMES` – display names
@@ -153,6 +159,10 @@ include: ["reasoning.encrypted_content"]
 - `AOAI_DISABLE_REASONING` – disable reasoning (`true`/`1`/`yes`)
 - `AOAI_DISABLE_REASONING_MODELS` – comma‑separated model IDs to force reasoning off
 - `AOAI_LOG_PHASES` – log GPT‑5.3 phase replay details (`true`/`1`/`yes`)
+- `AOAI_MAX_TOOL_CALLS` – maximum tool calls per request before trimming (default `96`)
+- `AOAI_TOOL_CALL_SUMMARY_MAX` – max tool-call entries to include in the summary message (default `12`)
+- `AOAI_TOOL_CALL_OUTPUT_CHARS` – max chars per tool output snippet in summaries (default `200`)
+- `AOAI_DEDUPE_TOOL_OUTPUT_SEARCH` – dedupe repeated `tool_output_search` calls (`1` default, set `0` to disable)
 
 - `FOUNDRY_BASE_URL` – Foundry base URL
 - `FOUNDRY_MODEL_IDS` / `FOUNDRY_MODEL_NAMES` – Foundry model list + names
@@ -164,7 +174,7 @@ include: ["reasoning.encrypted_content"]
 
 ## Files and paths
 
-- **Extension source**: `~/.pi/agent/extensions/azure-openai-token.ts`
+- **Extension source**: `piclaw/extensions/azure-openai.ts` (bundled inside the package)
 - **Token cache**: `${AOAI_TOKEN_CACHE_DIR}/aoai-token.json`
 
 ## Model-switch regression test (web)

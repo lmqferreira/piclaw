@@ -1,3 +1,17 @@
+/**
+ * runtime.ts – Application lifecycle: startup, polling loop, and shutdown.
+ *
+ * This is the top-level orchestrator that wires together all subsystems:
+ *   - Initialises the database (db/connection.ts).
+ *   - Creates the AgentPool, AgentQueue, and RuntimeState.
+ *   - Starts the WhatsApp channel (if configured), web channel, Pushover, IPC.
+ *   - Runs the main message-polling loop and task scheduler.
+ *   - Handles graceful shutdown (SIGINT/SIGTERM).
+ *
+ * Consumers:
+ *   - index.ts calls startRuntime() as the entry point.
+ */
+
 import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 
@@ -39,6 +53,7 @@ let pushover: PushoverChannel | null = null;
 const state = new RuntimeState(DATA_DIR);
 
 
+/** Boot all subsystems (DB, channels, agent pool, scheduler) and enter the main loop. */
 export async function main(): Promise<void> {
   // Ensure directories
   mkdirSync(STORE_DIR, { recursive: true });
@@ -49,6 +64,24 @@ export async function main(): Promise<void> {
   startToolOutputCleanup(TOOL_OUTPUT_RETENTION_DAYS, TOOL_OUTPUT_CLEANUP_INTERVAL_MS);
   state.loadTimestamps();
   state.loadChats();
+
+  // Ensure Azure providers are registered for model listing at startup.
+  const azureToken = process.env.AOAI_API_KEY || process.env.FOUNDRY_API_KEY;
+  const registry = (agentPool as unknown as { modelRegistry?: any }).modelRegistry;
+  if (registry && process.env.AOAI_BASE_URL && azureToken) {
+    const hasAzure = registry.getAll?.().some((model: any) => model.provider === "azure-openai");
+    if (!hasAzure) {
+      try {
+        const azureUrl = new URL("../extensions/azure-openai.ts", import.meta.url);
+        const azureModule = (await import(azureUrl.href)) as { registerAzureProviders?: (register: (name: string, config: any) => void, token: string) => void };
+        if (typeof azureModule.registerAzureProviders === "function") {
+          azureModule.registerAzureProviders((name, config) => registry.registerProvider(name, config), azureToken);
+        }
+      } catch (err) {
+        console.warn("[runtime] Failed to register Azure providers:", err);
+      }
+    }
+  }
 
   console.log("=== Piclaw - Pi Coding Agent Assistant ===");
 

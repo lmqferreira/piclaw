@@ -1,3 +1,13 @@
+/**
+ * web/workspace/tree.ts – Recursive directory tree builder.
+ *
+ * Walks the workspace filesystem and builds a JSON tree structure
+ * for the web UI's sidebar explorer. Respects exclude directories
+ * and depth limits.
+ *
+ * Consumers: web/workspace/tree-cache.ts calls buildTree().
+ */
+
 import { readdirSync, statSync } from "fs";
 import path from "path";
 
@@ -5,11 +15,13 @@ import { MAX_TREE_ENTRIES } from "./constants.js";
 import { formatMtime } from "./file-utils.js";
 import { shouldExcludeDir, toRelativePath } from "./paths.js";
 
+/** State accumulated during recursive tree building. */
 export interface WorkspaceTreeState {
   count: number;
   truncated: boolean;
 }
 
+/** Recursively build a directory tree starting from the given root. */
 export function buildTree(
   absPath: string,
   depth: number,
@@ -68,6 +80,7 @@ export function buildTree(
   return node;
 }
 
+/** Compress single-child directory chains into combined path nodes. */
 export function compressPaths(paths: string[]): string[] {
   const normalized = Array.from(new Set(paths.map((p) => (p || ".").replace(/\\/g, "/"))));
   if (normalized.includes(".")) return ["."];

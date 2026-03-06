@@ -1,3 +1,22 @@
+/**
+ * tool-output.ts – High-level API for persisting and querying large tool outputs.
+ *
+ * When a tool call (bash, read, etc.) produces output too large to include
+ * inline in the conversation, this module:
+ *   1. Writes the full content to a log file on disk.
+ *   2. Stores metadata in the `tool_outputs` DB table.
+ *   3. Indexes the content in FTS5 for later searching.
+ *   4. Returns a short preview/summary for the agent's context window.
+ *
+ * Also manages automatic retention cleanup (pruneToolOutputs).
+ *
+ * Consumers:
+ *   - tools/tracked-bash.ts calls saveToolOutput() for large bash outputs.
+ *   - tools/context-tools.ts calls getToolOutput() / searchToolOutput().
+ *   - runtime.ts calls startToolOutputCleanup() at startup.
+ *   - agent-pool.ts may call readToolOutputFile() to fetch full content.
+ */
+
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { join } from "path";
 import { DATA_DIR } from "./core/config.js";
@@ -12,24 +31,41 @@ import {
 } from "./db.js";
 import { buildPreviewLines } from "./utils/preview.js";
 
+/** Directory where tool output log files are stored on disk. */
 const TOOL_OUTPUT_DIR = join(DATA_DIR, "tool-output");
+/** Default chunk size (characters) for FTS indexing. */
 const DEFAULT_CHUNK_SIZE = 4000;
 
+/** Options for saveToolOutput(). */
 export interface ToolOutputSaveOptions {
+  /** Override the generated UUID. */
   id?: string;
+  /** Tool name that produced this output (e.g. "bash", "read"). */
   source?: string | null;
+  /** Pre-computed summary (if not provided, one is generated). */
   summary?: string | null;
+  /** Override the created_at timestamp. */
   createdAt?: string;
 }
 
+/** Result returned after successfully saving a tool output. */
 export interface ToolOutputSaveResult {
+  /** UUID of the stored output. */
   id: string;
+  /** Filesystem path to the full log file. */
   path: string;
+  /** Short preview/summary of the output content. */
   summary: string;
+  /** Total size of the output in bytes. */
   sizeBytes: number;
+  /** Total number of lines in the output. */
   lineCount: number;
 }
 
+/**
+ * Generate a short text preview of the first N lines of content.
+ * Used as the default summary when none is provided.
+ */
 export function buildPreview(text: string, maxLines = 12, maxLineLength = 200): string {
   const { preview } = buildPreviewLines(text, {
     maxLines,
@@ -39,6 +75,10 @@ export function buildPreview(text: string, maxLines = 12, maxLineLength = 200): 
   return preview;
 }
 
+/**
+ * Split text into line-aware chunks for FTS indexing.
+ * Avoids splitting mid-line when possible.
+ */
 function chunkText(text: string, chunkSize = DEFAULT_CHUNK_SIZE): string[] {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   const chunks: string[] = [];
@@ -56,6 +96,10 @@ function chunkText(text: string, chunkSize = DEFAULT_CHUNK_SIZE): string[] {
   return chunks;
 }
 
+/**
+ * Persist a tool output: write to disk, store metadata in SQLite, and
+ * index content chunks in FTS5. Returns a summary result.
+ */
 export function saveToolOutput(text: string, options: ToolOutputSaveOptions = {}): ToolOutputSaveResult {
   mkdirSync(TOOL_OUTPUT_DIR, { recursive: true });
   const id = options.id ?? createUuid("out");
@@ -79,6 +123,7 @@ export function saveToolOutput(text: string, options: ToolOutputSaveOptions = {}
 
   storeToolOutput(record);
 
+  // Index content in FTS5 in chunks for efficient full-text search.
   const chunks = chunkText(text ?? "");
   for (const chunk of chunks) {
     if (chunk.trim()) insertToolOutputChunk(id, chunk);
@@ -87,14 +132,20 @@ export function saveToolOutput(text: string, options: ToolOutputSaveOptions = {}
   return { id, path, summary, sizeBytes, lineCount };
 }
 
+/** Retrieve a tool output record by its UUID handle. */
 export function getToolOutput(handle: string): ToolOutputRecord | undefined {
   return getToolOutputById(handle);
 }
 
+/** Search the FTS index for a tool output, returning snippet strings. */
 export function searchToolOutput(handle: string, query: string, limit = 5): string[] {
   return searchToolOutputSnippets(handle, query, limit);
 }
 
+/**
+ * Delete tool outputs older than `maxAgeDays`. Removes both the DB records
+ * and the on-disk log files. Returns the number of records pruned.
+ */
 export function pruneToolOutputs(maxAgeDays = 30): number {
   const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000).toISOString();
   const rows = deleteToolOutputsBefore(cutoff);
@@ -106,15 +157,25 @@ export function pruneToolOutputs(maxAgeDays = 30): number {
   return rows.length;
 }
 
+/** Guard to ensure the cleanup interval is only started once. */
 let cleanupStarted = false;
 
+/**
+ * Start a periodic timer that prunes old tool outputs.
+ * Called once by runtime.ts during startup.
+ */
 export function startToolOutputCleanup(maxAgeDays = 30, intervalMs = 12 * 60 * 60 * 1000): void {
   if (cleanupStarted) return;
   cleanupStarted = true;
+  // Run an initial prune immediately, then on a recurring interval.
   pruneToolOutputs(maxAgeDays);
   setInterval(() => pruneToolOutputs(maxAgeDays), intervalMs).unref();
 }
 
+/**
+ * Read the full content of a tool output log file from disk.
+ * Returns null if the file doesn't exist or is unreadable.
+ */
 export function readToolOutputFile(path: string): string | null {
   try {
     return readFileSync(path, "utf8");

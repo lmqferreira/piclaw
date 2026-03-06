@@ -1,6 +1,16 @@
+/**
+ * web/interaction-service.ts – Builds InteractionRow payloads for SSE.
+ *
+ * Converts raw message/response data into the InteractionRow format
+ * expected by the web UI timeline component.
+ *
+ * Consumers: web/agent-message-service.ts, web/posts-service.ts.
+ */
+
 import type { InteractionRow } from "../../db.js";
 import type { WebChannel } from "../web.js";
 
+/** Decorate an interaction payload with agent name and avatar. */
 export function withAgentProfile(
   interaction: InteractionRow,
   agentName: string,
@@ -25,6 +35,7 @@ export function withAgentProfile(
   };
 }
 
+/** Broadcast a completed agent interaction to SSE clients. */
 export function broadcastAgentResponse(
   channel: WebChannel,
   interaction: InteractionRow,
@@ -40,6 +51,7 @@ export function broadcastAgentResponse(
   );
 }
 
+/** Broadcast an updated interaction (edit, link preview) to SSE clients. */
 export function broadcastInteractionUpdated(
   channel: WebChannel,
   interaction: InteractionRow,

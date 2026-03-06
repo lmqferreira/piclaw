@@ -1,3 +1,12 @@
+/**
+ * web/handlers/workspace.ts – HTTP handlers for the workspace explorer API.
+ *
+ * Handles GET /workspace/tree, GET /workspace/file, PUT /workspace/file,
+ * and POST /workspace/folder for the web UI's sidebar file explorer.
+ *
+ * Consumers: web/request-router.ts routes workspace paths here.
+ */
+
 import type { WebChannel } from "../../web.js";
 import { WorkspaceService } from "../workspace/service.js";
 
@@ -10,6 +19,7 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+/** Handle GET /workspace/tree: return the directory tree. */
 export function handleWorkspaceTree(_channel: WebChannel, req: Request): Response {
   const url = new URL(req.url);
   const showHidden = url.searchParams.get("show_hidden") === "1" || url.searchParams.get("show_hidden") === "true";
@@ -21,15 +31,35 @@ export function handleWorkspaceTree(_channel: WebChannel, req: Request): Respons
   return jsonResponse(result.body, result.status);
 }
 
+/** Handle GET /workspace/file: return file content. */
 export function handleWorkspaceFile(_channel: WebChannel, req: Request): Response {
   const url = new URL(req.url);
   const result = workspaceService.getFile(
     url.searchParams.get("path"),
-    url.searchParams.get("max")
+    url.searchParams.get("max"),
+    url.searchParams.get("mode")
   );
   return jsonResponse(result.body, result.status);
 }
 
+/** Handle PUT /workspace/file: update file contents. */
+export async function handleWorkspaceUpdate(_channel: WebChannel, req: Request): Promise<Response> {
+  let data: { path?: string; content?: string };
+  try {
+    data = await req.json();
+  } catch {
+    return jsonResponse({ error: "Invalid JSON" }, 400);
+  }
+
+  if (!data?.path) {
+    return jsonResponse({ error: "Missing path" }, 400);
+  }
+
+  const result = workspaceService.updateFile(data.path, data.content ?? "");
+  return jsonResponse(result.body, result.status);
+}
+
+/** Handle GET /workspace/raw: serve raw file content for download. */
 export function handleWorkspaceRaw(_channel: WebChannel, req: Request): Response {
   const url = new URL(req.url);
   const result = workspaceService.getRaw(url.searchParams.get("path"));
@@ -41,6 +71,7 @@ export function handleWorkspaceRaw(_channel: WebChannel, req: Request): Response
   });
 }
 
+/** Handle POST /workspace/attach: attach a workspace file to agent context. */
 export async function handleWorkspaceAttach(_channel: WebChannel, req: Request): Promise<Response> {
   let data: { path?: string };
   try {
@@ -53,6 +84,7 @@ export async function handleWorkspaceAttach(_channel: WebChannel, req: Request):
   return jsonResponse(result.body, result.status);
 }
 
+/** Handle POST /workspace/upload: upload a file. */
 export async function handleWorkspaceUpload(_channel: WebChannel, req: Request): Promise<Response> {
   const url = new URL(req.url);
   let formData: FormData;
@@ -66,10 +98,12 @@ export async function handleWorkspaceUpload(_channel: WebChannel, req: Request):
     return jsonResponse({ error: "Missing file" }, 400);
   }
 
-  const result = await workspaceService.uploadFile(url.searchParams.get("path"), file);
+  const overwrite = url.searchParams.get("overwrite") === "1" || url.searchParams.get("overwrite") === "true";
+  const result = await workspaceService.uploadFile(url.searchParams.get("path"), file, overwrite);
   return jsonResponse(result.body, result.status);
 }
 
+/** Handle GET /workspace/download: serve a file as a download attachment. */
 export async function handleWorkspaceDownload(_channel: WebChannel, req: Request): Promise<Response> {
   const url = new URL(req.url);
   const showHidden = url.searchParams.get("show_hidden") === "1" || url.searchParams.get("show_hidden") === "true";
@@ -86,6 +120,7 @@ export async function handleWorkspaceDownload(_channel: WebChannel, req: Request
   });
 }
 
+/** Start the workspace filesystem watcher and wire SSE broadcasts. */
 export function startWorkspaceWatcher(channel: WebChannel): { close: () => Promise<void> } {
   return workspaceService.startWatcher(
     (updates) => {

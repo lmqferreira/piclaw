@@ -1,3 +1,16 @@
+/**
+ * agent-control/agent-control-types.ts – Type definitions for the control command system.
+ *
+ * Defines the discriminated union AgentControlCommand (one variant per command
+ * type like /model, /thinking, /abort, /tree, etc.) and the AgentControlResult
+ * returned by command handlers.
+ *
+ * Consumers:
+ *   - agent-control-parser.ts produces AgentControlCommand objects.
+ *   - agent-control-handlers.ts consumes them and returns AgentControlResult.
+ *   - agent-pool.ts, runtime/message-loop.ts, channels/web.ts use both types.
+ */
+
 export type AgentControlCommand =
   | {
       type: "model";
@@ -130,6 +143,22 @@ export type AgentControlCommand =
       raw: string;
     }
   | {
+      type: "passkey";
+      action?: "enrol" | "enroll" | "list" | "delete" | "remove";
+      target?: string;
+      raw: string;
+    }
+  | {
+      type: "totp";
+      action?: "enrol" | "enroll";
+      raw: string;
+    }
+  | {
+      type: "qr";
+      text?: string;
+      raw: string;
+    }
+  | {
       type: "search_workspace";
       query?: string;
       scope?: "notes" | "skills" | "all";
@@ -197,6 +226,7 @@ export type AgentControlCommand =
       raw: string;
     };
 
+/** Result returned by command handlers: status, message, and optional side-effects. */
 export interface AgentControlResult {
   status: "success" | "error";
   message: string;

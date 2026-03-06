@@ -1,3 +1,14 @@
+/**
+ * cli.ts – Command-line interface for piclaw sub-commands.
+ *
+ * Handles --help, --version, and the `keychain` sub-command family
+ * (set, get, list, delete). If a CLI sub-command is detected,
+ * handleCliOptions() processes it and returns true so index.ts can
+ * exit without starting the runtime.
+ *
+ * Consumers:
+ *   - index.ts calls handleCliOptions() before main().
+ */
 import { readFileSync } from "fs";
 import { join } from "path";
 import { initDatabase } from "./db.js";
@@ -22,6 +33,7 @@ Keychain commands:
   piclaw keychain list
   piclaw keychain delete <name>
 `;
+/** Read the version string from package.json. */
 export function getVersion() {
     try {
         const packagePath = join(import.meta.dir, "..", "package.json");
@@ -91,6 +103,7 @@ async function handleKeychainCommand(args) {
         }
     }
 }
+/** Parse CLI args for sub-commands. Returns true if a sub-command was handled. */
 export async function handleCliOptions(args = process.argv.slice(2)) {
     if (args.includes("-h") || args.includes("--help")) {
         console.log(HELP_TEXT.trim());

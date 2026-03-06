@@ -1,15 +1,26 @@
+/**
+ * web/sse.ts – Server-Sent Events (SSE) primitives.
+ *
+ * Provides low-level SSE stream creation, event encoding, client
+ * lifecycle management, and broadcast helpers.
+ *
+ * Consumers: web/sse-hub.ts builds on these primitives.
+ */
 
 const encoder = new TextEncoder();
 
+/** An SSE client waiting to be registered (response + controller). */
 export interface PendingClient {
   controller: ReadableStreamDefaultController<Uint8Array>;
   heartbeat: Timer;
 }
 
+/** Interface for a container that holds SSE client lists. */
 export interface SseClientContainer {
   clients: Set<PendingClient>;
 }
 
+/** Create an SSE response stream and register the client. */
 export function handleSse(channel: SseClientContainer): Response {
   let clientRef: PendingClient | null = null;
 
@@ -45,6 +56,7 @@ export function handleSse(channel: SseClientContainer): Response {
   });
 }
 
+/** Encode and send an SSE event to all connected clients. */
 export function broadcastEvent(channel: SseClientContainer, eventType: string, data: unknown): void {
   const payload = `event: ${eventType}\ndata: ${JSON.stringify(data)}\n\n`;
   const bytes = encoder.encode(payload);

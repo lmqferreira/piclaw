@@ -1,6 +1,24 @@
+/**
+ * runtime/message-loop.ts – Core message processing and enqueue logic.
+ *
+ * Implements the main polling callback that:
+ *   1. Fetches new messages since the last timestamp (via db/messages.ts).
+ *   2. Detects whether each message is a control command (agent-control) or
+ *      a regular user message.
+ *   3. Formats messages into XML and enqueues agent runs on the AgentQueue.
+ *   4. Delivers agent responses via the WhatsApp channel.
+ *
+ * Also provides the processChat() helper used by the web channel to inject
+ * messages directly into the queue without going through the poll cycle.
+ *
+ * Consumers:
+ *   - runtime.ts passes processMessages() to the polling timer.
+ *   - channels/web.ts calls processChat() when a web-channel message arrives.
+ */
 import { getMessagesSince, getNewMessages } from "../db.js";
 import { parseControlCommand } from "../agent-control/index.js";
 import { detectChannel, formatMessages, formatOutbound } from "../router.js";
+/** Process pending messages for a single chat: send to agent, deliver response. */
 export async function processMessages(chatJid, deps) {
     const since = deps.state.lastAgentTimestamp[chatJid] || "";
     const messages = getMessagesSince(chatJid, since, deps.assistantName);
@@ -85,6 +103,7 @@ export async function processMessages(chatJid, deps) {
     }
     return true;
 }
+/** Start the polling loop that checks for new messages across all chats. */
 export async function runMessageLoop(deps) {
     console.log(`[piclaw] Running (trigger: @${deps.assistantName})`);
     while (true) {

@@ -1,3 +1,13 @@
+/**
+ * web/avatar-service.ts – Manages agent and user avatar images.
+ *
+ * Handles avatar upload, retrieval, and storage on disk. Supports both
+ * URL-based avatars and file-upload avatars stored under the workspace's
+ * .piclaw/data/avatars directory.
+ *
+ * Consumers: web/handlers/agent.ts serves and updates avatar images.
+ */
+
 import { mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from "fs";
 import { resolve, extname } from "path";
 import { fileURLToPath } from "url";
@@ -5,6 +15,7 @@ import { fileURLToPath } from "url";
 import { WORKSPACE_DIR } from "../../core/config.js";
 import { contentTypeForPath } from "./workspace/file-utils.js";
 
+/** AvatarKind type definition. */
 export type AvatarKind = "agent" | "user";
 
 interface AvatarMeta {
@@ -140,6 +151,7 @@ async function loadAvatarSource(source: string): Promise<{ data: Uint8Array; con
   return loadLocalAvatar(source);
 }
 
+/** Ensure the avatar cache directory exists on disk. */
 export async function ensureAvatarCache(kind: AvatarKind, source: string): Promise<AvatarMeta | null> {
   const sanitized = sanitizeAvatarSource(source);
   if (!sanitized) return null;
@@ -172,6 +184,7 @@ export async function ensureAvatarCache(kind: AvatarKind, source: string): Promi
   return meta;
 }
 
+/** Build an HTTP response serving an avatar image with caching headers. */
 export async function buildAvatarResponse(kind: AvatarKind, source: string, req: Request): Promise<Response | null> {
   const sanitized = sanitizeAvatarSource(source);
   if (!sanitized) return null;
@@ -200,6 +213,7 @@ export async function buildAvatarResponse(kind: AvatarKind, source: string, req:
   return new Response(file, { status: 200, headers });
 }
 
+/** Resolve an avatar config value to a servable URL path. */
 export function resolveAvatarUrl(kind: AvatarKind, source?: string | null): string | null {
   if (!source) return null;
   const sanitized = sanitizeAvatarSource(source);

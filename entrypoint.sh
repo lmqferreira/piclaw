@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# entrypoint.sh – Docker container entrypoint for the Pibox image.
+#
+# Initialises /home/agent from skel, syncs supervisor configs from
+# workspace defaults, and execs supervisord as PID 1.
+# Idempotent: uses a marker file to skip re-init on container restart.
 set -euo pipefail
 
 MARKER_FILE="/home/agent/.container_initialized"
@@ -32,7 +37,8 @@ fi
 alias ll='ls -alF'
 alias la='ls -A'
 [ -d /home/linuxbrew/.linuxbrew ] && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-[ -d "$HOME/.bun" ] && export BUN_INSTALL="$HOME/.bun" && export PATH="$BUN_INSTALL/bin:$PATH"
+export BUN_INSTALL="/usr/local/lib/bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
 BASHRC
     fi
 

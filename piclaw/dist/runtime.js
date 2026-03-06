@@ -1,3 +1,16 @@
+/**
+ * runtime.ts – Application lifecycle: startup, polling loop, and shutdown.
+ *
+ * This is the top-level orchestrator that wires together all subsystems:
+ *   - Initialises the database (db/connection.ts).
+ *   - Creates the AgentPool, AgentQueue, and RuntimeState.
+ *   - Starts the WhatsApp channel (if configured), web channel, Pushover, IPC.
+ *   - Runs the main message-polling loop and task scheduler.
+ *   - Handles graceful shutdown (SIGINT/SIGTERM).
+ *
+ * Consumers:
+ *   - index.ts calls startRuntime() as the entry point.
+ */
 import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { ASSISTANT_NAME, DATA_DIR, POLL_INTERVAL, PUSHOVER_APP_TOKEN, PUSHOVER_DEVICE, PUSHOVER_PRIORITY, PUSHOVER_SOUND, PUSHOVER_USER_KEY, STORE_DIR, TRIGGER_PATTERN, WORKSPACE_DIR, TOOL_OUTPUT_RETENTION_DAYS, TOOL_OUTPUT_CLEANUP_INTERVAL_MS, WHATSAPP_PHONE, } from "./core/config.js";
@@ -19,6 +32,7 @@ let whatsapp;
 let web;
 let pushover = null;
 const state = new RuntimeState(DATA_DIR);
+/** Boot all subsystems (DB, channels, agent pool, scheduler) and enter the main loop. */
 export async function main() {
     // Ensure directories
     mkdirSync(STORE_DIR, { recursive: true });
@@ -28,6 +42,24 @@ export async function main() {
     startToolOutputCleanup(TOOL_OUTPUT_RETENTION_DAYS, TOOL_OUTPUT_CLEANUP_INTERVAL_MS);
     state.loadTimestamps();
     state.loadChats();
+    // Ensure Azure providers are registered for model listing at startup.
+    const azureToken = process.env.AOAI_API_KEY || process.env.FOUNDRY_API_KEY;
+    const registry = agentPool.modelRegistry;
+    if (registry && process.env.AOAI_BASE_URL && azureToken) {
+        const hasAzure = registry.getAll?.().some((model) => model.provider === "azure-openai");
+        if (!hasAzure) {
+            try {
+                const azureUrl = new URL("../extensions/azure-openai.ts", import.meta.url);
+                const azureModule = (await import(azureUrl.href));
+                if (typeof azureModule.registerAzureProviders === "function") {
+                    azureModule.registerAzureProviders((name, config) => registry.registerProvider(name, config), azureToken);
+                }
+            }
+            catch (err) {
+                console.warn("[runtime] Failed to register Azure providers:", err);
+            }
+        }
+    }
     console.log("=== Piclaw - Pi Coding Agent Assistant ===");
     let shuttingDown = false;
     const withTimeout = async (promise, ms, label) => {
@@ -64,6 +96,8 @@ export async function main() {
             process.exit(0);
         }, 15000);
         await withTimeout(queue.shutdown(5000), 7000, "queue shutdown");
+        web?.flushInProgressTurns();
+        agentPool.flushAgentLogs();
         await withTimeout(agentPool.shutdown(), 8000, "agent pool shutdown");
         await withTimeout(whatsapp.disconnect(), 8000, "whatsapp disconnect");
         await withTimeout(web?.stop() ?? Promise.resolve(), 4000, "web stop");
@@ -75,6 +109,15 @@ export async function main() {
     process.on("SIGINT", () => shutdown("SIGINT"));
     web = new WebChannel({ queue, agentPool });
     await web.start();
+    // Notify the web UI that the service has (re)started. This fires on every boot
+    // so the user always knows the service is back — regardless of what caused the restart.
+    try {
+        const startedAt = new Date().toUTCString();
+        await web.sendMessage("web:default", `✅ **Service started** at ${startedAt}`);
+    }
+    catch (err) {
+        console.error("[piclaw] Failed to send startup notification:", err);
+    }
     if (PUSHOVER_APP_TOKEN && PUSHOVER_USER_KEY) {
         pushover = new PushoverChannel({
             appToken: PUSHOVER_APP_TOKEN,

@@ -1,3 +1,13 @@
+/**
+ * agent-control/handlers/user.ts – Handlers for user identity commands.
+ *
+ * Handles /user-name, /user-avatar, and /user-github commands that update
+ * the human user's display name, avatar, and GitHub profile settings,
+ * persisting changes to the config file.
+ *
+ * Consumers: agent-control-handlers.ts dispatches to these handlers.
+ */
+
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
 import type { AgentControlCommand, AgentControlResult } from "../agent-control-types.js";
 import {
@@ -15,6 +25,7 @@ type UserNameCommand = Extract<AgentControlCommand, { type: "user_name" }>;
 type UserAvatarCommand = Extract<AgentControlCommand, { type: "user_avatar" }>;
 type UserGithubCommand = Extract<AgentControlCommand, { type: "user_github" }>;
 
+/** Handle /user-name: update the user display name. */
 export async function handleUserName(_session: AgentSession, command: UserNameCommand): Promise<AgentControlResult> {
   if (!command.name) {
     const current = USER_NAME || "(default)";
@@ -34,6 +45,7 @@ export async function handleUserName(_session: AgentSession, command: UserNameCo
   };
 }
 
+/** Handle /user-avatar: update the user avatar URL. */
 export async function handleUserAvatar(_session: AgentSession, command: UserAvatarCommand): Promise<AgentControlResult> {
   if (!command.avatar) {
     const current = USER_AVATAR || "(default)";
@@ -76,6 +88,7 @@ function normalizeGithubProfile(input?: string): string | null {
   }
 }
 
+/** Handle /user-github: update the user GitHub profile. */
 export async function handleUserGithub(_session: AgentSession, command: UserGithubCommand): Promise<AgentControlResult> {
   const login = normalizeGithubProfile(command.profile);
   if (!login) {

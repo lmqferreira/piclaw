@@ -1,3 +1,12 @@
+/**
+ * web/workspace/service.ts – High-level workspace explorer service.
+ *
+ * Composes the file service, tree cache, and filesystem watcher into a
+ * single service that the workspace HTTP handlers interact with.
+ *
+ * Consumers: web/handlers/workspace.ts creates and uses a WorkspaceService.
+ */
+
 import { WorkspaceFileService } from "./file-service.js";
 import { WorkspaceTreeCache } from "./tree-cache.js";
 import { startWorkspaceWatcher } from "./watcher.js";
@@ -5,6 +14,7 @@ import { startWorkspaceWatcher } from "./watcher.js";
 export { createWorkspaceUpdateThrottle } from "./watcher.js";
 export type { WorkspaceUpdate } from "./watcher.js";
 
+/** High-level workspace explorer service combining files, tree, and watcher. */
 export class WorkspaceService {
   private treeCache = new WorkspaceTreeCache();
   private fileService = new WorkspaceFileService();
@@ -13,8 +23,8 @@ export class WorkspaceService {
     return this.treeCache.getTree(pathParam, depthParam, includeHidden);
   }
 
-  getFile(pathParam: string | null, maxParam?: string | null) {
-    return this.fileService.getFile(pathParam, maxParam);
+  getFile(pathParam: string | null, maxParam?: string | null, mode?: string | null) {
+    return this.fileService.getFile(pathParam, maxParam, mode);
   }
 
   getRaw(pathParam: string | null) {
@@ -25,8 +35,12 @@ export class WorkspaceService {
     return this.fileService.attachFile(pathParam);
   }
 
-  uploadFile(pathParam: string | null, file: File) {
-    return this.fileService.uploadFile(pathParam, file);
+  uploadFile(pathParam: string | null, file: File, overwrite = false) {
+    return this.fileService.uploadFile(pathParam, file, overwrite);
+  }
+
+  updateFile(pathParam: string | null, content: string) {
+    return this.fileService.updateFile(pathParam, content);
   }
 
   downloadZip(pathParam: string | null, includeHidden = false) {

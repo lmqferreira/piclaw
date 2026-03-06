@@ -1,3 +1,15 @@
+/**
+ * agent-control/agent-control-handlers.ts – Dispatch parsed commands to handlers.
+ *
+ * The applyControlCommand() function is the main dispatcher: it receives a
+ * parsed AgentControlCommand and routes it to the appropriate handler function
+ * from handlers/*.ts based on the command type.
+ *
+ * Consumers:
+ *   - agent-pool.ts calls applyControlCommand() to execute control commands.
+ *   - runtime/message-loop.ts calls it for WhatsApp control commands.
+ *   - channels/web/request-router-service.ts calls it for web commands.
+ */
 import { handleAbort, handleAbortBash, handleAbortRetry, handleAutoCompact, handleAutoRetry, handleCompact, handleRestart, } from "./handlers/control.js";
 import { handleAgentAvatar, handleAgentName } from "./handlers/agent.js";
 import { handleUserAvatar, handleUserGithub, handleUserName } from "./handlers/user.js";
@@ -6,7 +18,11 @@ import { handleCycleModel, handleCycleThinking, handleModel, handleThinking, } f
 import { handleBash, handleShell } from "./handlers/operations.js";
 import { handleFollowupMode, handleQueue, handleSteeringMode } from "./handlers/queue.js";
 import { handleExportHtml, handleFork, handleForks, handleNewSession, handleSessionName, handleSwitchSession, } from "./handlers/session.js";
+import { handlePasskey } from "./handlers/passkey.js";
+import { handleTotp } from "./handlers/totp.js";
+import { handleQr } from "./handlers/qr.js";
 import { handleLabel, handleLabels, handleTree } from "./handlers/tree.js";
+/** Dispatch a parsed control command to the appropriate handler and return the result. */
 export async function applyControlCommand(session, modelRegistry, command) {
     switch (command.type) {
         case "restart":
@@ -58,6 +74,12 @@ export async function applyControlCommand(session, modelRegistry, command) {
             return handleForks(session, command);
         case "export_html":
             return handleExportHtml(session, command);
+        case "passkey":
+            return handlePasskey(session, command);
+        case "totp":
+            return handleTotp(session, command);
+        case "qr":
+            return handleQr(session, command);
         case "search_workspace":
             return handleSearchWorkspace(session, command);
         case "tree":

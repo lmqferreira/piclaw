@@ -1,3 +1,27 @@
+/**
+ * secure/keychain.ts – Encrypted credential storage using AES-256-GCM.
+ *
+ * Provides a simple keychain API for storing and retrieving secrets (API
+ * tokens, passwords, etc.) encrypted at rest in the SQLite database.
+ *
+ * Encryption details:
+ *   - Key derivation: PBKDF2-SHA256 with 150k iterations and a random salt.
+ *   - Encryption: AES-256-GCM with a random 12-byte nonce and the entry
+ *     name as additional authenticated data (AAD).
+ *   - The master key material is read from the PICLAW_KEYCHAIN_KEY env var
+ *     or from a file specified by PICLAW_KEYCHAIN_KEY_FILE.
+ *
+ * Placeholder resolution:
+ *   - resolveKeychainEnv() replaces "keychain:name" values in env records.
+ *   - resolveKeychainPlaceholders() replaces inline placeholders in strings.
+ *   Both are used by tools/tracked-bash.ts before spawning child processes.
+ *
+ * Consumers:
+ *   - tools/tracked-bash.ts calls resolveKeychainEnv/resolveKeychainPlaceholders.
+ *   - agent-control/handlers (via CLI) calls set/get/list/delete operations.
+ *   - cli.ts exposes keychain sub-commands.
+ */
+
 import { readFileSync } from "fs";
 import { getDb } from "../db/connection.js";
 
@@ -14,8 +38,10 @@ const NONCE_BYTES = 12;
 const toArrayBuffer = (value: Uint8Array): ArrayBuffer =>
   value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) as ArrayBuffer;
 
+/** Entry type classification for display/filtering purposes. */
 export type KeychainEntryType = "token" | "password" | "basic" | "secret";
 
+/** A decrypted keychain entry with its plaintext secret and optional username. */
 export interface KeychainEntry {
   name: string;
   type: KeychainEntryType;
@@ -23,6 +49,7 @@ export interface KeychainEntry {
   username?: string | null;
 }
 
+/** Metadata-only view of a keychain entry (no secret), used by listKeychainEntries(). */
 export interface KeychainEntryMetadata {
   name: string;
   type: KeychainEntryType;
@@ -109,6 +136,7 @@ async function decryptPayload(name: string, row: KeychainRow): Promise<{ secret:
   return parseSecretPayload(decoder.decode(plaintext));
 }
 
+/** Encrypt and store (or update) a keychain entry in the database. */
 export async function setKeychainEntry(entry: KeychainEntry): Promise<void> {
   if (!entry.name) {
     throw new Error("Keychain entry name is required.");
@@ -147,6 +175,7 @@ export async function setKeychainEntry(entry: KeychainEntry): Promise<void> {
   );
 }
 
+/** Retrieve and decrypt a keychain entry by name. Throws if not found. */
 export async function getKeychainEntry(name: string): Promise<KeychainEntry> {
   const db = getDb();
   const row = db
@@ -166,6 +195,7 @@ export async function getKeychainEntry(name: string): Promise<KeychainEntry> {
   return { name: row.name, type: row.type, secret: payload.secret, username: payload.username };
 }
 
+/** List all keychain entry names and types (no secrets). */
 export function listKeychainEntries(): KeychainEntryMetadata[] {
   const db = getDb();
   const rows = db
@@ -178,6 +208,7 @@ export function listKeychainEntries(): KeychainEntryMetadata[] {
   return rows;
 }
 
+/** Delete a keychain entry by name. Returns true if the entry existed. */
 export function deleteKeychainEntry(name: string): boolean {
   const db = getDb();
   const result = db.prepare("DELETE FROM keychain_entries WHERE name = ?").run(name);
@@ -199,6 +230,7 @@ function parseKeychainReference(value: string): { name: string; field: "secret" 
   throw new Error(`Invalid keychain reference: ${value}`);
 }
 
+/** Replace "keychain:name" values in an env record with decrypted secrets. */
 export async function resolveKeychainEnv(
   env: Record<string, string | undefined>
 ): Promise<Record<string, string>> {
@@ -223,6 +255,7 @@ export async function resolveKeychainEnv(
   return resolved;
 }
 
+/** Replace inline "keychain:name" placeholders in a string with decrypted secrets. */
 export async function resolveKeychainPlaceholders(input: string): Promise<string> {
   if (!input || !input.includes(KEYCHAIN_PREFIX)) {
     return input;

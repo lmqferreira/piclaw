@@ -1,3 +1,11 @@
+/**
+ * web/http/static.ts – Static file serving for the web UI.
+ *
+ * Serves the bundled HTML, CSS, JS, and font files from the web/static
+ * directory. Handles content-type detection and caching headers.
+ *
+ * Consumers: web/http/response-service.ts and web/request-router.ts.
+ */
 import { extname, resolve } from "path";
 const STATIC_DIR = resolve(import.meta.dir, "..", "..", "..", "..", "web", "static");
 const DOCS_DIR = resolve(import.meta.dir, "..", "..", "..", "..", "docs");
@@ -13,6 +21,7 @@ const MIME_TYPES = {
     ".woff2": "font/woff2",
     ".ico": "image/x-icon",
 };
+/** Serve a static file from the web/static directory. */
 export async function serveStatic(relPath, notFound) {
     const filePath = resolve(STATIC_DIR, relPath);
     if (!filePath.startsWith(STATIC_DIR))
@@ -29,6 +38,7 @@ export async function serveStatic(relPath, notFound) {
         },
     });
 }
+/** Serve a static file from the docs directory. */
 export async function serveDocsStatic(relPath, notFound) {
     const filePath = resolve(DOCS_DIR, relPath);
     if (!filePath.startsWith(DOCS_DIR))

@@ -1,4 +1,15 @@
+/**
+ * web/agent-events.ts – Transforms pi-agent session events into SSE broadcasts.
+ *
+ * Subscribes to the agent session's event stream and translates events
+ * (text deltas, tool calls, message completions) into SSE payloads for the
+ * web UI. Also manages draft/thought buffer accumulation and auto-compaction
+ * status broadcasts.
+ *
+ * Consumers: channels/web.ts wires this up during agent runs.
+ */
 import { buildPreview, createToolTitleTracker } from "./agent-utils.js";
+/** Create an AgentEventEmitter that broadcasts via the given SSE hub. */
 export function createAgentEventEmitter(channel, withAgentProfile) {
     return {
         status: (payload) => channel.broadcastEvent("agent_status", withAgentProfile(payload)),
@@ -9,6 +20,7 @@ export function createAgentEventEmitter(channel, withAgentProfile) {
         response: (payload) => channel.broadcastEvent("agent_response", withAgentProfile(payload)),
     };
 }
+/** Create an event handler that translates agent session events to SSE broadcasts. */
 export function createStreamingEventHandler(options) {
     const thoughtPreviewLines = options.thoughtPreviewLines ?? 8;
     const draftPreviewLines = options.draftPreviewLines ?? 8;
@@ -176,6 +188,29 @@ export function createStreamingEventHandler(options) {
                 title,
                 status: event.isError ? "Failed" : "Done",
             });
+        }
+        // Surface provider/API errors and retries so the user sees what's happening
+        // instead of silent waiting. These events are emitted by the upstream
+        // agent-session for any provider (not just Azure).
+        if (event.type === "auto_retry_start") {
+            const e = event;
+            const delaySec = e.delayMs ? Math.round(e.delayMs / 1000) : "?";
+            options.emitter.status({
+                ...base,
+                type: "intent",
+                title: `Retrying after error (attempt ${e.attempt ?? "?"}/${e.maxAttempts ?? "?"}, ${delaySec}s delay)`,
+                detail: e.errorMessage || undefined,
+            });
+        }
+        if (event.type === "auto_retry_end") {
+            const e = event;
+            if (!e.success) {
+                options.emitter.status({
+                    ...base,
+                    type: "error",
+                    title: e.finalError || "Request failed after retries",
+                });
+            }
         }
     };
 }

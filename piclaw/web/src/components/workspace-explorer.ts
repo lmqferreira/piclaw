@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { html, useCallback, useEffect, useMemo, useRef, useState } from '../vendor/preact-htm.js';
+import { getLocalStorageBoolean, getLocalStorageNumber, setLocalStorageItem } from '../utils/storage.js';
 import {
     attachWorkspaceFile,
     getMediaInfo,
@@ -128,7 +129,8 @@ function FileAttachmentCard({ mediaId }) {
 
 // ── WorkspaceExplorer ─────────────────────────────────────────────────────────
 
-export function WorkspaceExplorer({ onFileSelect, visible = true }) {
+/** Preact component: file tree explorer with upload, rename, and preview. */
+export function WorkspaceExplorer({ onFileSelect, visible = true, onOpenEditor }) {
     const [tree,          setTree]          = useState(null);
     const [expanded,      setExpanded]      = useState(new Set(['.']));
     const [selectedPath,  setSelectedPath]  = useState(null);
@@ -137,10 +139,7 @@ export function WorkspaceExplorer({ onFileSelect, visible = true }) {
     const [initialLoad,   setInitialLoad]   = useState(true);
     const [loadingPreview,setLoadingPreview]= useState(false);
     const [error,         setError]         = useState(null);
-    const [showHidden,    setShowHidden]    = useState(() => {
-        if (typeof window === 'undefined') return false;
-        return localStorage.getItem('workspaceShowHidden') === 'true';
-    });
+    const [showHidden,    setShowHidden]    = useState(() => getLocalStorageBoolean('workspaceShowHidden', false));
     const [dragActive,   setDragActive]    = useState(false);
     const [dropTarget,   setDropTarget]    = useState(null);
     const [uploading,    setUploading]     = useState(false);
@@ -156,6 +155,7 @@ export function WorkspaceExplorer({ onFileSelect, visible = true }) {
     const loadTreeFnRef   = useRef(null);
     const nodeMapRef      = useRef(new Map());
     const onFileSelectRef = useRef(onFileSelect);
+    const onOpenEditorRef = useRef(onOpenEditor);
     const loadPreviewRef  = useRef(null);
     const loadSubtreeRef  = useRef(null);
     const sidebarRef      = useRef(null);
@@ -168,6 +168,7 @@ export function WorkspaceExplorer({ onFileSelect, visible = true }) {
 
     // Sync mutable refs each render
     onFileSelectRef.current = onFileSelect;
+    onOpenEditorRef.current = onOpenEditor;
     useEffect(() => { expandedRef.current = expanded; }, [expanded]);
     useEffect(() => { showHiddenRef.current = showHidden; }, [showHidden]);
     useEffect(() => { visibleRef.current = visible; }, [visible]);
@@ -307,7 +308,7 @@ export function WorkspaceExplorer({ onFileSelect, visible = true }) {
         updateVisibility();
         const timer = setInterval(() => loadTreeFnRef.current(), REFRESH_INTERVAL_MS);
         // Apply saved preview height
-        const saved = parseInt(localStorage.getItem('previewHeight') || '', 10);
+        const saved = getLocalStorageNumber('previewHeight', null);
         const h = Number.isFinite(saved) ? Math.min(Math.max(saved, 80), 600) : 280;
         previewHeightRef.current = h;
         if (sidebarRef.current) {
@@ -346,6 +347,12 @@ export function WorkspaceExplorer({ onFileSelect, visible = true }) {
     nodeMapRef.current = nodeMap;
     const selectedNode = selectedPath ? nodeMapRef.current.get(selectedPath) : null;
     const selectedIsDir = selectedNode?.type === 'dir';
+    const canEdit = Boolean(preview && preview.kind === 'text' && !selectedIsDir && (!preview.size || preview.size <= 256 * 1024));
+    const editTitle = canEdit
+        ? 'Open in editor'
+        : preview?.size > 256 * 1024
+            ? 'File too large to edit'
+            : 'File is not editable';
 
     // ── Single stable click handler via event delegation ──────────────────────
     // Created once; reads live state through refs so it never needs recreation.
@@ -395,7 +402,7 @@ export function WorkspaceExplorer({ onFileSelect, visible = true }) {
         setShowHidden((prev) => {
             const next = !prev;
             if (typeof window !== 'undefined') {
-                localStorage.setItem('workspaceShowHidden', String(next));
+                setLocalStorageItem('workspaceShowHidden', String(next));
             }
             showHiddenRef.current = next;
             setWorkspaceVisibility(true, next).catch(() => {});
@@ -440,7 +447,7 @@ export function WorkspaceExplorer({ onFileSelect, visible = true }) {
             splitter.classList.remove('dragging');
             document.body.style.cursor = '';
             document.body.style.userSelect = '';
-            localStorage.setItem('previewHeight', String(Math.round(h)));
+            setLocalStorageItem('previewHeight', String(Math.round(h)));
             document.removeEventListener('mousemove', onMove);
             document.removeEventListener('mouseup', onUp);
         };
@@ -472,7 +479,7 @@ export function WorkspaceExplorer({ onFileSelect, visible = true }) {
         const onUp = () => {
             splitter.classList.remove('dragging');
             document.body.style.userSelect = '';
-            localStorage.setItem('previewHeight', String(Math.round(previewHeightRef.current || startH)));
+            setLocalStorageItem('previewHeight', String(Math.round(previewHeightRef.current || startH)));
             document.removeEventListener('touchmove', onMove);
             document.removeEventListener('touchend', onUp);
             document.removeEventListener('touchcancel', onUp);
@@ -497,23 +504,34 @@ export function WorkspaceExplorer({ onFileSelect, visible = true }) {
         return types.includes('Files');
     };
 
+    const resolveHoverTarget = useCallback((event) => {
+        const row = event?.target?.closest?.('.workspace-row');
+        if (!row) return null;
+        const path = row.dataset.path;
+        const type = row.dataset.type;
+        if (type === 'dir' && path) return path;
+        return null;
+    }, []);
+
     const handleDragEnter = useCallback((event) => {
         if (!isFileDrag(event)) return;
         event.preventDefault();
         dragDepthRef.current += 1;
         if (!dragActiveRef.current) setDragActive(true);
-        const target = resolveDropTargetPath();
+        const hovered = resolveHoverTarget(event);
+        const target = hovered || resolveDropTargetPath();
         setDropTarget(target);
-    }, [resolveDropTargetPath]);
+    }, [resolveDropTargetPath, resolveHoverTarget]);
 
     const handleDragOver = useCallback((event) => {
         if (!isFileDrag(event)) return;
         event.preventDefault();
         if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
         if (!dragActiveRef.current) setDragActive(true);
-        const target = resolveDropTargetPath();
+        const hovered = resolveHoverTarget(event);
+        const target = hovered || resolveDropTargetPath();
         if (dropTargetRef.current !== target) setDropTarget(target);
-    }, [resolveDropTargetPath]);
+    }, [resolveDropTargetPath, resolveHoverTarget]);
 
     const handleDragLeave = useCallback((event) => {
         if (!isFileDrag(event)) return;
@@ -533,12 +551,26 @@ export function WorkspaceExplorer({ onFileSelect, visible = true }) {
         setDropTarget(null);
         const files = Array.from(event?.dataTransfer?.files || []);
         if (files.length === 0) return;
-        const target = resolveDropTargetPath();
+        const target = dropTargetRef.current || resolveDropTargetPath();
+        const targetLabel = target && target !== '.' ? target : 'workspace root';
         setUploading(true);
         try {
             let lastResult = null;
             for (const file of files) {
-                lastResult = await uploadWorkspaceFile(file, target);
+                try {
+                    lastResult = await uploadWorkspaceFile(file, target);
+                } catch (err) {
+                    const status = err?.status;
+                    const code = err?.code;
+                    if (status === 409 || code === 'file_exists') {
+                        const name = file?.name || 'file';
+                        const confirmOverwrite = window.confirm(`"${name}" already exists in ${targetLabel}. Overwrite?`);
+                        if (!confirmOverwrite) continue;
+                        lastResult = await uploadWorkspaceFile(file, target, { overwrite: true });
+                    } else {
+                        throw err;
+                    }
+                }
             }
             if (lastResult?.path) {
                 setSelectedPath(lastResult.path);
@@ -634,24 +666,40 @@ export function WorkspaceExplorer({ onFileSelect, visible = true }) {
                 <div class="workspace-preview">
                     <div class="workspace-preview-header">
                         <span class="workspace-preview-title">${selectedPath}</span>
-                        ${selectedIsDir
-                            ? html`<a class="workspace-download" href=${getWorkspaceDownloadUrl(selectedPath, showHidden)}
-                                title="Download folder as zip" onClick=${(e) => e.stopPropagation()}>
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                                    <polyline points="7 10 12 15 17 10"/>
-                                    <line x1="12" y1="15" x2="12" y2="3"/>
-                                </svg>
-                            </a>`
-                            : html`<button class="workspace-download" onClick=${handleDownload} title="Download">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                                    <polyline points="7 10 12 15 17 10"/>
-                                    <line x1="12" y1="15" x2="12" y2="3"/>
-                                </svg>
-                            </button>`}
+                        <div class="workspace-preview-actions">
+                            ${!selectedIsDir && html`
+                                <button
+                                    class="workspace-download workspace-edit"
+                                    onClick=${() => canEdit && onOpenEditorRef.current?.(selectedPath, preview)}
+                                    title=${editTitle}
+                                    disabled=${!canEdit}
+                                >
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M12 20h9" />
+                                        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                                    </svg>
+                                </button>
+                            `}
+                            ${selectedIsDir
+                                ? html`<a class="workspace-download" href=${getWorkspaceDownloadUrl(selectedPath, showHidden)}
+                                    title="Download folder as zip" onClick=${(e) => e.stopPropagation()}>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                        <polyline points="7 10 12 15 17 10"/>
+                                        <line x1="12" y1="15" x2="12" y2="3"/>
+                                    </svg>
+                                </a>`
+                                : html`<button class="workspace-download" onClick=${handleDownload} title="Download">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                        <polyline points="7 10 12 15 17 10"/>
+                                        <line x1="12" y1="15" x2="12" y2="3"/>
+                                    </svg>
+                                </button>`}
+                        </div>
                     </div>
                     ${loadingPreview && html`<div class="workspace-loading">Loading preview…</div>`}
                     ${preview?.error && html`<div class="workspace-error">${preview.error}</div>`}

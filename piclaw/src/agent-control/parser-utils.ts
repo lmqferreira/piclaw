@@ -1,3 +1,18 @@
+/**
+ * agent-control/parser-utils.ts – Low-level parsing utilities for commands.
+ *
+ * Provides helpers for:
+ *   - stripTrigger(): remove @BotName prefix from messages.
+ *   - parseToggle(): parse on/off/true/false toggle values.
+ *   - parseQueueMode(): parse "all" / "one-at-a-time" mode strings.
+ *   - splitArgs(): split arguments respecting quoted strings.
+ *   - parseTreeArgs(): parse complex /tree command arguments.
+ *
+ * Consumers:
+ *   - agent-control-parser.ts (stripTrigger).
+ *   - command-parsers.ts (all other helpers).
+ */
+
 export function parseToggle(value?: string): boolean | undefined {
   if (!value) return undefined;
   const normalized = value.trim().toLowerCase();
@@ -6,6 +21,7 @@ export function parseToggle(value?: string): boolean | undefined {
   return undefined;
 }
 
+/** Parse "all" or "one-at-a-time" queue mode string. */
 export function parseQueueMode(value?: string): "all" | "one-at-a-time" | undefined {
   if (!value) return undefined;
   const normalized = value.trim().toLowerCase();
@@ -14,6 +30,7 @@ export function parseQueueMode(value?: string): "all" | "one-at-a-time" | undefi
   return undefined;
 }
 
+/** Split an argument string respecting quoted substrings. */
 export function splitArgs(input: string): string[] {
   const result: string[] = [];
   let current = "";
@@ -46,6 +63,7 @@ export function splitArgs(input: string): string[] {
   return result;
 }
 
+/** Parse the complex argument syntax for /tree commands. */
 export function parseTreeArgs(args: string): {
   targetId?: string;
   summarize?: boolean;
@@ -241,6 +259,7 @@ export function parseTreeArgs(args: string): {
   return { targetId, summarize, customInstructions, replaceInstructions, label, limit, offset, mode };
 }
 
+/** Remove the @BotName trigger prefix from a message. */
 export function stripTrigger(text: string, triggerPattern?: RegExp): string {
   if (!triggerPattern) return text.trim();
   const flags = triggerPattern.flags.includes("g") ? triggerPattern.flags : `${triggerPattern.flags}g`;

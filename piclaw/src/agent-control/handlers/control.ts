@@ -1,3 +1,13 @@
+/**
+ * agent-control/handlers/control.ts – Handlers for session lifecycle commands.
+ *
+ * Handles /restart, /compact, /auto-compact, /auto-retry, /abort,
+ * /abort-retry, and /abort-bash commands that control the agent session's
+ * execution state.
+ *
+ * Consumers: agent-control-handlers.ts dispatches to these handlers.
+ */
+
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
 import type { AgentControlCommand, AgentControlResult } from "../agent-control-types.js";
 import { formatCompactNumber } from "../agent-control-helpers.js";
@@ -11,6 +21,7 @@ type AbortCommand = Extract<AgentControlCommand, { type: "abort" }>;
 type AbortRetryCommand = Extract<AgentControlCommand, { type: "abort_retry" }>;
 type AbortBashCommand = Extract<AgentControlCommand, { type: "abort_bash" }>;
 
+/** Handle /restart: reload the agent session from disk. */
 export async function handleRestart(session: AgentSession, _command: RestartCommand): Promise<AgentControlResult> {
   try {
     await session.abort();
@@ -37,6 +48,7 @@ export async function handleRestart(session: AgentSession, _command: RestartComm
   };
 }
 
+/** Handle /compact: manually trigger conversation compaction. */
 export async function handleCompact(session: AgentSession, command: CompactCommand): Promise<AgentControlResult> {
   try {
     const result = await session.compact(command.instructions?.trim() || undefined);
@@ -54,6 +66,7 @@ export async function handleCompact(session: AgentSession, command: CompactComma
   }
 }
 
+/** Handle /auto-compact: toggle automatic compaction on/off. */
 export async function handleAutoCompact(session: AgentSession, command: AutoCompactCommand): Promise<AgentControlResult> {
   const hasArgs = command.raw.trim().split(/\s+/).length > 1;
   if (command.enabled === undefined) {
@@ -72,6 +85,7 @@ export async function handleAutoCompact(session: AgentSession, command: AutoComp
   };
 }
 
+/** Handle /auto-retry: toggle automatic retry on/off. */
 export async function handleAutoRetry(session: AgentSession, command: AutoRetryCommand): Promise<AgentControlResult> {
   const hasArgs = command.raw.trim().split(/\s+/).length > 1;
   if (command.enabled === undefined) {
@@ -90,6 +104,7 @@ export async function handleAutoRetry(session: AgentSession, command: AutoRetryC
   };
 }
 
+/** Handle /abort: cancel the current agent response. */
 export async function handleAbort(session: AgentSession, _command: AbortCommand): Promise<AgentControlResult> {
   try {
     await session.abort();
@@ -100,11 +115,13 @@ export async function handleAbort(session: AgentSession, _command: AbortCommand)
   }
 }
 
+/** Handle /abort: cancel the current agent response. */
 export async function handleAbortRetry(session: AgentSession, _command: AbortRetryCommand): Promise<AgentControlResult> {
   session.abortRetry();
   return { status: "success", message: "Retry aborted." };
 }
 
+/** Handle /abort: cancel the current agent response. */
 export async function handleAbortBash(session: AgentSession, _command: AbortBashCommand): Promise<AgentControlResult> {
   if (!session.isBashRunning) {
     return { status: "success", message: "No bash command is running." };
