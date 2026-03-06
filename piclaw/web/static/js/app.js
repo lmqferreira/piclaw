@@ -936,6 +936,8 @@ function App() {
             setPendingRequest(null);
             pendingRequestRef.current = null;
             clearAgentRunState();
+            // Fetch any messages stored during the restart/reconnect window
+            refreshTimeline();
 
             getAgentStatus('web:default')
                 .then((res) => {

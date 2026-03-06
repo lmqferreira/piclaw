@@ -20,6 +20,7 @@ import { createTrackedBashOperations } from "./tools/tracked-bash.js";
 import { getAttachmentRegistry, type AttachmentInfo } from "./agent-pool/attachments.js";
 import { writeAgentLog } from "./agent-pool/logging.js";
 import { createDefaultSession, ensureSessionDir } from "./agent-pool/session.js";
+import { saveSessionLeaf, saveSessionName } from "./agent-pool/session-position.js";
 import { executeSlashCommand } from "./agent-pool/slash-command.js";
 import { recordMessageUsage } from "./agent-pool/usage.js";
 import { resolveModelLabel } from "./utils/model-utils.js";
@@ -72,6 +73,7 @@ interface PoolEntry {
 interface TurnTracker {
   handleMessageUpdate: (event: AgentSessionEvent) => void;
   getFinalText: () => string;
+  getAllText: () => string;
   getTurnCount: () => number;
 }
 
@@ -101,6 +103,9 @@ export class AgentPool {
   private sessionBinder?: (session: AgentSession, chatJid: string) => Promise<void> | void;
   private bashOperations = createTrackedBashOperations();
   private attachments = getAttachmentRegistry();
+
+  /** Tracks in-flight runAgent() calls so flushAgentLogs() can write partial logs on shutdown. */
+  private activeRuns = new Map<string, { startTime: number; getText: () => string }>();
 
   constructor(options: AgentPoolOptions = {}) {
     this.createSession = options.createSession;
@@ -134,6 +139,8 @@ export class AgentPool {
       console.log(`[agent-pool] Prompting session ${chatJid} (${prompt.length} chars)`);
 
       const tracker = this.createTurnTracker(chatJid, options.onTurnComplete);
+      this.activeRuns.set(chatJid, { startTime, getText: () => tracker.getAllText() });
+
       const unsub = this.subscribeToSession(session, chatJid, tracker, options.onEvent);
       const timeoutMs = typeof options.timeoutMs === "number" ? options.timeoutMs : AGENT_TIMEOUT;
       const { timeoutId, timedOutRef } = this.startPromptTimeout(session, chatJid, timeoutMs);
@@ -150,6 +157,7 @@ export class AgentPool {
         } finally {
           if (timeoutId) clearTimeout(timeoutId);
           unsub();
+          this.activeRuns.delete(chatJid);
         }
 
         if (phases.includes("post")) {
@@ -169,12 +177,26 @@ export class AgentPool {
         writeAgentLog(this.logsDir, chatJid, duration, timedOut, finalText, null);
 
         if (timedOut) {
+          // If the agent finished just after the timeout fired, return the result
+          // rather than discarding completed work (race condition fix).
+          if (finalText.trim()) {
+            console.warn(
+              `[agent-pool] Timed out but agent finished with result (${finalText.length} chars) — returning as success`
+            );
+            return {
+              status: "success",
+              result: finalText.trim(),
+              attachments: finalAttachments.length ? finalAttachments : undefined,
+            };
+          }
           return { status: "error", result: null, error: `Timed out after ${timeoutMs}ms` };
         }
 
         console.log(
           `[agent-pool] Done in ${duration}ms (${finalText.length} chars, ${tracker.getTurnCount() + 1} turns, session ${chatJid})`
         );
+        // Persist the new leaf position after every successful prompt (conversation advances the tree).
+        saveSessionLeaf(chatJid, session.sessionManager.getLeafId());
         return {
           status: "success",
           result: finalText || null,
@@ -200,6 +222,18 @@ export class AgentPool {
       && (command.type === "cycle_model" || (command.type === "model" && (command.modelId || command.provider)));
     if (shouldPersistModel) {
       this.persistDefaultModel(session);
+    }
+
+    // Persist session position after any command that may change the tree leaf or session name.
+    if (result.status === "success") {
+      const positionChanging = command.type === "tree" || command.type === "fork" ||
+        command.type === "new_session" || command.type === "switch_session";
+      if (positionChanging) {
+        saveSessionLeaf(chatJid, session.sessionManager.getLeafId());
+      }
+      if (command.type === "session_name") {
+        saveSessionName(chatJid, session.sessionName ?? "");
+      }
     }
 
     return result;
@@ -269,6 +303,31 @@ export class AgentPool {
     const result = await withChatContext(chatJid, channel, () => executeSlashCommand(session, chatJid, rawText));
     this.attachments.clear(chatJid);
     return result;
+  }
+
+  /**
+   * Write agent log files for any runAgent() calls that are still in-flight.
+   * Called during graceful shutdown before sessions are disposed, so partial
+   * work is preserved on disk even when the service is killed mid-turn.
+   */
+  flushAgentLogs(): void {
+    for (const [chatJid, run] of this.activeRuns) {
+      try {
+        const text = run.getText();
+        const duration = Date.now() - run.startTime;
+        writeAgentLog(
+          this.logsDir,
+          chatJid,
+          duration,
+          false,
+          (text || "(no output yet)") + "\n\n[partial — service restarted mid-turn]",
+          null
+        );
+        console.log(`[agent-pool] Flushed partial agent log for ${chatJid} (${duration}ms)`);
+      } catch (err) {
+        console.error(`[agent-pool] Failed to flush agent log for ${chatJid}:`, err);
+      }
+    }
   }
 
   /** Gracefully shut down all sessions. */
@@ -395,6 +454,7 @@ export class AgentPool {
     onTurnComplete?: (turn: TurnOutput) => void
   ): TurnTracker {
     let currentTurnText = "";
+    let allTurnsText = "";
     let turnCount = 0;
     let messageHasDelta = false;
 
@@ -414,6 +474,7 @@ export class AgentPool {
       const text = currentTurnText.trim();
       if (!text && !onTurnComplete) return;
       if (text || turnCount > 0) {
+        if (text) allTurnsText += (allTurnsText ? "\n\n" : "") + text;
         const turnAttachments = this.attachments.take(chatJid);
         onTurnComplete?.({
           text,
@@ -457,6 +518,11 @@ export class AgentPool {
     return {
       handleMessageUpdate,
       getFinalText: () => currentTurnText.trim(),
+      getAllText: () => {
+        const current = currentTurnText.trim();
+        if (!current) return allTurnsText;
+        return allTurnsText ? allTurnsText + "\n\n" + current : current;
+      },
       getTurnCount: () => turnCount,
     };
   }

@@ -31,9 +31,9 @@ export class WebChannelState {
         this.pendingResumes = record.pendingResumes && typeof record.pendingResumes === "object"
           ? record.pendingResumes
           : {};
-        this.agentStatuses = record.agentStatuses && typeof record.agentStatuses === "object"
-          ? record.agentStatuses
-          : {};
+        // Agent statuses are NOT restored on startup — any "running" status from before
+        // a restart/crash is stale and would incorrectly show "Last activity" in the UI.
+        this.agentStatuses = {};
       } else if (parsed && typeof parsed === "object") {
         this.lastAgentTimestamp = parsed as Record<string, string>;
         this.pendingResumes = {};

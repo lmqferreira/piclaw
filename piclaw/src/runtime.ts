@@ -86,6 +86,8 @@ export async function main(): Promise<void> {
     }, 15000);
 
     await withTimeout(queue.shutdown(5000), 7000, "queue shutdown");
+    web?.flushInProgressTurns();
+    agentPool.flushAgentLogs();
     await withTimeout(agentPool.shutdown(), 8000, "agent pool shutdown");
     await withTimeout(whatsapp.disconnect(), 8000, "whatsapp disconnect");
     await withTimeout(web?.stop() ?? Promise.resolve(), 4000, "web stop");
@@ -99,6 +101,15 @@ export async function main(): Promise<void> {
 
   web = new WebChannel({ queue, agentPool });
   await web.start();
+
+  // Notify the web UI that the service has (re)started. This fires on every boot
+  // so the user always knows the service is back — regardless of what caused the restart.
+  try {
+    const startedAt = new Date().toUTCString();
+    await web.sendMessage("web:default", `✅ **Service started** at ${startedAt}`);
+  } catch (err) {
+    console.error("[piclaw] Failed to send startup notification:", err);
+  }
 
   if (PUSHOVER_APP_TOKEN && PUSHOVER_USER_KEY) {
     pushover = new PushoverChannel({

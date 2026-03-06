@@ -184,6 +184,12 @@ function createSchema(database: Database): void {
       mtime_ms UNINDEXED,
       size_bytes UNINDEXED
     );
+
+    CREATE TABLE IF NOT EXISTS web_sessions (
+      token TEXT PRIMARY KEY,
+      expires_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_web_sessions_expires_at ON web_sessions(expires_at);
   `);
 }
 

@@ -2,6 +2,7 @@ import type { AgentSession, ExtensionUIContext } from "@mariozechner/pi-coding-a
 
 import type { WebChannel } from "../web.js";
 import { createFallbackTheme } from "./theme.js";
+import { saveSessionLeaf } from "../../agent-pool/session-position.js";
 
 interface PendingUiRequest {
   resolve: (value: any) => void;
@@ -48,6 +49,9 @@ export class UiBridge {
         },
         navigateTree: async (targetId, options) => {
           const result = await session.navigateTree(targetId, options);
+          if (!result.cancelled && !result.aborted) {
+            saveSessionLeaf(chatJid, session.sessionManager.getLeafId());
+          }
           return { cancelled: result.cancelled };
         },
         switchSession: async (sessionPath) => {

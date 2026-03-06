@@ -42,6 +42,13 @@ export {
   searchToolOutputSnippets,
 } from "./db/tool-outputs.js";
 export { getRouterState, setRouterState } from "./db/router-state.js";
+export {
+  insertWebSession,
+  getWebSession,
+  deleteWebSession,
+  pruneExpiredWebSessions,
+  loadActiveWebSessions,
+} from "./db/sessions.js";
 export { storeTokenUsage } from "./db/token-usage.js";
 export type {
   ChatInfo,

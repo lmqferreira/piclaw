@@ -185,6 +185,16 @@ export type AgentControlCommand =
       type: "user_github";
       profile?: string;
       raw: string;
+    }
+  | {
+      type: "capture";
+      text?: string;
+      raw: string;
+    }
+  | {
+      type: "sb";
+      args?: string;
+      raw: string;
     };
 
 export interface AgentControlResult {

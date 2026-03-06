@@ -35,6 +35,11 @@ import {
   getMessageRowIdById,
   getMessagesSince,
   replaceMessageContent,
+  insertWebSession,
+  getWebSession,
+  deleteWebSession,
+  pruneExpiredWebSessions,
+  loadActiveWebSessions,
 } from "../db.js";
 import type { InteractionRow } from "../db.js";
 import { WebChannelState } from "./web/channel-state.js";
@@ -74,6 +79,7 @@ export class WebChannel {
   pendingSteering = new Map<string, string[]>();
   activeAgentStatuses = new Map<string, Record<string, unknown>>();
   lastCommandInteractionId: number | null = null;
+  /** Write-through in-memory cache: token → expiresAt (ms). Populated from DB on startup. */
   authSessions = new Map<string, number>();
   thoughtBuffers = new Map<string, { text: string; totalLines: number; updatedAt: number }>();
   draftBuffers = new Map<string, { text: string; totalLines: number; updatedAt: number }>();
@@ -114,6 +120,34 @@ export class WebChannel {
     if (this.workspaceWatcher) {
       await this.workspaceWatcher.close();
       this.workspaceWatcher = null;
+    }
+  }
+
+  /**
+   * Called during graceful shutdown before agents are disposed.
+   * For every chat that has an active agent turn, if that turn has streamed
+   * any text to the user (draft buffer), persist it to the DB as a partial
+   * message so it survives the restart and appears in the timeline on reconnect.
+   */
+  flushInProgressTurns(): void {
+    for (const [chatJid, status] of this.activeAgentStatuses) {
+      const turnId = (status.turn_id ?? status.turnId) as string | undefined;
+      if (!turnId) continue;
+
+      const draft = this.draftBuffers.get(turnId);
+      if (!draft?.text?.trim()) continue;
+
+      try {
+        this.storeMessage(
+          chatJid,
+          draft.text.trimEnd() + "\n\n*[partial response — service restarted]*",
+          true,
+          []
+        );
+        console.log(`[piclaw] Flushed ${draft.text.length} chars of in-progress turn for ${chatJid}`);
+      } catch (err) {
+        console.error(`[piclaw] Failed to flush in-progress turn for ${chatJid}:`, err);
+      }
     }
   }
 
@@ -256,6 +290,9 @@ export class WebChannel {
     this.state.load();
     const restored = this.state.getAgentStatuses();
     this.activeAgentStatuses = new Map(Object.entries(restored));
+    // Warm the in-memory session cache from the DB, pruning any expired tokens first.
+    pruneExpiredWebSessions();
+    this.authSessions = loadActiveWebSessions();
   }
 
   saveState(): void {
@@ -326,7 +363,10 @@ export class WebChannel {
 
   private cleanupAuthSessions(now = Date.now()): void {
     for (const [token, expiresAt] of this.authSessions.entries()) {
-      if (expiresAt <= now) this.authSessions.delete(token);
+      if (expiresAt <= now) {
+        this.authSessions.delete(token);
+        deleteWebSession(token);
+      }
     }
   }
 
@@ -364,9 +404,22 @@ export class WebChannel {
     this.cleanupAuthSessions();
     const token = this.getSessionToken(req);
     if (!token) return false;
-    const expiresAt = this.authSessions.get(token);
+
+    // Check in-memory cache first
+    let expiresAt = this.authSessions.get(token);
+
+    // Cache miss: try DB (e.g. another process set it, or cache was cold)
+    if (expiresAt === undefined) {
+      const fromDb = getWebSession(token);
+      if (fromDb !== undefined) {
+        expiresAt = fromDb;
+        this.authSessions.set(token, fromDb); // warm cache
+      }
+    }
+
     if (!expiresAt || expiresAt <= Date.now()) {
       this.authSessions.delete(token);
+      deleteWebSession(token);
       return false;
     }
     return true;
@@ -405,7 +458,9 @@ export class WebChannel {
     const rawTtl = Number.isFinite(WEB_SESSION_TTL) ? WEB_SESSION_TTL : 0;
     const ttlSeconds = Math.max(60, rawTtl || 0);
     const token = randomSessionToken();
-    this.authSessions.set(token, Date.now() + ttlSeconds * 1000);
+    const expiresAt = Date.now() + ttlSeconds * 1000;
+    this.authSessions.set(token, expiresAt);   // write-through cache
+    insertWebSession(token, expiresAt);         // persist to DB
 
     const payload = JSON.stringify({ ok: true });
     return new Response(payload, {
