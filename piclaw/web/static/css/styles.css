@@ -2191,6 +2191,22 @@ body {
     white-space: nowrap;
 }
 
+.agent-status-error {
+    background: rgba(220, 38, 38, 0.08);
+    border: 1px solid rgba(220, 38, 38, 0.25);
+    border-radius: 8px;
+}
+
+.agent-status-error .agent-status-text {
+    color: var(--error-color, #dc2626);
+    font-weight: 500;
+}
+
+.agent-status-error-icon {
+    font-size: 14px;
+    line-height: 1;
+}
+
 .agent-status-panel {
     display: flex;
     flex-direction: column;

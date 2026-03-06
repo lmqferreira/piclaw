@@ -10,7 +10,7 @@
 import { ASSISTANT_AVATAR, ASSISTANT_NAME, BACKGROUND_AGENT_TIMEOUT, TRIGGER_PATTERN, USER_AVATAR, USER_AVATAR_BACKGROUND, USER_NAME, } from "../../../core/config.js";
 import { parseControlCommand } from "../../../agent-control/index.js";
 import { normalizeAgentMessagePayload, parseAgentMessageRequest, storeAgentUserMessage, } from "../agent-message-service.js";
-import { getMessageRowIdById, getMessagesSince } from "../../../db.js";
+import { getMessagesSince } from "../../../db.js";
 import { detectChannel, formatMessages, formatOutbound } from "../../../router.js";
 import { createAgentProfileBuilder } from "../agent-utils.js";
 import { resolveAvatarUrl } from "../avatar-service.js";
@@ -130,14 +130,15 @@ export async function processChat(channel, chatJid, agentId, threadRootId) {
     const prompt = formatMessages(messages, channelName);
     const prevCursor = channel.state.lastAgentTimestamp[chatJid] || "";
     const lastMessage = messages[messages.length - 1];
-    const pendingThreadRootId = getMessageRowIdById(chatJid, lastMessage.id) ?? null;
-    channel.state.setPendingResume(chatJid, {
-        prevTimestamp: prevCursor,
-        messageId: lastMessage.id,
-        threadRootId: pendingThreadRootId,
-        createdAt: new Date().toISOString(),
-    });
+    // Record that we're about to process this message. Advance the timestamp
+    // so the message won't be re-picked-up on restart.
     channel.state.lastAgentTimestamp[chatJid] = lastMessage.timestamp;
+    // Clear any stale pending resume BEFORE running the agent. If the process
+    // crashes during runAgent(), the cleared resume prevents an infinite retry
+    // loop on restart (the advanced lastAgentTimestamp ensures the message is
+    // not re-processed). For IPC-triggered resumes, the caller can re-enqueue
+    // if needed.
+    channel.state.clearPendingResume(chatJid);
     channel.saveState();
     const threadId = lastMessage.timestamp;
     const THOUGHT_PREVIEW_LINES = 8;
@@ -235,8 +236,7 @@ export async function processChat(channel, chatJid, agentId, threadRootId) {
         // Keep lastAgentTimestamp advanced past the failed message — do NOT roll
         // it back to prevCursor. Rolling back causes the failed user turn to be
         // re-processed on every reload or model switch, creating an infinite loop.
-        // The failedRun record preserves the failure details for diagnostics.
-        channel.state.clearPendingResume(chatJid);
+        // The pendingResume was already cleared before runAgent().
         if (output.error && output.error.includes("already processing")) {
             channel.saveState();
             trackedEmitter.status({
@@ -276,6 +276,7 @@ export async function processChat(channel, chatJid, agentId, threadRootId) {
             threadId: resolvedThreadRootId,
         });
     }
+    // pendingResume was already cleared before runAgent(); just clear failedRun.
     channel.state.clearFailedRun(chatJid);
     const pendingSteerTimestamp = channel.consumePendingSteering(chatJid);
     if (pendingSteerTimestamp) {
@@ -285,9 +286,8 @@ export async function processChat(channel, chatJid, agentId, threadRootId) {
             channel.saveState();
         }
     }
-    channel.state.clearPendingResume(chatJid);
+    // pendingResume already cleared before runAgent(); save steering state.
     channel.saveState();
-    // Include context usage in the done event so the UI can update its indicator.
     const contextUsage = await channel.agentPool.getContextUsageForChat(chatJid);
     trackedEmitter.status({
         thread_id: threadId,

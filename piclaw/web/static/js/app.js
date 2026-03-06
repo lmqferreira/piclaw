@@ -923,11 +923,17 @@ function App() {
                 }
                 wasAgentActiveRef.current = false;
                 clearAgentRunState();
-                setAgentStatus(null);
                 setAgentDraft({ text: '', totalLines: 0 });
                 setAgentPlan('');
                 setAgentThought({ text: '', totalLines: 0 });
                 setPendingRequest(null);
+                if (data.type === 'error') {
+                    // Show error status briefly so the user sees what failed
+                    setAgentStatus({ type: 'error', title: data.title || 'Agent error' });
+                    setTimeout(() => setAgentStatus(null), 8000);
+                } else {
+                    setAgentStatus(null);
+                }
             } else {
                 if (turnId) setActiveTurn(turnId);
                 noteAgentActivity({ running: true, clearSilence: true });

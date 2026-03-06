@@ -241,19 +241,13 @@ function applyPhasesToResponseInput(items: Array<any>, phases: Map<string, strin
 }
 
 function stripOrphanReasoningItems(items: Array<any>): Array<any> {
+  // Azure requires strict reasoning↔function_call pairing (rs_ ↔ fc_ IDs).
+  // Since we unconditionally strip fc_ IDs (to avoid orphan fc_ errors),
+  // ALL reasoning items become orphans. Rather than trying to reconstruct
+  // the pairing, just strip all reasoning items — the model generates fresh
+  // reasoning each turn and doesn't need prior reasoning for context.
   if (!Array.isArray(items) || items.length === 0) return items;
-  const cleaned: Array<any> = [];
-  for (let i = 0; i < items.length; i += 1) {
-    const item = items[i];
-    if (item?.type === "reasoning") {
-      const next = items[i + 1];
-      if (!next || next.type !== "message") {
-        continue;
-      }
-    }
-    cleaned.push(item);
-  }
-  return cleaned;
+  return items.filter((item) => item?.type !== "reasoning");
 }
 
 // After streaming completes, copy the phase from Responses output items onto our stored text blocks
@@ -768,71 +762,98 @@ function streamAzureOpenAIResponses(model: any, context: any, options: any) {
 
       await getAccessToken();
 
-      let openaiStream;
-      try {
-        openaiStream = await createStream();
-      } catch (error) {
-        if (!isAuthError(error)) throw error;
-        // Force-refresh MI token on auth errors (no-op in proxy/api-key mode)
-        if (!STATIC_API_KEY) await ensureToken(true);
-        openaiStream = await createStream();
-      }
+      const MAX_RETRIES = 2;
+      let streamStarted = false;
 
-      // Capture `phase` for assistant output items so we can persist it on stored messages.
-      // This uses the Responses stream events to avoid any SDK version mismatches.
-      const outputPhases = new Map<string, string>();
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        if (options?.signal?.aborted) throw new Error("Request was aborted");
 
-      const loggingStream = (async function* () {
-        for await (const event of openaiStream) {
-          if (event?.type === "response.output_item.added" || event?.type === "response.output_item.done") {
-            const item = (event as { item?: any }).item;
-            const phase = item?.phase;
-            if (item?.type === "message" && item?.id && typeof phase === "string") {
-              outputPhases.set(item.id, phase);
-            }
-          }
+        // Reset per-attempt state
+        streamErrorDetail = "";
+        output.content = [];
+        output.stopReason = "stop";
+        (output as any).errorMessage = undefined;
+        (output as any).reasoning = undefined;
 
-          // Extract a descriptive error from response.failed / error events
-          // BEFORE pi-ai's processResponsesStream throws the generic "Unknown error".
-          if (event?.type === "response.failed") {
-            const resp = (event as { response?: any }).response;
-            const errObj = resp?.error;
-            if (errObj && typeof errObj === "object") {
-              streamErrorDetail = `${errObj.code || "error"}: ${errObj.message || JSON.stringify(errObj)}`;
-            } else if (resp?.status) {
-              streamErrorDetail = `Azure response failed (status: ${resp.status})`;
-            } else {
-              streamErrorDetail = "Azure response failed (no error details returned)";
-            }
-          } else if (event?.type === "error") {
-            const { code, message } = event as { code?: string; message?: string };
-            streamErrorDetail = `${code || "stream_error"}: ${message || "unknown"}`;
-          }
-
-          logStreamFailureEvent(event, requestSummary, loggedRef);
-          yield event;
+        let openaiStream;
+        try {
+          openaiStream = await createStream();
+        } catch (error) {
+          if (!isAuthError(error)) throw error;
+          if (!STATIC_API_KEY) await ensureToken(true);
+          openaiStream = await createStream();
         }
-      })();
 
-      stream.push({ type: "start", partial: output });
-      await processResponsesStream(loggingStream, output, stream, model);
-      applyPhasesToOutputMessage(output, outputPhases);
-      if (LOG_PHASES && outputPhases.size > 0) {
-        console.error("[azure-openai] Output phases:", JSON.stringify({ total: outputPhases.size, phases: Array.from(outputPhases.entries()).slice(0, 6) }));
+        const outputPhases = new Map<string, string>();
+
+        const loggingStream = (async function* () {
+          for await (const event of openaiStream) {
+            if (event?.type === "response.output_item.added" || event?.type === "response.output_item.done") {
+              const item = (event as { item?: any }).item;
+              const phase = item?.phase;
+              if (item?.type === "message" && item?.id && typeof phase === "string") {
+                outputPhases.set(item.id, phase);
+              }
+            }
+
+            if (event?.type === "response.failed") {
+              const resp = (event as { response?: any }).response;
+              const errObj = resp?.error;
+              if (errObj && typeof errObj === "object") {
+                streamErrorDetail = `${errObj.code || "error"}: ${errObj.message || JSON.stringify(errObj)}`;
+              } else if (resp?.status) {
+                streamErrorDetail = `Azure response failed (status: ${resp.status})`;
+              } else {
+                streamErrorDetail = "Azure response failed (no error details returned)";
+              }
+            } else if (event?.type === "error") {
+              const { code, message } = event as { code?: string; message?: string };
+              streamErrorDetail = `${code || "stream_error"}: ${message || "unknown"}`;
+            }
+
+            logStreamFailureEvent(event, requestSummary, loggedRef);
+            yield event;
+          }
+        })();
+
+        if (!streamStarted) {
+          stream.push({ type: "start", partial: output });
+          streamStarted = true;
+        }
+        await processResponsesStream(loggingStream, output, stream, model);
+        applyPhasesToOutputMessage(output, outputPhases);
+
+        if (LOG_PHASES && outputPhases.size > 0) {
+          console.error("[azure-openai] Output phases:", JSON.stringify({ total: outputPhases.size, phases: Array.from(outputPhases.entries()).slice(0, 6) }));
+        }
+
+        if (options?.signal?.aborted) {
+          throw new Error("Request was aborted");
+        }
+
+        // Success — break out of retry loop
+        if (output.stopReason !== "aborted" && output.stopReason !== "error") {
+          stream.push({ type: "done", reason: output.stopReason, message: output });
+          stream.end();
+          return;
+        }
+
+        // Determine if error is retryable (NOT a client-side 4xx error)
+        const detail = streamErrorDetail || (output as any).errorMessage || "unknown error";
+        const isClientError = /^(400|401|403|404|422)\b/.test(detail) ||
+          detail.includes("invalid_request_error");
+        if (isClientError || attempt >= MAX_RETRIES) {
+          throw new Error(`Azure request failed: ${detail}`);
+        }
+
+        const delayMs = (attempt + 1) * 2000;
+        console.error(`[azure-openai] Attempt ${attempt + 1}/${MAX_RETRIES + 1} failed (${detail}), retrying in ${delayMs}ms...`);
+        loggedRef.logged = false;
+        await new Promise((r) => setTimeout(r, delayMs));
       }
 
-      if (options?.signal?.aborted) {
-        throw new Error("Request was aborted");
-      }
-      if (output.stopReason === "aborted" || output.stopReason === "error") {
-        // Use the detailed error we extracted from the stream event if available,
-        // rather than the generic "unknown error" from pi-ai.
-        const detail = streamErrorDetail || output.errorMessage || "unknown error";
-        throw new Error(`Azure request failed: ${detail}`);
-      }
-
-      stream.push({ type: "done", reason: output.stopReason, message: output });
-      stream.end();
+      // Should not reach here, but just in case
+      throw new Error("Azure request failed after retries");
     } catch (error) {
       logAzureError(model.id, error, requestSummary, loggedRef);
       for (const block of output.content) delete (block as any).index;
