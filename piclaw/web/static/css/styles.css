@@ -1182,15 +1182,8 @@ body {
     display: flex;
     flex-wrap: wrap;
     gap: var(--spacing-xs);
+    padding: 2px var(--spacing-xs) 0 var(--spacing-xs);
     margin-top: var(--spacing-xs);
-}
-
-.media-file-tag {
-    font-size: var(--font-size-sm);
-    background-color: var(--bg-secondary);
-    padding: 2px 8px;
-    border-radius: var(--radius-sm);
-    color: var(--text-secondary);
 }
 
 /* Timeline - uses column-reverse for natural scroll anchoring when prepending */
