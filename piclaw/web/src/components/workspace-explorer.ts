@@ -130,7 +130,7 @@ function FileAttachmentCard({ mediaId }) {
 // ── WorkspaceExplorer ─────────────────────────────────────────────────────────
 
 /** Preact component: file tree explorer with upload, rename, and preview. */
-export function WorkspaceExplorer({ onFileSelect, visible = true, onOpenEditor }) {
+export function WorkspaceExplorer({ onFileSelect, visible = true, active = undefined, onOpenEditor }) {
     const [tree,          setTree]          = useState(null);
     const [expanded,      setExpanded]      = useState(new Set(['.']));
     const [selectedPath,  setSelectedPath]  = useState(null);
@@ -162,6 +162,7 @@ export function WorkspaceExplorer({ onFileSelect, visible = true, onOpenEditor }
     const previewHeightRef= useRef(0);
     const showHiddenRef   = useRef(showHidden);
     const visibleRef      = useRef(visible);
+    const activeRef       = useRef(active ?? visible);
     const dragDepthRef    = useRef(0);
     const dropTargetRef   = useRef(dropTarget);
     const dragActiveRef   = useRef(dragActive);
@@ -172,6 +173,7 @@ export function WorkspaceExplorer({ onFileSelect, visible = true, onOpenEditor }
     useEffect(() => { expandedRef.current = expanded; }, [expanded]);
     useEffect(() => { showHiddenRef.current = showHidden; }, [showHidden]);
     useEffect(() => { visibleRef.current = visible; }, [visible]);
+    useEffect(() => { activeRef.current = active ?? visible; }, [active, visible]);
     useEffect(() => { dropTargetRef.current = dropTarget; }, [dropTarget]);
     useEffect(() => { dragActiveRef.current = dragActive; }, [dragActive]);
 
@@ -282,7 +284,8 @@ export function WorkspaceExplorer({ onFileSelect, visible = true, onOpenEditor }
     const updateVisibility = useRef(() => {
         if (typeof window === 'undefined') return;
         const media = window.matchMedia('(min-width: 1024px) and (orientation: landscape)');
-        const visible = media.matches && document.visibilityState !== 'hidden' && visibleRef.current;
+        const active = activeRef.current ?? visibleRef.current;
+        const visible = media.matches && document.visibilityState !== 'hidden' && active;
         setWorkspaceVisibility(visible, showHiddenRef.current).catch(() => {});
     }).current;
 
@@ -302,7 +305,7 @@ export function WorkspaceExplorer({ onFileSelect, visible = true, onOpenEditor }
             loadTreeFnRef.current?.();
         }
         scheduleVisibilityUpdate();
-    }, [visible]);
+    }, [visible, active]);
 
     // Mount once; interval always calls the ref, never a stale copy.
     useEffect(() => {
