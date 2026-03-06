@@ -1,10 +1,11 @@
 // @ts-nocheck
-import { html, useEffect, useRef, useState } from '../vendor/preact-htm.js';
+import { html, useEffect, useMemo, useRef, useState } from '../vendor/preact-htm.js';
 import { getMediaInfo, getMediaUrl, getThumbnailUrl } from '../api.js';
-import { renderMarkdown, renderMermaidDiagrams } from '../markdown.js';
+import { renderMarkdown, renderMermaidDiagrams, sanitizeUrl } from '../markdown.js';
 import { formatCount, formatFileSize, formatTime, formatTimestamp } from '../utils/format.js';
 import { DEFAULT_AGENT_NAME, getAvatarInfo } from '../ui/agent-utils.js';
 import { ImageModal } from './image-modal.js';
+import { FilePill } from './file-pill.js';
 
 /**
  * File attachment component - displays downloadable file with icon
@@ -75,8 +76,14 @@ function ResourceLinkBlock({ block }) {
     const sizeStr = block.size ? formatFileSize(block.size) : '';
     const mimeType = block.mime_type || '';
     const icon = getMimeIcon(mimeType);
+    const safeUrl = sanitizeUrl(block.uri);
     return html`
-        <a href=${block.uri} class="resource-link" target="_blank" rel="noopener noreferrer" onClick=${(e) => e.stopPropagation()}>
+        <a
+            href=${safeUrl || '#'}
+            class="resource-link"
+            target=${safeUrl ? "_blank" : undefined}
+            rel=${safeUrl ? "noopener noreferrer" : undefined}
+            onClick=${(e) => e.stopPropagation()}>
             <div class="resource-link-main">
                 <div class="resource-link-header">
                     <span class="resource-link-icon-inline">${icon}</span>
@@ -146,14 +153,30 @@ function getMimeIcon(mimeType) {
  * Link preview component - card with image background
  */
 function LinkPreview({ preview }) {
-    const bgStyle = preview.image
-        ? `background-image: url('${preview.image}')`
+    const safeUrl = sanitizeUrl(preview.url);
+    const safeImage = sanitizeUrl(preview.image, { allowDataImage: true });
+    const bgStyle = safeImage
+        ? `background-image: url('${safeImage}')`
         : '';
+    let siteName = preview.site_name;
+    if (!siteName && safeUrl) {
+        try {
+            siteName = new URL(safeUrl).hostname;
+        } catch {
+            siteName = safeUrl;
+        }
+    }
 
     return html`
-        <a href=${preview.url} class="link-preview ${preview.image ? 'has-image' : ''}" target="_blank" rel="noopener noreferrer" onClick=${(e) => e.stopPropagation()} style=${bgStyle}>
+        <a
+            href=${safeUrl || '#'}
+            class="link-preview ${safeImage ? 'has-image' : ''}"
+            target=${safeUrl ? "_blank" : undefined}
+            rel=${safeUrl ? "noopener noreferrer" : undefined}
+            onClick=${(e) => e.stopPropagation()}
+            style=${bgStyle}>
             <div class="link-preview-overlay">
-                <div class="link-preview-site">${preview.site_name || new URL(preview.url).hostname}</div>
+                <div class="link-preview-site">${siteName || ''}</div>
                 <div class="link-preview-title">${preview.title}</div>
                 ${preview.description && html`
                     <div class="link-preview-description">${preview.description}</div>
@@ -347,6 +370,11 @@ export function Post({ post, onClick, onHashtagClick, agentName, agentAvatarUrl,
     displayContent = cleanedWithAttachments;
     const shouldRenderContent = Boolean(displayContent) && !isHardTruncated;
     const highlightQueryText = typeof highlightQuery === 'string' ? highlightQuery.trim() : '';
+    const renderedHtml = useMemo(() => {
+        if (!displayContent) return '';
+        const baseHtml = renderMarkdown(displayContent, onHashtagClick);
+        return highlightQueryText ? highlightHtml(baseHtml, highlightQueryText) : baseHtml;
+    }, [displayContent, highlightQueryText]);
 
     const handleImageClick = (e, mediaId) => {
         e.stopPropagation();
@@ -498,23 +526,19 @@ export function Post({ post, onClick, onHashtagClick, agentName, agentAvatarUrl,
                         ${fileRefs.map((ref) => {
                             const label = ref.split('/').pop() || ref;
                             return html`
-                                <span class="post-file-pill" title=${ref}>
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                                        <polyline points="14 2 14 8 20 8"/>
-                                    </svg>
-                                    <span class="post-file-name">${label}</span>
-                                </span>
+                                <${FilePill}
+                                    prefix="post"
+                                    label=${label}
+                                    title=${ref}
+                                />
                             `;
                         })}
                         ${attachmentPills.map((attachment) => html`
-                            <span class="post-file-pill" title=${attachment.label}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                                    <polyline points="14 2 14 8 20 8"/>
-                                </svg>
-                                <span class="post-file-name">${attachment.label}</span>
-                            </span>
+                            <${FilePill}
+                                prefix="post"
+                                label=${attachment.label}
+                                title=${attachment.label}
+                            />
                         `)}
                     </div>
                 `}
@@ -522,9 +546,7 @@ export function Post({ post, onClick, onHashtagClick, agentName, agentAvatarUrl,
                     <div 
                         ref=${contentRef}
                         class="post-content"
-                        dangerouslySetInnerHTML=${{ __html: highlightQueryText
-                            ? highlightHtml(renderMarkdown(displayContent, onHashtagClick), highlightQueryText)
-                            : renderMarkdown(displayContent, onHashtagClick) }}
+                        dangerouslySetInnerHTML=${{ __html: renderedHtml }}
                         onClick=${(e) => {
                             if (e.target.classList.contains('hashtag')) {
                                 e.preventDefault();
