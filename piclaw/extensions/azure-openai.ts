@@ -20,10 +20,10 @@ import {
   convertResponsesMessages,
   convertResponsesTools,
   processResponsesStream,
-} from "@mariozechner/pi-ai/dist/providers/openai-responses-shared.js";
+} from "@mariozechner/pi-ai/providers/openai-responses-shared";
 import { applyToolCallLimit } from "../src/utils/azure-tool-call-limit.js";
-import { streamSimpleOpenAICompletions } from "@mariozechner/pi-ai/dist/providers/openai-completions.js";
-import { buildBaseOptions, clampReasoning } from "@mariozechner/pi-ai/dist/providers/simple-options.js";
+import { streamSimpleOpenAICompletions } from "@mariozechner/pi-ai/providers/openai-completions";
+import { buildBaseOptions, clampReasoning } from "@mariozechner/pi-ai/providers/simple-options";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
