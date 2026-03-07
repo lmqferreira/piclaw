@@ -156,7 +156,7 @@ body {
     position: fixed;
     top: 50%;
     transform: translateY(-50%);
-    z-index: 40;
+    z-index: 9;
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
@@ -385,6 +385,7 @@ body {
 .workspace-splitter:hover::after,
 .workspace-splitter.dragging::after {
     background: var(--accent-color);
+    width: 2px;
 }
 
 .editor-splitter {
@@ -907,6 +908,17 @@ body {
 
     .app-shell:not(.workspace-collapsed) .workspace-toggle-tab {
         left: calc(var(--sidebar-width, 280px) - var(--workspace-tab-width, 20px));
+    }
+
+    .app-shell.sidebar-resizing .workspace-toggle-tab {
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .app-shell.sidebar-resizing .workspace-sidebar,
+    .app-shell.sidebar-resizing .workspace-splitter,
+    .app-shell.sidebar-resizing .container {
+        transition: none;
     }
 
     .app-shell.workspace-collapsed .container {

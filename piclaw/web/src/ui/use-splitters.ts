@@ -10,6 +10,7 @@ export function useSplitters({ appShellRef, sidebarWidthRef, editorWidthRef }) {
     const startW = sidebarWidthRef.current || 280;
     const splitter = e.currentTarget;
     splitter.classList.add('dragging');
+    shell.classList.add('sidebar-resizing');
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
 
@@ -24,6 +25,7 @@ export function useSplitters({ appShellRef, sidebarWidthRef, editorWidthRef }) {
       const w = Math.min(Math.max(startW + (lastX - startX), 160), 600);
       sidebarWidthRef.current = w;
       splitter.classList.remove('dragging');
+      shell.classList.remove('sidebar-resizing');
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
       setLocalStorageItem('sidebarWidth', String(Math.round(w)));
@@ -44,6 +46,7 @@ export function useSplitters({ appShellRef, sidebarWidthRef, editorWidthRef }) {
     const startW = sidebarWidthRef.current || 280;
     const splitter = e.currentTarget;
     splitter.classList.add('dragging');
+    shell.classList.add('sidebar-resizing');
     document.body.style.userSelect = 'none';
 
     const onMove = (te) => {
@@ -56,6 +59,7 @@ export function useSplitters({ appShellRef, sidebarWidthRef, editorWidthRef }) {
     };
     const onUp = () => {
       splitter.classList.remove('dragging');
+      shell.classList.remove('sidebar-resizing');
       document.body.style.userSelect = '';
       setLocalStorageItem('sidebarWidth', String(Math.round(sidebarWidthRef.current || startW)));
       document.removeEventListener('touchmove', onMove);
