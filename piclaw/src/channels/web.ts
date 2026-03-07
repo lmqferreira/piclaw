@@ -81,6 +81,8 @@ import {
   clearFailedRun,
   getInflightRuns,
   rollbackInflightRun,
+  clearInflightMarker,
+  hasAgentRepliesAfter,
   getDb,
 } from "../db.js";
 import type { InteractionRow } from "../db.js";
@@ -160,6 +162,7 @@ export class WebChannel {
       hostname: WEB_HOST,
       port: WEB_PORT,
       idleTimeout: WEB_IDLE_TIMEOUT,
+      maxRequestBodySize: 50 * 1024 * 1024, // 50 MB hard cap
       fetch: (req) => this.handleRequest(req),
       ...(tls ? { tls } : {}),
     });
@@ -345,7 +348,20 @@ export class WebChannel {
     try {
       getDb().transaction(() => {
         for (const inflight of inflights) {
-          rollbackInflightRun(inflight.chatJid, inflight.prevTs);
+          // Check if agent already stored replies after the inflight message.
+          // If so, the run completed successfully but endChatRun() wasn't
+          // reached before the process was killed. In that case, just clear
+          // the inflight marker — do NOT roll back the cursor, as that would
+          // cause the same user message to be re-processed (duplicate reply).
+          if (hasAgentRepliesAfter(inflight.chatJid, inflight.prevTs)) {
+            console.log(
+              `[web] Inflight run for ${inflight.chatJid} (started ${inflight.startedAt}) ` +
+              `already has agent replies — clearing marker without rollback`
+            );
+            clearInflightMarker(inflight.chatJid);
+          } else {
+            rollbackInflightRun(inflight.chatJid, inflight.prevTs);
+          }
         }
       })();
     } catch (err) {
@@ -354,10 +370,13 @@ export class WebChannel {
     }
 
     for (const inflight of inflights) {
-      console.log(`[web] Recovering interrupted run for ${inflight.chatJid} (started ${inflight.startedAt})`);
-      this.queue.enqueue(async () => {
-        await this.processChat(inflight.chatJid, DEFAULT_AGENT_ID);
-      }, `inflight-recovery:${inflight.chatJid}`);
+      // Only re-enqueue if the cursor was actually rolled back (no agent replies existed)
+      if (!hasAgentRepliesAfter(inflight.chatJid, inflight.prevTs)) {
+        console.log(`[web] Recovering interrupted run for ${inflight.chatJid} (started ${inflight.startedAt})`);
+        this.queue.enqueue(async () => {
+          await this.processChat(inflight.chatJid, DEFAULT_AGENT_ID);
+        }, `inflight-recovery:${inflight.chatJid}`);
+      }
     }
   }
 

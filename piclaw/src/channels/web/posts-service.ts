@@ -19,11 +19,17 @@ export interface PostPayload {
   link_previews?: unknown[];
 }
 
+/** Max allowed message content length (100 KB). */
+const MAX_POST_CONTENT_LENGTH = 100 * 1024;
+
 /** Validate and parse a raw POST body into a PostPayload. */
 export function parsePostPayload(body: unknown): { ok: boolean; error?: string; data?: PostPayload } {
   if (!body || typeof body !== "object") return { ok: false, error: "Invalid JSON" };
   const data = body as PostPayload;
   if (!data.content) return { ok: false, error: "Missing 'content' field" };
+  if (typeof data.content === "string" && data.content.length > MAX_POST_CONTENT_LENGTH) {
+    return { ok: false, error: `Content too large (max ${MAX_POST_CONTENT_LENGTH} bytes)` };
+  }
   return { ok: true, data };
 }
 
