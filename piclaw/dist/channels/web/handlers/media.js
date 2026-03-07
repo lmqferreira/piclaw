@@ -1,9 +1,12 @@
 /**
  * web/handlers/media.ts – HTTP handlers for media upload and retrieval.
  *
- * Handles POST /media (upload) and GET /media/:id (download/thumbnail).
+ * Handles POST /media/upload (file upload) and GET /media/:id (download/thumbnail).
+ * Media uploads are validated by MediaService (size + content-type checks).
+ * Downloads use Content-Disposition: attachment for non-image types to
+ * prevent stored XSS via HTML/SVG file uploads.
  *
- * Consumers: web/request-router.ts routes media paths here.
+ * Consumers: request-router-service.ts routes media paths here.
  */
 import { MediaService } from "../media-service.js";
 const mediaService = new MediaService();
@@ -22,7 +25,11 @@ export async function handleMediaUpload(channel, req) {
     const result = await mediaService.createFromFile(file);
     return channel.json(result.body, result.status);
 }
-/** Safe content types that can be rendered inline in the browser. */
+/**
+ * Content types safe to serve inline (rendered by the browser).
+ * All other types get Content-Disposition: attachment to force download
+ * and prevent stored XSS (e.g., an uploaded HTML file executing JS).
+ */
 const INLINE_SAFE_TYPES = new Set([
     "image/png",
     "image/jpeg",

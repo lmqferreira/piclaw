@@ -1,11 +1,27 @@
 /**
- * web/request-router-service.ts – High-level request processing logic.
+ * web/request-router-service.ts – HTTP request dispatcher and security layer.
  *
- * Contains the business logic for handling compose-box submissions:
- * detecting control commands, routing agent runs, managing steering/followup
- * modes, and coordinating with the agent queue.
+ * Handles all incoming HTTP requests for the web channel:
+ *   - Applies security headers (CSP, HSTS, X-Frame-Options, etc.) to every response
+ *   - Enforces TOTP / WebAuthn authentication when configured
+ *   - Validates CSRF Origin on all state-changing (POST/PUT/DELETE/PATCH) requests
+ *   - Rate-limits auth endpoints (brute-force protection) and data endpoints
+ *     (posts, uploads, deletes, workspace writes)
+ *   - Auth-gates the app JS bundle; only CSS, fonts, vendor libs, and images
+ *     are served to unauthenticated visitors
+ *   - Routes requests to the appropriate handler (posts, media, workspace,
+ *     agent control, SSE streaming, static files)
  *
- * Consumers: web/request-router.ts delegates to functions defined here.
+ * Security architecture:
+ *   1. rememberWebOrigin (tracking)
+ *   2. Auth rate limiting (auth/verify, WebAuthn login/enrol)
+ *   3. Session auth check (TOTP/WebAuthn cookie)
+ *   4. CSRF Origin validation (state-changing methods, exempt: auth endpoints)
+ *   5. Data rate limiting (posts, uploads, deletes, writes)
+ *   6. Route to handler
+ *   7. withSecurityHeaders() wraps the final response
+ *
+ * Consumers: channels/web.ts delegates each request to handle().
  */
 import { extname, resolve } from "path";
 import { rememberWebOrigin } from "./request-origin.js";
@@ -22,20 +38,32 @@ const APPLE_ICON_PATHS = new Set([
     "/apple-touch-icon-167x167.png",
     "/apple-touch-icon-152x152.png",
 ]);
-const ENROLL_RATE_WINDOW_MS = 5 * 60 * 1000;
-const ENROLL_RATE_LIMIT = 20;
-const AUTH_RATE_WINDOW_MS = 5 * 60 * 1000;
-const AUTH_RATE_LIMIT = 10;
-/** Rate limiting for data endpoints (POST, DELETE, uploads). */
-const DATA_RATE_WINDOW_MS = 60 * 1000; // 1 minute
-const DATA_POST_LIMIT = 30; // 30 posts per minute
-const DATA_UPLOAD_LIMIT = 20; // 20 uploads per minute
-const DATA_DELETE_LIMIT = 60; // 60 deletes per minute
-const DATA_WRITE_LIMIT = 30; // 30 workspace writes per minute
+// ── Auth rate limiting ──
+// Limits brute-force attempts on login and enrolment endpoints.
+const ENROLL_RATE_WINDOW_MS = 5 * 60 * 1000; // 5-minute sliding window
+const ENROLL_RATE_LIMIT = 20; // max 20 enrol attempts per window
+const AUTH_RATE_WINDOW_MS = 5 * 60 * 1000; // 5-minute sliding window
+const AUTH_RATE_LIMIT = 10; // max 10 login attempts per window
+// ── Data endpoint rate limiting ──
+// Limits abuse of state-changing endpoints (message flooding, upload spam,
+// mass deletion). Applied per client IP, after auth check passes.
+const DATA_RATE_WINDOW_MS = 60 * 1000; // 1-minute sliding window
+// Per-endpoint rate limits (counts are per client IP per window).
+const DATA_POST_LIMIT = 30; // POST /post
+const DATA_REPLY_LIMIT = 30; // POST /reply
+const DATA_AGENT_MESSAGE_LIMIT = 30; // POST /agent/:id/message
+const DATA_MEDIA_UPLOAD_LIMIT = 20; // POST /media/upload
+const DATA_WORKSPACE_UPLOAD_LIMIT = 20; // POST /workspace/upload
+const DATA_DELETE_LIMIT = 60; // DELETE /post/:id
+const DATA_WRITE_LIMIT = 30; // PUT /workspace/file
+// ── Rate bucket storage ──
+// Per-IP sliding-window counters for all rate-limited endpoints.
+// Keys are "ip:bucket" strings, values are arrays of timestamps.
 const rateBuckets = new Map();
 // Prune stale IP entries every 10 minutes to prevent unbounded memory growth.
 const RATE_PRUNE_INTERVAL_MS = 10 * 60 * 1000;
 let lastRatePrune = Date.now();
+/** Remove expired entries from all rate buckets. Called lazily on each check. */
 function pruneRateBuckets() {
     const now = Date.now();
     if (now - lastRatePrune < RATE_PRUNE_INTERVAL_MS)
@@ -53,6 +81,10 @@ function pruneRateBuckets() {
         }
     }
 }
+/**
+ * Extract the client IP from the request for rate limiting.
+ * Trusts x-forwarded-for and x-real-ip from reverse proxies (Caddy/nginx).
+ */
 function getClientKey(req) {
     const forwarded = req.headers.get("x-forwarded-for");
     if (forwarded) {
@@ -65,6 +97,10 @@ function getClientKey(req) {
         return realIp.trim();
     return "unknown";
 }
+/**
+ * Check if a client has exceeded its rate limit for a given bucket.
+ * Records the current attempt and returns true if over the limit.
+ */
 function isRateLimited(req, bucket, windowMs, limit) {
     pruneRateBuckets();
     const key = `${getClientKey(req)}:${bucket}`;
@@ -76,7 +112,15 @@ function isRateLimited(req, bucket, windowMs, limit) {
     rateBuckets.set(key, trimmed);
     return trimmed.length > limit;
 }
-/** Standard security headers applied to every response. */
+// ── Security headers ──
+// Applied to every response via withSecurityHeaders(). These defend against:
+//   X-Content-Type-Options: nosniff    → MIME sniffing attacks
+//   X-Frame-Options: DENY              → clickjacking (iframe embedding)
+//   Referrer-Policy                    → referrer leakage on navigation
+//   Permissions-Policy                 → disable camera/mic/geolocation APIs
+//   Content-Security-Policy            → XSS mitigation (inline scripts allowed
+//                                        for login page; blob: for file downloads)
+//   Strict-Transport-Security          → HSTS (TLS only, added dynamically)
 const SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
@@ -86,7 +130,12 @@ const SECURITY_HEADERS = {
         "img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; " +
         "frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
 };
-/** Clone a response with added security headers. */
+/**
+ * Clone a response with security headers appended.
+ * Called once at the end of handle() so ALL responses (API, static, SSE)
+ * get consistent security headers. Existing headers are not overwritten.
+ * HSTS is only added when the connection is TLS.
+ */
 function withSecurityHeaders(response, isTls) {
     const headers = new Headers(response.headers);
     for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
@@ -102,7 +151,13 @@ function withSecurityHeaders(response, isTls) {
         headers,
     });
 }
-/** Paths under /static/ that are safe to serve without auth. */
+/**
+ * Determine which /static/ paths are safe to serve without authentication.
+ * The login page is fully self-contained (inline CSS/JS) and doesn't need
+ * any /static/js/ files. Only CSS, fonts, vendor libs, and image assets
+ * are whitelisted. The app JS bundle (app.js, api.js, components/) requires
+ * authentication to prevent exposing API structure and application logic.
+ */
 function isPublicStaticPath(pathname) {
     // CSS and fonts are needed for basic styling; JS bundle is gated behind auth
     if (pathname.startsWith("/static/css/"))
@@ -118,8 +173,21 @@ function isPublicStaticPath(pathname) {
     return false;
 }
 /**
- * CSRF origin validation for state-changing requests.
- * Returns true if the request passes the CSRF check.
+ * CSRF origin validation for state-changing requests (POST/PUT/DELETE/PATCH).
+ *
+ * Compares the Origin header against the Host header to ensure the request
+ * comes from the same origin. This prevents cross-origin form submissions
+ * and fetch attacks when the user has an active session cookie.
+ *
+ * Design choices:
+ *   - No Origin header → allow (non-browser clients like curl, internal tools)
+ *   - Origin "null" → block (sandboxed iframes, data: URLs)
+ *   - No Host header → allow (direct connections without proxy)
+ *   - Hostname comparison ignores port (works behind port-forwarding proxies)
+ *   - Auth endpoints are exempt (handled before this check by the caller)
+ *
+ * Note: SameSite=Strict cookies provide the primary CSRF defense; this is
+ * a defense-in-depth layer against same-site but cross-origin attacks.
  */
 function checkCsrfOrigin(req) {
     const origin = req.headers.get("origin");
@@ -175,11 +243,22 @@ export class RequestRouterService {
         }
         return new Response(file, { status: 200, headers });
     }
+    /**
+     * Main entry point for all HTTP requests.
+     * Delegates to route() for path dispatch, then wraps the response
+     * with security headers (CSP, HSTS, X-Frame-Options, etc.).
+     */
     async handle(req) {
         const response = await this.route(req);
+        // Determine TLS from the request URL scheme to conditionally add HSTS
         const isTls = req.url.startsWith("https://");
         return withSecurityHeaders(response, isTls);
     }
+    /**
+     * Internal request router. Processes the request through the security
+     * pipeline (auth → CSRF → rate limiting) and dispatches to the
+     * appropriate handler. See the module-level JSDoc for the full pipeline.
+     */
     async route(req) {
         const url = new URL(req.url);
         const pathname = url.pathname;
@@ -214,6 +293,7 @@ export class RequestRouterService {
         if (isInternalPost || isInternalPatch) {
             if (internalSecretEnabled) {
                 if (!hasInternalAccess) {
+                    console.warn(`[auth] Internal secret required (ip=${getClientKey(req)}, method=${req.method}, path=${pathname})`);
                     return this.channel.json({ error: "Unauthorized" }, 401);
                 }
                 // hasInternalAccess is true → skipAuthCheck will include it below
@@ -263,6 +343,7 @@ export class RequestRouterService {
                 return this.channel.serveLoginPage();
             }
             if (!skipAuthCheck && !this.channel.isAuthenticated(req)) {
+                console.warn(`[auth] Unauthorized request (ip=${getClientKey(req)}, method=${req.method}, path=${pathname})`);
                 if (isIndex) {
                     return this.channel.serveLoginPage();
                 }
@@ -276,8 +357,15 @@ export class RequestRouterService {
             return this.channel.json({ error: "Not found" }, 404);
         }
         // ── CSRF origin check on state-changing methods ──
+        // Auth endpoints are exempt: they have their own rate limiting and are
+        // needed before the user has a session (Origin may vary in edge cases).
         const isMutating = req.method === "POST" || req.method === "PUT" || req.method === "DELETE" || req.method === "PATCH";
-        if (isMutating && !hasInternalAccess) {
+        const isAuthEndpoint = isAuthVerify ||
+            isWebauthnLoginStart ||
+            isWebauthnLoginFinish ||
+            isWebauthnRegisterStart ||
+            isWebauthnRegisterFinish;
+        if (isMutating && !hasInternalAccess && !isAuthEndpoint) {
             if (!checkCsrfOrigin(req)) {
                 console.warn(`[security] CSRF origin check failed (ip=${getClientKey(req)}, origin=${req.headers.get("origin")})`);
                 return this.channel.json({ error: "Origin not allowed" }, 403);
@@ -285,19 +373,33 @@ export class RequestRouterService {
         }
         // ── Rate limiting on data endpoints ──
         if (isMutating && !hasInternalAccess) {
-            if ((req.method === "POST" && (pathname === "/post" || pathname === "/reply")) ||
-                (req.method === "POST" && pathname.endsWith("/message"))) {
+            if (req.method === "POST" && pathname === "/post") {
                 if (isRateLimited(req, "data/post", DATA_RATE_WINDOW_MS, DATA_POST_LIMIT)) {
-                    return rateLimitResponse("Too many messages. Slow down.");
+                    return rateLimitResponse("Too many posts. Slow down.");
                 }
             }
-            if (req.method === "POST" && (pathname === "/media/upload" || pathname === "/workspace/upload")) {
-                if (isRateLimited(req, "data/upload", DATA_RATE_WINDOW_MS, DATA_UPLOAD_LIMIT)) {
-                    return rateLimitResponse("Too many uploads. Slow down.");
+            if (req.method === "POST" && pathname === "/reply") {
+                if (isRateLimited(req, "data/reply", DATA_RATE_WINDOW_MS, DATA_REPLY_LIMIT)) {
+                    return rateLimitResponse("Too many replies. Slow down.");
                 }
             }
-            if (req.method === "DELETE") {
-                if (isRateLimited(req, "data/delete", DATA_RATE_WINDOW_MS, DATA_DELETE_LIMIT)) {
+            if (req.method === "POST" && pathname.endsWith("/message")) {
+                if (isRateLimited(req, "data/agent_message", DATA_RATE_WINDOW_MS, DATA_AGENT_MESSAGE_LIMIT)) {
+                    return rateLimitResponse("Too many agent messages. Slow down.");
+                }
+            }
+            if (req.method === "POST" && pathname === "/media/upload") {
+                if (isRateLimited(req, "data/media_upload", DATA_RATE_WINDOW_MS, DATA_MEDIA_UPLOAD_LIMIT)) {
+                    return rateLimitResponse("Too many media uploads. Slow down.");
+                }
+            }
+            if (req.method === "POST" && pathname === "/workspace/upload") {
+                if (isRateLimited(req, "data/workspace_upload", DATA_RATE_WINDOW_MS, DATA_WORKSPACE_UPLOAD_LIMIT)) {
+                    return rateLimitResponse("Too many workspace uploads. Slow down.");
+                }
+            }
+            if (req.method === "DELETE" && pathname.startsWith("/post/")) {
+                if (isRateLimited(req, "data/delete_post", DATA_RATE_WINDOW_MS, DATA_DELETE_LIMIT)) {
                     return rateLimitResponse("Too many deletions. Slow down.");
                 }
             }

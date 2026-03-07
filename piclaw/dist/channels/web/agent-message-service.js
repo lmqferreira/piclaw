@@ -7,10 +7,23 @@
  * Consumers: channels/web.ts calls this after agent runs complete.
  */
 import { normalizeMediaIds } from "./posts-service.js";
-/** Parse and validate an agent message API request body. */
+/**
+ * Max allowed agent message content length (100 KB).
+ * Consistent with MAX_POST_CONTENT_LENGTH in posts-service.ts.
+ * Prevents oversized messages from the compose box reaching the agent.
+ */
+const MAX_AGENT_MESSAGE_CONTENT_LENGTH = 100 * 1024;
+/**
+ * Parse and validate an agent message API request body.
+ * Returns { error } if the JSON is invalid or content exceeds the size limit.
+ */
 export async function parseAgentMessageRequest(req) {
     try {
         const data = (await req.json());
+        // Content length check — must match the limit used by parsePostPayload()
+        if (typeof data.content === "string" && data.content.length > MAX_AGENT_MESSAGE_CONTENT_LENGTH) {
+            return { error: `Content too large (max ${MAX_AGENT_MESSAGE_CONTENT_LENGTH / 1024} KB)` };
+        }
         return { payload: data };
     }
     catch {

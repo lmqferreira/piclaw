@@ -7,9 +7,20 @@
  *
  * Consumers: web/handlers/posts.ts calls parsePostPayload() and storePost().
  */
-/** Max allowed message content length (100 KB). */
+/**
+ * Max allowed message content length (100 KB).
+ * Prevents users from submitting extremely large messages that would
+ * bloat the SQLite database and FTS index. This limit is also enforced
+ * in agent-message-service.ts and handleInternalPost/handleUpdatePost.
+ */
 const MAX_POST_CONTENT_LENGTH = 100 * 1024;
-/** Validate and parse a raw POST body into a PostPayload. */
+/**
+ * Validate and parse a raw POST body into a PostPayload.
+ * Checks for:
+ *   - Valid object body
+ *   - Non-empty content field
+ *   - Content length within MAX_POST_CONTENT_LENGTH
+ */
 export function parsePostPayload(body) {
     if (!body || typeof body !== "object")
         return { ok: false, error: "Invalid JSON" };

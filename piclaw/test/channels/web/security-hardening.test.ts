@@ -218,6 +218,8 @@ describe("SSE client cap", () => {
 });
 
 // ── Security headers ──
+import { RequestRouterService } from "../../../src/channels/web/request-router-service.js";
+
 describe("security headers", () => {
   test("expected header names are defined", () => {
     // Verify the security header names we expect
@@ -229,5 +231,74 @@ describe("security headers", () => {
       "Content-Security-Policy",
     ];
     expect(expectedHeaders.length).toBe(5);
+  });
+
+  test("CSP and security headers are present on real responses", async () => {
+    class StubChannel {
+      isAuthEnabled() { return false; }
+      isInternalSecretEnabled() { return false; }
+      verifyInternalSecret() { return false; }
+      isAuthenticated() { return false; }
+      serveLoginPage() { return this.json({ ok: false }, 401); }
+      redirectToLogin() { return this.json({ ok: false }, 401); }
+      handleTimeline() { return this.json({ ok: true }, 200); }
+      clampInt(value: string | null, fallback: number, _min: number, _max: number) {
+        const parsed = value ? parseInt(value, 10) : fallback;
+        return Number.isFinite(parsed) ? parsed : fallback;
+      }
+      parseOptionalInt(value: string | null) {
+        if (!value) return null;
+        const parsed = parseInt(value, 10);
+        return Number.isNaN(parsed) ? null : parsed;
+      }
+      json(data: unknown, status = 200) {
+        return new Response(JSON.stringify(data), {
+          status,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    const router = new RequestRouterService(new StubChannel() as any);
+    const res = await router.handle(new Request("http://localhost/timeline?limit=1"));
+
+    expect(res.headers.get("Content-Security-Policy")).toContain("default-src 'self'");
+    expect(res.headers.get("X-Frame-Options")).toBe("DENY");
+    expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(res.headers.get("Referrer-Policy")).toBe("strict-origin-when-cross-origin");
+    expect(res.headers.get("Permissions-Policy")).toContain("camera=");
+    expect(res.headers.get("Strict-Transport-Security")).toBe(null);
+  });
+
+  test("HSTS header is set on HTTPS responses", async () => {
+    class StubChannel {
+      isAuthEnabled() { return false; }
+      isInternalSecretEnabled() { return false; }
+      verifyInternalSecret() { return false; }
+      isAuthenticated() { return false; }
+      serveLoginPage() { return this.json({ ok: false }, 401); }
+      redirectToLogin() { return this.json({ ok: false }, 401); }
+      handleTimeline() { return this.json({ ok: true }, 200); }
+      clampInt(value: string | null, fallback: number, _min: number, _max: number) {
+        const parsed = value ? parseInt(value, 10) : fallback;
+        return Number.isFinite(parsed) ? parsed : fallback;
+      }
+      parseOptionalInt(value: string | null) {
+        if (!value) return null;
+        const parsed = parseInt(value, 10);
+        return Number.isNaN(parsed) ? null : parsed;
+      }
+      json(data: unknown, status = 200) {
+        return new Response(JSON.stringify(data), {
+          status,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    const router = new RequestRouterService(new StubChannel() as any);
+    const res = await router.handle(new Request("https://localhost/timeline?limit=1"));
+
+    expect(res.headers.get("Strict-Transport-Security")).toContain("max-age=31536000");
   });
 });

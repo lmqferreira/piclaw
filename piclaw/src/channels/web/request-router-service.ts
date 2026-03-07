@@ -53,11 +53,16 @@ const AUTH_RATE_LIMIT = 10;                      // max 10 login attempts per wi
 // ── Data endpoint rate limiting ──
 // Limits abuse of state-changing endpoints (message flooding, upload spam,
 // mass deletion). Applied per client IP, after auth check passes.
-const DATA_RATE_WINDOW_MS = 60 * 1000;  // 1-minute sliding window
-const DATA_POST_LIMIT = 30;              // max 30 posts/replies per minute
-const DATA_UPLOAD_LIMIT = 20;            // max 20 media/file uploads per minute
-const DATA_DELETE_LIMIT = 60;            // max 60 deletions per minute
-const DATA_WRITE_LIMIT = 30;             // max 30 workspace file writes per minute
+const DATA_RATE_WINDOW_MS = 60 * 1000; // 1-minute sliding window
+
+// Per-endpoint rate limits (counts are per client IP per window).
+const DATA_POST_LIMIT = 30; // POST /post
+const DATA_REPLY_LIMIT = 30; // POST /reply
+const DATA_AGENT_MESSAGE_LIMIT = 30; // POST /agent/:id/message
+const DATA_MEDIA_UPLOAD_LIMIT = 20; // POST /media/upload
+const DATA_WORKSPACE_UPLOAD_LIMIT = 20; // POST /workspace/upload
+const DATA_DELETE_LIMIT = 60; // DELETE /post/:id
+const DATA_WRITE_LIMIT = 30; // PUT /workspace/file
 
 // ── Rate bucket storage ──
 // Per-IP sliding-window counters for all rate-limited endpoints.
@@ -305,6 +310,9 @@ export class RequestRouterService {
     if (isInternalPost || isInternalPatch) {
       if (internalSecretEnabled) {
         if (!hasInternalAccess) {
+          console.warn(
+            `[auth] Internal secret required (ip=${getClientKey(req)}, method=${req.method}, path=${pathname})`
+          );
           return this.channel.json({ error: "Unauthorized" }, 401);
         }
         // hasInternalAccess is true → skipAuthCheck will include it below
@@ -359,6 +367,9 @@ export class RequestRouterService {
         return this.channel.serveLoginPage();
       }
       if (!skipAuthCheck && !this.channel.isAuthenticated(req)) {
+        console.warn(
+          `[auth] Unauthorized request (ip=${getClientKey(req)}, method=${req.method}, path=${pathname})`
+        );
         if (isIndex) {
           return this.channel.serveLoginPage();
         }
@@ -390,19 +401,33 @@ export class RequestRouterService {
 
     // ── Rate limiting on data endpoints ──
     if (isMutating && !hasInternalAccess) {
-      if ((req.method === "POST" && (pathname === "/post" || pathname === "/reply")) ||
-          (req.method === "POST" && pathname.endsWith("/message"))) {
+      if (req.method === "POST" && pathname === "/post") {
         if (isRateLimited(req, "data/post", DATA_RATE_WINDOW_MS, DATA_POST_LIMIT)) {
-          return rateLimitResponse("Too many messages. Slow down.");
+          return rateLimitResponse("Too many posts. Slow down.");
         }
       }
-      if (req.method === "POST" && (pathname === "/media/upload" || pathname === "/workspace/upload")) {
-        if (isRateLimited(req, "data/upload", DATA_RATE_WINDOW_MS, DATA_UPLOAD_LIMIT)) {
-          return rateLimitResponse("Too many uploads. Slow down.");
+      if (req.method === "POST" && pathname === "/reply") {
+        if (isRateLimited(req, "data/reply", DATA_RATE_WINDOW_MS, DATA_REPLY_LIMIT)) {
+          return rateLimitResponse("Too many replies. Slow down.");
         }
       }
-      if (req.method === "DELETE") {
-        if (isRateLimited(req, "data/delete", DATA_RATE_WINDOW_MS, DATA_DELETE_LIMIT)) {
+      if (req.method === "POST" && pathname.endsWith("/message")) {
+        if (isRateLimited(req, "data/agent_message", DATA_RATE_WINDOW_MS, DATA_AGENT_MESSAGE_LIMIT)) {
+          return rateLimitResponse("Too many agent messages. Slow down.");
+        }
+      }
+      if (req.method === "POST" && pathname === "/media/upload") {
+        if (isRateLimited(req, "data/media_upload", DATA_RATE_WINDOW_MS, DATA_MEDIA_UPLOAD_LIMIT)) {
+          return rateLimitResponse("Too many media uploads. Slow down.");
+        }
+      }
+      if (req.method === "POST" && pathname === "/workspace/upload") {
+        if (isRateLimited(req, "data/workspace_upload", DATA_RATE_WINDOW_MS, DATA_WORKSPACE_UPLOAD_LIMIT)) {
+          return rateLimitResponse("Too many workspace uploads. Slow down.");
+        }
+      }
+      if (req.method === "DELETE" && pathname.startsWith("/post/")) {
+        if (isRateLimited(req, "data/delete_post", DATA_RATE_WINDOW_MS, DATA_DELETE_LIMIT)) {
           return rateLimitResponse("Too many deletions. Slow down.");
         }
       }

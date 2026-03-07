@@ -1,15 +1,25 @@
 /**
  * web/media-service.ts – File upload and retrieval service.
  *
- * Wraps db/media.ts operations with additional validation (file size,
- * content type detection) for the web channel's upload endpoint.
+ * Wraps db/media.ts operations with validation:
+ *   - File size limit (10 MB) — returns 413 if exceeded
+ *   - Content-type whitelist — returns 415 for disallowed types
+ *     (falls back to allowing any image/* or text/* prefix)
  *
  * Consumers: web/handlers/media.ts delegates to MediaService methods.
  */
 import { createMedia, getMediaById, getMediaInfoById } from "../../db.js";
-/** Max upload size: 10 MB. */
+/**
+ * Max upload size: 10 MB.
+ * This is enforced at the application level. The Bun.serve()
+ * maxRequestBodySize (50 MB) is a separate hard cap.
+ */
 const MAX_MEDIA_UPLOAD_BYTES = 10 * 1024 * 1024;
-/** Content types allowed for media uploads. */
+/**
+ * Content types explicitly allowed for media uploads.
+ * Types not in this set can still pass if they match image/* or text/*
+ * prefixes (for uncommon but valid subtypes like image/tiff).
+ */
 const ALLOWED_MEDIA_TYPES = new Set([
     "image/png",
     "image/jpeg",
@@ -35,15 +45,25 @@ const ALLOWED_MEDIA_TYPES = new Set([
     "application/zip",
     "application/gzip",
 ]);
-/** File upload/download service wrapping db/media.ts operations. */
+/**
+ * File upload/download service wrapping db/media.ts operations.
+ * Validates size and content type before persisting to the database.
+ */
 export class MediaService {
+    /**
+     * Validate and store an uploaded file.
+     * Returns 413 if file exceeds MAX_MEDIA_UPLOAD_BYTES.
+     * Returns 415 if content type is not in the allowlist.
+     */
     async createFromFile(file) {
+        // Size check — reject before reading the full body into memory
         if (file.size > MAX_MEDIA_UPLOAD_BYTES) {
             return {
                 status: 413,
                 body: { error: `File too large (max ${MAX_MEDIA_UPLOAD_BYTES / 1024 / 1024} MB)` },
             };
         }
+        // Content-type check — allow explicit whitelist plus any image/* or text/*
         const contentType = (file.type || "application/octet-stream").toLowerCase();
         if (!ALLOWED_MEDIA_TYPES.has(contentType) && !contentType.startsWith("image/") && !contentType.startsWith("text/")) {
             return { status: 415, body: { error: `Unsupported media type: ${contentType}` } };

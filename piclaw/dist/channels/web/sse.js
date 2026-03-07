@@ -7,10 +7,18 @@
  * Consumers: web/sse-hub.ts builds on these primitives.
  */
 const encoder = new TextEncoder();
-/** Maximum number of concurrent SSE clients. */
+/**
+ * Maximum number of concurrent SSE clients.
+ * Prevents resource exhaustion from opening too many connections.
+ * Each client holds a ReadableStream controller and a heartbeat interval.
+ */
 const MAX_SSE_CLIENTS = 50;
-/** Create an SSE response stream and register the client. */
+/**
+ * Create an SSE response stream and register the client.
+ * Returns 503 if the maximum client limit has been reached.
+ */
 export function handleSse(channel) {
+    // Guard against connection exhaustion — reject if at capacity
     if (channel.clients.size >= MAX_SSE_CLIENTS) {
         return new Response(JSON.stringify({ error: "Too many connections" }), {
             status: 503,
