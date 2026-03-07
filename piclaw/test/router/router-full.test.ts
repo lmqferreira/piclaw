@@ -88,4 +88,35 @@ describe("router", () => {
   test("formatOutbound returns empty for all-internal content", () => {
     expect(formatOutbound("<internal>all hidden</internal>")).toBe("");
   });
+
+  test("detectChannel returns unknown for non-web prefixes", () => {
+    expect(detectChannel("web-default")).toBe("unknown");
+    expect(detectChannel("webdefault")).toBe("unknown");
+    expect(detectChannel("http://example.com")).toBe("unknown");
+  });
+
+  test("formatMessages escapes sender_name and content", () => {
+    const msgs = [
+      {
+        id: "1",
+        chat_jid: "web:default",
+        sender: "user",
+        sender_name: "A & B <C> \"D\"",
+        content: "Hello & <tag> \"quote\"",
+        timestamp: "2025-01-01T00:00:00Z",
+        is_from_me: false,
+        is_bot_message: false,
+      },
+    ];
+    const result = formatMessages(msgs, "web");
+    expect(result).toContain('sender="A &amp; B &lt;C&gt; &quot;D&quot;"');
+    expect(result).toContain("Hello &amp; &lt;tag&gt; &quot;quote&quot;");
+  });
+
+  test("stripInternalTags removes nested and malformed internal blocks", () => {
+    expect(stripInternalTags("a <internal>hide <internal>double</internal> end</internal> b"))
+      .toBe("a  b");
+    expect(stripInternalTags("prefix <internal>missing end"))
+      .toBe("prefix");
+  });
 });

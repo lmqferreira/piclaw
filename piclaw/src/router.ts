@@ -27,7 +27,8 @@ export type ChatChannel = "web" | "whatsapp" | "unknown";
 export function detectChannel(chatJid: string | null | undefined): ChatChannel {
   if (!chatJid) return "unknown";
   if (chatJid.startsWith("web:")) return "web";
-  return "whatsapp";
+  if (chatJid.includes("@s.whatsapp.net") || chatJid.endsWith("@g.us")) return "whatsapp";
+  return "unknown";
 }
 
 /** Escape special XML characters in a string for safe embedding in XML tags. */
@@ -58,9 +59,33 @@ export function formatMessages(messages: NewMessage[], channel?: ChatChannel): s
 /**
  * Remove `<internal>…</internal>` blocks from agent output.
  * Content inside these tags is logged but not sent to the user.
+ *
+ * Handles nested tags and malformed blocks by treating <internal> as a
+ * depth counter and discarding anything inside. Unclosed tags discard the
+ * remainder of the string (safer than leaking hidden content).
  */
 export function stripInternalTags(text: string): string {
-  return text.replace(/<internal>[\s\S]*?<\/internal>/g, "").trim();
+  if (!text) return "";
+  let result = "";
+  let depth = 0;
+  let i = 0;
+  while (i < text.length) {
+    if (text.startsWith("<internal>", i)) {
+      depth += 1;
+      i += "<internal>".length;
+      continue;
+    }
+    if (text.startsWith("</internal>", i)) {
+      if (depth > 0) depth -= 1;
+      i += "</internal>".length;
+      continue;
+    }
+    if (depth === 0) {
+      result += text[i];
+    }
+    i += 1;
+  }
+  return result.trim();
 }
 
 /**
