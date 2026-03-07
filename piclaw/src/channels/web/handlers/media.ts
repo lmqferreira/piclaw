@@ -27,15 +27,31 @@ export async function handleMediaUpload(channel: WebChannel, req: Request): Prom
   return channel.json(result.body, result.status);
 }
 
+/** Safe content types that can be rendered inline in the browser. */
+const INLINE_SAFE_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "image/svg+xml",
+  "image/bmp",
+  "image/x-icon",
+]);
+
 /** Route media requests to upload, download, or info handlers. */
 export function handleMedia(channel: WebChannel, id: number, thumbnail: boolean): Response {
   const result = mediaService.getMedia(id, thumbnail);
   if (result.status !== 200) return channel.json({ error: "Media not found" }, result.status);
-  return new Response(result.body, {
-    headers: {
-      "Content-Type": result.contentType || "application/octet-stream",
-    },
-  });
+
+  const contentType = result.contentType || "application/octet-stream";
+  const headers: Record<string, string> = {
+    "Content-Type": contentType,
+  };
+  // Force download for non-image types to prevent stored XSS via HTML/SVG uploads
+  if (!INLINE_SAFE_TYPES.has(contentType)) {
+    headers["Content-Disposition"] = "attachment";
+  }
+  return new Response(result.body, { headers });
 }
 
 /** Handle GET /media/:id/info: metadata query. */
