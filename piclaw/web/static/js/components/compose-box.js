@@ -184,7 +184,9 @@ export function ComposeBox({
         const textarea = textareaRef.current;
         if (!textarea) return;
         textarea.style.height = 'auto';
-        textarea.style.height = Math.min(textarea.scrollHeight, MAX_TEXTAREA_HEIGHT) + 'px';
+        const nextHeight = Math.min(textarea.scrollHeight, MAX_TEXTAREA_HEIGHT);
+        textarea.style.height = `${nextHeight}px`;
+        textarea.style.overflowY = textarea.scrollHeight > MAX_TEXTAREA_HEIGHT ? 'auto' : 'hidden';
     };
 
     /** Update slash autocomplete matches based on current input. */
@@ -564,6 +566,10 @@ export function ComposeBox({
         const value = e.target.value;
         updateValue(value);
     };
+
+    useEffect(() => {
+        requestAnimationFrame(resizeTextarea);
+    }, [content, searchText, searchMode]);
 
     return html`
         <div class="compose-box">
