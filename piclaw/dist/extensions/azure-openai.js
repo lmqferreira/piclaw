@@ -1,37 +1,292 @@
+/**
+ * docs/azure/azure-openai-token.ts – Azure OpenAI provider implementation.
+ *
+ * Reference/example code showing how to implement a custom pi-ai Model
+ * provider that talks to Azure OpenAI endpoints using token-based auth
+ * instead of API keys. Supports streaming, tool calls, and thinking levels.
+ */
 import OpenAI from "openai";
-import { createAssistantMessageEventStream, supportsXhigh } from "@mariozechner/pi-ai";
+import { supportsXhigh, } from "@mariozechner/pi-ai";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream, } from "@mariozechner/pi-ai/dist/providers/openai-responses-shared.js";
+import { applyToolCallLimit } from "../src/utils/azure-tool-call-limit.js";
+import { streamSimpleOpenAICompletions } from "@mariozechner/pi-ai/dist/providers/openai-completions.js";
 import { buildBaseOptions, clampReasoning } from "@mariozechner/pi-ai/dist/providers/simple-options.js";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 const PROVIDER = "azure-openai";
-const BASE_URL = process.env.AOAI_BASE_URL || "https://piclaw-aoai.openai.azure.com/openai/v1";
+const FOUNDRY_PROVIDER = "azure-foundry";
+// Use custom API names so we don't override global handlers.
+const AZURE_API = "azure-openai-responses-mi";
+const FOUNDRY_API = "azure-foundry-openai-completions-mi";
+// Pitfalls / guardrails:
+// - Never use api: "openai-responses" or "openai-completions" here. That overrides the global
+//   handlers and breaks other providers (e.g., GitHub Copilot). Always use AZURE_API/FOUNDRY_API.
+// - Always set per-model `api` to the custom API names. If you omit it, the model will route
+//   through the global handlers and fail with auth errors.
+// - OpenAI SDK always injects `Authorization: Bearer <apiKey>`. Do not add Authorization/api-key
+//   headers yourself or enable authHeader; Azure/Copilot will reject the request.
+// - Managed identity only. AOAI_RESOURCE/FOUNDRY_RESOURCE must match the target resource or
+//   tokens will be invalid (401/403).
+// - MODEL_SPECS.reasoning=false will clamp thinking to off for that model.
+// - Do not remove tool-call ID sanitization or TOOL_CALL_PROVIDERS; Azure Responses rejects
+//   non-compliant IDs.
+const MODEL_ID = process.env.AOAI_MODEL_ID || "gpt-5-2-codex";
+const MODEL_NAME = process.env.AOAI_MODEL_NAME || `Azure ${MODEL_ID}`;
+const MODEL_IDS = (process.env.AOAI_MODEL_IDS || MODEL_ID)
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+const MODEL_NAMES = (process.env.AOAI_MODEL_NAMES || "")
+    .split(",")
+    .map((entry) => entry.trim());
+const BASE_URL = process.env.AOAI_BASE_URL || "https://{RESOURCE_NAME}.openai.azure.com/openai/v1";
+const AOAI_IMAGE_MODEL_ID = process.env.AOAI_IMAGE_MODEL_ID || "gpt-image-1-5";
+const AOAI_API_VERSION = process.env.AOAI_API_VERSION || process.env.OPENAI_API_VERSION || "2024-02-15-preview";
+const FOUNDRY_BASE_URL = process.env.FOUNDRY_BASE_URL || "https://{FOUNDRY_RESOURCE}.cognitiveservices.azure.com/openai/v1";
+const FOUNDRY_MODEL_IDS = (process.env.FOUNDRY_MODEL_IDS || "mistral-large-3,flux-2-pro")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+const FOUNDRY_MODEL_NAMES = (process.env.FOUNDRY_MODEL_NAMES || "")
+    .split(",")
+    .map((entry) => entry.trim());
+const FOUNDRY_IMAGE_MODEL_ID = process.env.FOUNDRY_IMAGE_MODEL_ID || "flux-2-pro";
+const FOUNDRY_API_VERSION = process.env.FOUNDRY_API_VERSION || AOAI_API_VERSION;
+const FOUNDRY_IMAGE_API_VERSION = process.env.FOUNDRY_IMAGE_API_VERSION || "preview";
+const FOUNDRY_IMAGE_BASE_URL = process.env.FOUNDRY_IMAGE_BASE_URL || "";
+const FOUNDRY_TEXT_MODEL_IDS = FOUNDRY_MODEL_IDS.filter((id) => id !== FOUNDRY_IMAGE_MODEL_ID && !id.startsWith("flux-"));
+// Auth: managed identity by default — fetches AAD tokens from the VM metadata service.
+// When AOAI_API_KEY is set, uses the static key instead (proxy mode — a remote proxy
+// handles MI auth and this instance just passes the shared secret as a Bearer token).
 const IMDS_URL = "http://169.254.169.254/metadata/identity/oauth2/token";
 const IMDS_API_VERSION = "2018-02-01";
-const RESOURCE = process.env.AOAI_RESOURCE || "https://cognitiveservices.azure.com/";
+const RESOURCE = process.env.AOAI_RESOURCE || process.env.FOUNDRY_RESOURCE || "https://cognitiveservices.azure.com/";
 const CACHE_DIR = process.env.AOAI_TOKEN_CACHE_DIR || "/workspace/.piclaw/cache";
 const CACHE_FILE = process.env.AOAI_TOKEN_CACHE_FILE || `${CACHE_DIR}/aoai-token.json`;
 const SKEW_SECONDS = Number(process.env.AOAI_TOKEN_SKEW_SECONDS || "300");
-// Include our provider name in the tool-call provider set so tool calls are handled correctly
-const TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode", PROVIDER]);
-const MODELS = [
-    {
-        id: "gpt-4.1",
-        name: "Azure GPT-4.1",
-        reasoning: false,
-        contextWindow: 1047576,
-        maxTokens: 32768,
-    },
-    {
-        id: "o4-mini",
-        name: "Azure o4-mini",
-        reasoning: true,
-        contextWindow: 200000,
-        maxTokens: 16000,
-    },
-];
+// When AOAI_API_KEY is set, use it directly instead of fetching managed-identity tokens.
+// This is used when connecting through a proxy that handles MI auth on our behalf.
+const STATIC_API_KEY = process.env.AOAI_API_KEY || "";
+const TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode", PROVIDER, FOUNDRY_PROVIDER]);
+const DISABLE_TOOLS = /^(1|true|yes)$/i.test(process.env.AOAI_DISABLE_TOOLS || "");
+const DISABLE_REASONING = /^(1|true|yes)$/i.test(process.env.AOAI_DISABLE_REASONING || "");
+const TOOL_CALL_LIMIT = parseInt(process.env.AOAI_MAX_TOOL_CALLS || "96", 10);
+const TOOL_CALL_SUMMARY_MAX = parseInt(process.env.AOAI_TOOL_CALL_SUMMARY_MAX || "12", 10);
+const TOOL_CALL_OUTPUT_CHARS = parseInt(process.env.AOAI_TOOL_CALL_OUTPUT_CHARS || "200", 10);
+const DEDUPE_TOOL_OUTPUT_SEARCH = !/^(0|false|no)$/i.test(process.env.AOAI_DEDUPE_TOOL_OUTPUT_SEARCH || "1");
+const DISABLE_REASONING_MODELS = new Set((process.env.AOAI_DISABLE_REASONING_MODELS || "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean));
+// Debug helper: log phase replay/persistence details when troubleshooting gpt-5.3-codex.
+const LOG_PHASES = /^(1|true|yes)$/i.test(process.env.AOAI_LOG_PHASES || "");
+// Per-model overrides: contextWindow, maxTokens, reasoning
+const MODEL_SPECS = {
+    "gpt-5-2-codex": { contextWindow: 200000, maxTokens: 64000, reasoning: true },
+    "gpt-5-3-codex": { contextWindow: 200000, maxTokens: 64000, reasoning: true },
+    "gpt-5-1-codex-mini": { contextWindow: 200000, maxTokens: 64000, reasoning: true },
+    "gpt-5-1": { contextWindow: 1048576, maxTokens: 100000, reasoning: true },
+    "gpt-5-mini": { contextWindow: 1048576, maxTokens: 64000, reasoning: true },
+    "mistral-large-3": { contextWindow: 131072, maxTokens: 16384, reasoning: false },
+    "flux-2-pro": { contextWindow: 4096, maxTokens: 4096, reasoning: false },
+};
+const DEFAULT_AZURE_SPEC = { contextWindow: 200000, maxTokens: 64000, reasoning: true };
+const DEFAULT_FOUNDRY_SPEC = { contextWindow: 200000, maxTokens: 64000, reasoning: false };
+let extensionLogged = false;
+function logExtensionLoaded() {
+    if (extensionLogged)
+        return;
+    extensionLogged = true;
+    const summary = {
+        provider: PROVIDER,
+        foundryProvider: FOUNDRY_PROVIDER,
+        api: AZURE_API,
+        foundryApi: FOUNDRY_API,
+        baseUrl: BASE_URL,
+        foundryBaseUrl: FOUNDRY_BASE_URL,
+        modelIds: MODEL_IDS,
+        foundryModelIds: FOUNDRY_MODEL_IDS,
+        authMode: STATIC_API_KEY ? "api-key (proxy)" : "managed-identity",
+        disableTools: DISABLE_TOOLS,
+        disableReasoning: DISABLE_REASONING,
+        disableReasoningModels: Array.from(DISABLE_REASONING_MODELS),
+        bun: process.versions?.bun || null,
+        node: process.versions?.node || null,
+    };
+    setTimeout(() => {
+        try {
+            console.error("[azure-openai] Extension loaded:", JSON.stringify(summary));
+        }
+        catch (error) {
+            console.error("[azure-openai] Extension loaded (failed to serialize):", error);
+        }
+    }, 0);
+}
+function sanitizeOpenAIId(value) {
+    if (!value)
+        return value;
+    let next = value.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+$/, "");
+    if (next.length > 64)
+        next = next.slice(0, 64).replace(/_+$/, "");
+    return next;
+}
+function sanitizeToolCallId(value) {
+    if (!value)
+        return value;
+    if (!value.includes("|"))
+        return sanitizeOpenAIId(value);
+    const [callId, itemId, ...rest] = value.split("|");
+    const sanitizedCallId = sanitizeOpenAIId(callId) || callId;
+    const sanitizedItemId = sanitizeOpenAIId(itemId) || itemId;
+    const tail = rest.length ? `|${rest.join("|")}` : "";
+    if (sanitizedItemId)
+        return `${sanitizedCallId}|${sanitizedItemId}${tail}`;
+    return sanitizedCallId;
+}
+function logStreamFailureEvent(event, requestSummary, loggedRef) {
+    if (!event || typeof event !== "object")
+        return;
+    const type = event.type;
+    if (type === "response.failed") {
+        const response = event.response;
+        const error = response?.error || response?.status_details || response || event;
+        console.error("[azure-openai] Stream response.failed:", JSON.stringify(error));
+        if (requestSummary && loggedRef && !loggedRef.logged) {
+            console.error("[azure-openai] Request summary:", JSON.stringify(requestSummary));
+            loggedRef.logged = true;
+        }
+    }
+    if (type === "error") {
+        const { code, message, error } = event;
+        console.error("[azure-openai] Stream error:", JSON.stringify({ code, message, error }));
+        if (requestSummary && loggedRef && !loggedRef.logged) {
+            console.error("[azure-openai] Request summary:", JSON.stringify(requestSummary));
+            loggedRef.logged = true;
+        }
+    }
+}
+function logAzureError(modelId, error, requestSummary, loggedRef) {
+    const err = error;
+    const details = {
+        name: err?.name,
+        message: err?.message ?? String(error),
+        status: err?.status ?? err?.response?.status,
+        code: err?.code,
+        type: err?.type,
+        response: err?.response?.data,
+        error: err?.error,
+    };
+    console.error(`[azure-openai] Error for ${modelId}:`, JSON.stringify(details));
+    if (requestSummary && loggedRef && !loggedRef.logged) {
+        console.error("[azure-openai] Request summary:", JSON.stringify(requestSummary));
+        loggedRef.logged = true;
+    }
+}
+function isReasoningEnabled(model) {
+    if (!model?.reasoning)
+        return false;
+    if (DISABLE_REASONING)
+        return false;
+    if (DISABLE_REASONING_MODELS.has(model.id))
+        return false;
+    return true;
+}
+// GPT-5.3 Codex introduces a `phase` field on assistant output items (commentary vs final_answer).
+// The cookbook notes that integrations must persist this metadata and replay it on subsequent
+// requests, or the model may exhibit degraded behavior or failures. We store `phase` on the
+// text blocks we persist, then re-apply it to the outgoing Responses API input items.
+function collectMessagePhases(messages) {
+    const phases = new Map();
+    for (const msg of messages) {
+        if (!msg || typeof msg !== "object")
+            continue;
+        if (msg.role !== "assistant")
+            continue;
+        const content = msg.content || [];
+        for (const block of content) {
+            if (block?.type !== "text")
+                continue;
+            const id = block.textSignature;
+            const phase = block.phase;
+            if (id && typeof id === "string" && phase && typeof phase === "string") {
+                phases.set(id, phase);
+            }
+        }
+    }
+    return phases;
+}
+// Apply stored phase metadata to assistant output items when reconstructing input for /responses.
+function applyPhasesToResponseInput(items, phases) {
+    if (!phases.size)
+        return;
+    for (const item of items) {
+        if (item?.type !== "message" || !item.id)
+            continue;
+        const phase = phases.get(item.id);
+        if (phase)
+            item.phase = phase;
+    }
+}
+function stripOrphanReasoningItems(items) {
+    // Azure pairs reasoning items (rs_) with both messages (msg_) and function_calls (fc_).
+    // We strip msg_ and fc_ IDs to avoid pairing validation errors, which makes ALL reasoning
+    // items orphans. Strip them entirely — the model generates fresh reasoning each turn and
+    // the encrypted_content blobs would just waste context tokens.
+    if (!Array.isArray(items) || items.length === 0)
+        return items;
+    return items.filter((item) => item?.type !== "reasoning");
+}
+// After streaming completes, copy the phase from Responses output items onto our stored text blocks
+// so future requests can replay it (phase is required for gpt-5.3-codex continuity).
+function applyPhasesToOutputMessage(output, phases) {
+    if (!phases.size || !output?.content)
+        return;
+    for (const block of output.content) {
+        if (block?.type !== "text")
+            continue;
+        const id = block.textSignature;
+        if (!id || typeof id !== "string")
+            continue;
+        const phase = phases.get(id);
+        if (phase)
+            block.phase = phase;
+    }
+}
+// Produce a compact, log-friendly summary of phase metadata in outgoing ResponseInput items.
+// We avoid logging content and only emit IDs + phase counts when AOAI_LOG_PHASES=1.
+function summarizeResponseInputPhases(items) {
+    const counts = {};
+    const sample = [];
+    let total = 0;
+    for (const item of items) {
+        if (item?.type !== "message" || !item.id || !item.phase)
+            continue;
+        const phase = String(item.phase);
+        counts[phase] = (counts[phase] || 0) + 1;
+        total += 1;
+        if (sample.length < 6) {
+            sample.push({ id: String(item.id), phase });
+        }
+    }
+    return { total, counts, sample };
+}
+function isSameModel(message, model) {
+    if (!model)
+        return false;
+    return message.provider === model.provider && message.api === model.api && message.model === model.id;
+}
+function stripToolCallItemId(id) {
+    if (!id.includes("|"))
+        return { id, changed: false };
+    const [callId] = id.split("|");
+    if (!callId || callId === id)
+        return { id, changed: false };
+    return { id: callId, changed: true };
+}
 function readCache() {
     try {
-        return JSON.parse(readFileSync(CACHE_FILE, "utf-8"));
+        const raw = readFileSync(CACHE_FILE, "utf-8");
+        return JSON.parse(raw);
     }
     catch {
         return {};
@@ -40,45 +295,270 @@ function readCache() {
 function isTokenValid(cache) {
     if (!cache.accessToken || !cache.expiresOnEpoch)
         return false;
-    return cache.expiresOnEpoch - Math.floor(Date.now() / 1000) > SKEW_SECONDS;
+    const now = Math.floor(Date.now() / 1000);
+    return cache.expiresOnEpoch - now > SKEW_SECONDS;
 }
 function writeCache(token, expiresOn, expiresOnEpoch) {
     mkdirSync(CACHE_DIR, { recursive: true });
-    writeFileSync(CACHE_FILE, JSON.stringify({ accessToken: token, expiresOn, expiresOnEpoch }, null, 2) + "\n");
+    const payload = { accessToken: token, expiresOn, expiresOnEpoch };
+    writeFileSync(CACHE_FILE, `${JSON.stringify(payload, null, 2)}\n`);
 }
-async function fetchToken() {
+async function fetchTokenFromImds() {
     const url = `${IMDS_URL}?api-version=${IMDS_API_VERSION}&resource=${encodeURIComponent(RESOURCE)}`;
-    const res = await fetch(url, { headers: { Metadata: "true" } });
-    if (!res.ok)
-        throw new Error(`IMDS failed (${res.status})`);
-    const data = (await res.json());
-    if (!data.access_token)
-        throw new Error("IMDS: missing access_token");
-    let epoch = Number(data.expires_on ?? "");
-    if (!Number.isFinite(epoch) || epoch <= 0)
-        epoch = Math.floor(Date.now() / 1000) + 3300;
-    writeCache(data.access_token, data.expires_on, epoch);
-    return { accessToken: data.access_token, expiresOn: data.expires_on, expiresOnEpoch: epoch };
+    const response = await fetch(url, {
+        headers: {
+            Metadata: "true",
+        },
+    });
+    if (!response.ok) {
+        throw new Error(`IMDS token request failed (${response.status})`);
+    }
+    const data = (await response.json());
+    if (!data.access_token) {
+        throw new Error("IMDS token response missing access_token");
+    }
+    const expiresRaw = data.expires_on || "";
+    let expiresOnEpoch = Number(expiresRaw);
+    if (!Number.isFinite(expiresOnEpoch)) {
+        const parsed = Date.parse(expiresRaw);
+        if (Number.isFinite(parsed)) {
+            expiresOnEpoch = Math.floor(parsed / 1000);
+        }
+    }
+    if (!Number.isFinite(expiresOnEpoch) || expiresOnEpoch <= 0) {
+        expiresOnEpoch = Math.floor(Date.now() / 1000) + 3300;
+    }
+    writeCache(data.access_token, expiresRaw, expiresOnEpoch);
+    return { accessToken: data.access_token, expiresOn: expiresRaw, expiresOnEpoch };
 }
-async function ensureToken() {
+async function ensureToken(force = false) {
     const cached = readCache();
-    if (isTokenValid(cached))
+    if (!force && isTokenValid(cached))
         return cached;
     try {
-        return await fetchToken();
+        return await fetchTokenFromImds();
     }
-    catch (err) {
-        console.error("[azure-openai] Token refresh failed:", err);
+    catch (error) {
+        console.error("[azure-openai] Failed to refresh token via IMDS:", error);
         return cached;
     }
 }
-/**
- * Stream using the standard OpenAI client (not AzureOpenAI).
- * This sends the bearer token as "Authorization: Bearer <token>" which is what
- * the Azure IMDS managed identity token requires.
- */
+async function getAccessToken() {
+    // When a static API key is configured (proxy mode), skip IMDS entirely.
+    if (STATIC_API_KEY)
+        return STATIC_API_KEY;
+    const token = await ensureToken();
+    if (!token.accessToken) {
+        throw new Error("Missing Azure access token. Ensure IMDS is available.");
+    }
+    return token.accessToken;
+}
+function isAuthError(error) {
+    const status = error?.status;
+    if (status === 401 || status === 403)
+        return true;
+    const message = error instanceof Error ? error.message : String(error || "");
+    return /unauthorized|forbidden|401|403/i.test(message);
+}
+function parseArgs(input) {
+    const tokens = input.trim().split(/\s+/).filter(Boolean);
+    if (tokens.length === 0)
+        return null;
+    const args = { prompt: "" };
+    const promptParts = [];
+    for (let i = 0; i < tokens.length; i += 1) {
+        const token = tokens[i];
+        if (token === "--size" && tokens[i + 1]) {
+            args.size = tokens[i + 1];
+            i += 1;
+            continue;
+        }
+        if (token === "--count" && tokens[i + 1]) {
+            const count = Number(tokens[i + 1]);
+            if (Number.isFinite(count))
+                args.count = Math.min(4, Math.max(1, Math.floor(count)));
+            i += 1;
+            continue;
+        }
+        if (token === "--quality" && tokens[i + 1]) {
+            const quality = tokens[i + 1];
+            if (["low", "medium", "high"].includes(quality))
+                args.quality = quality;
+            i += 1;
+            continue;
+        }
+        if (token === "--style" && tokens[i + 1]) {
+            const style = tokens[i + 1];
+            if (["natural", "vivid"].includes(style))
+                args.style = style;
+            i += 1;
+            continue;
+        }
+        promptParts.push(token);
+    }
+    args.prompt = promptParts.join(" ").trim();
+    if (!args.prompt)
+        return null;
+    return args;
+}
+async function generateImage(baseUrl, model, args, includeStyle) {
+    await getAccessToken();
+    const client = createAzureClient(baseUrl, {});
+    const payload = {
+        model,
+        prompt: args.prompt,
+        size: args.size || "1024x1024",
+        quality: args.quality || "high",
+        n: args.count || 1,
+    };
+    if (includeStyle && args.style)
+        payload.style = args.style;
+    const response = await client.images.generate(payload);
+    const images = response.data || [];
+    if (images.length === 0) {
+        throw new Error("Image API returned no images.");
+    }
+    return images;
+}
+function getAzureEndpoint(baseUrl) {
+    return baseUrl.replace(/\/openai\/v1\/?$/, "").replace(/\/openai\/?$/, "");
+}
+function createAzureClient(baseUrl, headers) {
+    return new OpenAI({
+        apiKey: async () => await getAccessToken(),
+        baseURL: baseUrl,
+        defaultHeaders: headers,
+        dangerouslyAllowBrowser: true,
+    });
+}
+function getFoundryImageEndpoint() {
+    if (FOUNDRY_IMAGE_BASE_URL)
+        return FOUNDRY_IMAGE_BASE_URL.replace(/\/+$/, "");
+    const base = getAzureEndpoint(FOUNDRY_BASE_URL);
+    try {
+        const url = new URL(base);
+        if (url.hostname.endsWith(".cognitiveservices.azure.com")) {
+            url.hostname = url.hostname.replace(".cognitiveservices.azure.com", ".services.ai.azure.com");
+            return url.toString().replace(/\/+$/, "");
+        }
+        if (url.hostname.endsWith(".openai.azure.com")) {
+            url.hostname = url.hostname.replace(".openai.azure.com", ".services.ai.azure.com");
+            return url.toString().replace(/\/+$/, "");
+        }
+        return base;
+    }
+    catch {
+        return base;
+    }
+}
+function parseSize(size) {
+    if (!size)
+        return { width: 1024, height: 1024 };
+    const match = size.toLowerCase().match(/(\d+)\s*x\s*(\d+)/);
+    if (!match)
+        return { width: 1024, height: 1024 };
+    const width = Number(match[1]);
+    const height = Number(match[2]);
+    if (!Number.isFinite(width) || !Number.isFinite(height))
+        return { width: 1024, height: 1024 };
+    return { width, height };
+}
+async function generateFoundryImage(model, args) {
+    const accessToken = await getAccessToken();
+    const endpoint = getFoundryImageEndpoint();
+    const url = `${endpoint}/providers/blackforestlabs/v1/${encodeURIComponent(model)}?api-version=${encodeURIComponent(FOUNDRY_IMAGE_API_VERSION)}`;
+    const size = parseSize(args.size);
+    const payload = {
+        prompt: args.prompt,
+        width: size.width,
+        height: size.height,
+        n: args.count || 1,
+        model,
+    };
+    const res = await fetch(url, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`${res.status} ${body}`.trim());
+    }
+    const data = (await res.json());
+    const images = data.data || [];
+    if (images.length === 0) {
+        throw new Error("Image API returned no images.");
+    }
+    return images;
+}
+function saveImages(prefix, prompt, images) {
+    const outDir = join("/workspace", "exports", "images");
+    mkdirSync(outDir, { recursive: true });
+    const lines = [];
+    images.forEach((image, idx) => {
+        const b64 = image.b64_json;
+        if (!b64)
+            return;
+        const buffer = Buffer.from(b64, "base64");
+        const filename = `${prefix}-${Date.now()}-${idx + 1}.png`;
+        const relPath = join("exports", "images", filename).replace(/\\/g, "/");
+        const absPath = join("/workspace", relPath);
+        writeFileSync(absPath, buffer);
+        const url = `/workspace/raw?path=${encodeURIComponent(relPath)}`;
+        lines.push(`![${prompt}](${url})`);
+        lines.push(`Download: ${url}`);
+    });
+    return lines;
+}
+const PICLAW_PORT = process.env.PICLAW_PORT || "3000";
+const PICLAW_BASE = `http://localhost:${PICLAW_PORT}`;
+const INTERNAL_SECRET = process.env.PICLAW_INTERNAL_SECRET || process.env.PICLAW_WEB_INTERNAL_SECRET || "";
+async function postPlaceholder(content, threadId) {
+    try {
+        const body = { content };
+        if (threadId)
+            body.thread_id = threadId;
+        const headers = { "Content-Type": "application/json" };
+        if (INTERNAL_SECRET)
+            headers["x-piclaw-internal-secret"] = INTERNAL_SECRET;
+        const res = await fetch(`${PICLAW_BASE}/internal/post`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(body),
+        });
+        if (!res.ok)
+            return null;
+        const data = (await res.json());
+        return data.id ?? null;
+    }
+    catch {
+        return null;
+    }
+}
+async function updatePost(id, content, threadId) {
+    try {
+        const body = { content };
+        if (threadId)
+            body.thread_id = threadId;
+        const headers = { "Content-Type": "application/json" };
+        if (INTERNAL_SECRET)
+            headers["x-piclaw-internal-secret"] = INTERNAL_SECRET;
+        const res = await fetch(`${PICLAW_BASE}/post/${id}`, {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify(body),
+        });
+        return res.ok;
+    }
+    catch {
+        return false;
+    }
+}
 function streamAzureOpenAIResponses(model, context, options) {
-    const stream = createAssistantMessageEventStream();
+    const stream = new AssistantMessageEventStream();
     (async () => {
         const output = {
             role: "assistant",
@@ -97,63 +577,235 @@ function streamAzureOpenAIResponses(model, context, options) {
             stopReason: "stop",
             timestamp: Date.now(),
         };
+        let requestSummary;
+        const loggedRef = { logged: false };
+        // Track the best error message extracted from stream events so we can
+        // override pi-ai's generic "Unknown error" with something actionable.
+        // Declared here so it's accessible in the catch block.
+        let streamErrorDetail = "";
         try {
-            const apiKey = options?.apiKey || "";
-            const headers = { ...(model.headers ?? {}) };
-            if (options?.headers)
+            const headers = { ...model.headers };
+            if (options?.headers) {
                 Object.assign(headers, options.headers);
-            // Use standard OpenAI() so the token goes in "Authorization: Bearer"
-            const client = new OpenAI({
-                apiKey,
-                baseURL: model.baseUrl,
-                dangerouslyAllowBrowser: true,
-                defaultHeaders: headers,
+            }
+            for (const key of Object.keys(headers)) {
+                const lower = key.toLowerCase();
+                if (lower === "authorization" || lower === "api-key") {
+                    delete headers[key];
+                }
+            }
+            // Pull any stored phase metadata from prior assistant messages, then apply it to the
+            // reconstructed ResponseInput so gpt-5.3-codex sees the same phases on replay.
+            const phaseById = collectMessagePhases(context.messages || []);
+            const rawMessages = convertResponsesMessages(model, context, TOOL_CALL_PROVIDERS);
+            applyPhasesToResponseInput(rawMessages, phaseById);
+            const toolCallTrim = applyToolCallLimit(rawMessages, {
+                limit: TOOL_CALL_LIMIT,
+                summaryMax: TOOL_CALL_SUMMARY_MAX,
+                outputChars: TOOL_CALL_OUTPUT_CHARS,
+                dedupeToolOutputSearch: DEDUPE_TOOL_OUTPUT_SEARCH,
             });
-            const messages = convertResponsesMessages(model, context, TOOL_CALL_PROVIDERS);
+            const messages = stripOrphanReasoningItems(toolCallTrim.messages);
+            const phaseReplaySummary = LOG_PHASES ? summarizeResponseInputPhases(messages) : null;
+            const messageTypeCounts = messages.reduce((acc, item) => {
+                const key = item?.type || item?.role || "unknown";
+                acc[key] = (acc[key] || 0) + 1;
+                return acc;
+            }, {});
+            const toolsEnabled = !DISABLE_TOOLS;
+            const reasoningEnabled = isReasoningEnabled(model);
+            requestSummary = {
+                model: model.id,
+                api: model.api,
+                provider: model.provider,
+                baseUrl: model.baseUrl,
+                messageCount: messages.length,
+                messageTypes: messageTypeCounts,
+                toolCount: toolsEnabled && context.tools ? context.tools.length : 0,
+                hasToolCalls: messages.some((item) => item?.type === "function_call"),
+                toolCallLimit: TOOL_CALL_LIMIT,
+                toolCallTotal: toolCallTrim.toolCallTotal,
+                toolCallKept: toolCallTrim.toolCallKept,
+                toolCallRemoved: toolCallTrim.toolCallRemoved,
+                toolCallDeduped: toolCallTrim.toolCallDeduped,
+                toolCallSummary: Boolean(toolCallTrim.summaryText),
+                reasoning: reasoningEnabled ? { effort: options?.reasoningEffort ?? null, summary: options?.reasoningSummary ?? null } : null,
+                toolsEnabled,
+                reasoningEnabled,
+                // Phase replay summary is included only when AOAI_LOG_PHASES=1; omit otherwise.
+                phaseReplay: phaseReplaySummary,
+                storedPhaseCount: phaseById.size,
+            };
+            // Post-conversion sanitization for Azure OpenAI compatibility.
+            // Azure requires: id/call_id max 64 chars, only [a-zA-Z0-9_-].
+            // Additionally, Azure pairs rs_ reasoning items with msg_ messages AND
+            // fc_ function_calls. Stripping reasoning items (to save tokens) makes
+            // any msg_/fc_ IDs orphans. Strip those IDs so the API cannot enforce
+            // the pairing validation (same approach as cross-provider replay).
+            for (const item of messages) {
+                if (item.id && typeof item.id === "string") {
+                    if (item.type === "function_call" && item.id.startsWith("fc_")) {
+                        item.id = undefined;
+                    }
+                    else if (item.type === "message" && item.id.startsWith("msg_")) {
+                        item.id = undefined;
+                    }
+                    else {
+                        const nextId = sanitizeOpenAIId(item.id);
+                        if (nextId)
+                            item.id = nextId;
+                    }
+                }
+                if (item.call_id && typeof item.call_id === "string") {
+                    const nextCallId = sanitizeOpenAIId(item.call_id);
+                    if (nextCallId)
+                        item.call_id = nextCallId;
+                }
+            }
             const params = {
                 model: model.id,
                 input: messages,
                 stream: true,
-                prompt_cache_key: options?.sessionId,
-                text: { format: { type: "text" }, verbosity: "medium" },
             };
-            if (options?.maxTokens)
-                params.max_output_tokens = options.maxTokens;
-            if (options?.temperature !== undefined)
-                params.temperature = options.temperature;
-            if (context.tools)
+            // Only include OpenAI-specific params for models that support them
+            if (reasoningEnabled) {
+                params.prompt_cache_key = options?.sessionId;
+                params.text = { format: { type: "text" }, verbosity: "medium" };
+            }
+            if (options?.maxTokens) {
+                params.max_output_tokens = options?.maxTokens;
+            }
+            if (options?.temperature !== undefined) {
+                params.temperature = options?.temperature;
+            }
+            if (!DISABLE_TOOLS && context.tools) {
                 params.tools = convertResponsesTools(context.tools);
-            if (model.reasoning && (options?.reasoningEffort || options?.reasoningSummary)) {
-                params.reasoning = {
-                    effort: options?.reasoningEffort || "medium",
-                    summary: options?.reasoningSummary || "auto",
-                };
-                params.include = ["reasoning.encrypted_content"];
             }
-            console.log(`[azure-openai] Creating stream for ${model.id}, baseUrl=${model.baseUrl}, apiKey=${(apiKey || "").slice(0, 8)}...`);
-            const openaiStream = await client.responses.create(params, options?.signal ? { signal: options.signal } : undefined);
-            console.log(`[azure-openai] Stream created, type=${typeof openaiStream}, constructor=${openaiStream?.constructor?.name}`);
-            stream.push({ type: "start", partial: output });
-            await processResponsesStream(openaiStream, output, stream, model);
-            console.log(`[azure-openai] processResponsesStream done. content=${output.content.length} blocks, stopReason=${output.stopReason}`);
-            for (const block of output.content) {
-                console.log(`[azure-openai]   block: type=${block.type}, text=${(block.text || "").length} chars`);
+            else if (DISABLE_TOOLS) {
+                params.tool_choice = "none";
             }
-            if (options?.signal?.aborted)
-                throw new Error("Request was aborted");
-            if (output.stopReason === "aborted" || output.stopReason === "error") {
-                throw new Error(`Stream error: stopReason=${output.stopReason}, errorMessage=${output.errorMessage}`);
+            if (reasoningEnabled) {
+                if (options?.reasoningEffort || options?.reasoningSummary) {
+                    // Azure OpenAI only supports a minimal reasoning payload.
+                    // Unsupported fields like `summary` and `include` cause silent
+                    // failures (response.failed with error: null). Some models
+                    // (e.g. gpt-5.3-chat) also restrict effort to "medium" only.
+                    // We send effort but omit summary and include for Azure.
+                    params.reasoning = {
+                        effort: options?.reasoningEffort || "medium",
+                    };
+                }
+                else if (String(model.name).toLowerCase().startsWith("gpt-5")) {
+                    messages.push({
+                        role: "developer",
+                        content: [
+                            {
+                                type: "input_text",
+                                text: "# Juice: 0 !important",
+                            },
+                        ],
+                    });
+                }
             }
-            stream.push({ type: "done", reason: output.stopReason, message: output });
-            stream.end();
+            const createStream = async () => {
+                const client = createAzureClient(model.baseUrl, headers);
+                return client.responses.create(params, options?.signal ? { signal: options.signal } : undefined);
+            };
+            await getAccessToken();
+            const MAX_RETRIES = 2;
+            let streamStarted = false;
+            for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+                if (options?.signal?.aborted)
+                    throw new Error("Request was aborted");
+                // Reset per-attempt state
+                streamErrorDetail = "";
+                output.content = [];
+                output.stopReason = "stop";
+                output.errorMessage = undefined;
+                output.reasoning = undefined;
+                let openaiStream;
+                try {
+                    openaiStream = await createStream();
+                }
+                catch (error) {
+                    if (!isAuthError(error))
+                        throw error;
+                    if (!STATIC_API_KEY)
+                        await ensureToken(true);
+                    openaiStream = await createStream();
+                }
+                const outputPhases = new Map();
+                const loggingStream = (async function* () {
+                    for await (const event of openaiStream) {
+                        if (event?.type === "response.output_item.added" || event?.type === "response.output_item.done") {
+                            const item = event.item;
+                            const phase = item?.phase;
+                            if (item?.type === "message" && item?.id && typeof phase === "string") {
+                                outputPhases.set(item.id, phase);
+                            }
+                        }
+                        if (event?.type === "response.failed") {
+                            const resp = event.response;
+                            const errObj = resp?.error;
+                            if (errObj && typeof errObj === "object") {
+                                streamErrorDetail = `${errObj.code || "error"}: ${errObj.message || JSON.stringify(errObj)}`;
+                            }
+                            else if (resp?.status) {
+                                streamErrorDetail = `Azure response failed (status: ${resp.status})`;
+                            }
+                            else {
+                                streamErrorDetail = "Azure response failed (no error details returned)";
+                            }
+                        }
+                        else if (event?.type === "error") {
+                            const { code, message } = event;
+                            streamErrorDetail = `${code || "stream_error"}: ${message || "unknown"}`;
+                        }
+                        logStreamFailureEvent(event, requestSummary, loggedRef);
+                        yield event;
+                    }
+                })();
+                if (!streamStarted) {
+                    stream.push({ type: "start", partial: output });
+                    streamStarted = true;
+                }
+                await processResponsesStream(loggingStream, output, stream, model);
+                applyPhasesToOutputMessage(output, outputPhases);
+                if (LOG_PHASES && outputPhases.size > 0) {
+                    console.error("[azure-openai] Output phases:", JSON.stringify({ total: outputPhases.size, phases: Array.from(outputPhases.entries()).slice(0, 6) }));
+                }
+                if (options?.signal?.aborted) {
+                    throw new Error("Request was aborted");
+                }
+                // Success — break out of retry loop
+                if (output.stopReason !== "aborted" && output.stopReason !== "error") {
+                    stream.push({ type: "done", reason: output.stopReason, message: output });
+                    stream.end();
+                    return;
+                }
+                // Determine if error is retryable (NOT a client-side 4xx error)
+                const detail = streamErrorDetail || output.errorMessage || "unknown error";
+                const isClientError = /^(400|401|403|404|422)\b/.test(detail) ||
+                    detail.includes("invalid_request_error");
+                if (isClientError || attempt >= MAX_RETRIES) {
+                    throw new Error(`Azure request failed: ${detail}`);
+                }
+                const delayMs = (attempt + 1) * 2000;
+                console.error(`[azure-openai] Attempt ${attempt + 1}/${MAX_RETRIES + 1} failed (${detail}), retrying in ${delayMs}ms...`);
+                loggedRef.logged = false;
+                await new Promise((r) => setTimeout(r, delayMs));
+            }
+            // Should not reach here, but just in case
+            throw new Error("Azure request failed after retries");
         }
         catch (error) {
-            const errDetails = error instanceof Error ? { message: error.message, name: error.name, status: error.status, code: error.code, body: error.body, cause: error.cause?.message } : error;
-            console.error(`[azure-openai] Stream error for ${model.id}:`, JSON.stringify(errDetails, null, 2));
+            logAzureError(model.id, error, requestSummary, loggedRef);
             for (const block of output.content)
                 delete block.index;
             output.stopReason = options?.signal?.aborted ? "aborted" : "error";
-            output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+            // Prefer the stream-level error detail over the generic thrown message.
+            const rawMsg = error instanceof Error ? error.message : JSON.stringify(error);
+            output.errorMessage = streamErrorDetail || rawMsg;
             stream.push({ type: "error", reason: output.stopReason, error: output });
             stream.end();
         }
@@ -161,56 +813,221 @@ function streamAzureOpenAIResponses(model, context, options) {
     return stream;
 }
 function streamSimpleAzureOpenAIResponses(model, context, options) {
-    const apiKey = options?.apiKey;
-    if (!apiKey)
-        throw new Error(`No API key for provider: ${model.provider}`);
-    const base = buildBaseOptions(model, options, apiKey);
-    const reasoningEffort = supportsXhigh(model)
-        ? options?.reasoning
-        : clampReasoning(options?.reasoning);
-    return streamAzureOpenAIResponses(model, context, { ...base, reasoningEffort });
+    const base = buildBaseOptions(model, options, options?.apiKey);
+    const reasoningEffort = supportsXhigh(model) ? options?.reasoning : clampReasoning(options?.reasoning);
+    return streamAzureOpenAIResponses(model, context, {
+        ...base,
+        reasoningEffort,
+    });
 }
-function registerProvider(pi, token) {
-    pi.registerProvider(PROVIDER, {
+function streamSimpleFoundryOpenAICompletions(model, context, options) {
+    // Foundry uses the standard OpenAI Completions transport, but we keep a custom API name
+    // so this extension doesn't override global handlers. Force the api back to openai-completions
+    // when calling the built-in stream implementation.
+    const overrideModel = model.api === "openai-completions" ? model : { ...model, api: "openai-completions" };
+    return streamSimpleOpenAICompletions(overrideModel, context, options);
+}
+export function registerAzureProviders(register, token) {
+    const openaiModels = MODEL_IDS.map((id, idx) => {
+        const spec = MODEL_SPECS[id] || DEFAULT_AZURE_SPEC;
+        return {
+            id,
+            name: MODEL_NAMES[idx] || (id === MODEL_ID ? MODEL_NAME : `Azure ${id}`),
+            api: AZURE_API,
+            reasoning: spec.reasoning ?? true,
+            input: ["text"],
+            contextWindow: spec.contextWindow ?? 200000,
+            maxTokens: spec.maxTokens ?? 64000,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        };
+    });
+    register(PROVIDER, {
         baseUrl: BASE_URL,
-        api: "azure-openai",
+        api: AZURE_API,
         apiKey: token,
         streamSimple: streamSimpleAzureOpenAIResponses,
-        models: MODELS.map((m) => ({
-            id: m.id,
-            name: m.name,
-            reasoning: m.reasoning,
-            input: ["text"],
-            contextWindow: m.contextWindow,
-            maxTokens: m.maxTokens,
-            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        })),
+        models: openaiModels,
     });
-    console.log(`[azure-openai] Provider registered: ${MODELS.map((m) => m.id).join(", ")}`);
+    const foundryModels = FOUNDRY_TEXT_MODEL_IDS.map((id, idx) => {
+        const spec = MODEL_SPECS[id] || DEFAULT_FOUNDRY_SPEC;
+        return {
+            id,
+            name: FOUNDRY_MODEL_NAMES[idx] || `Azure Foundry ${id}`,
+            api: FOUNDRY_API,
+            reasoning: spec.reasoning ?? false,
+            input: ["text"],
+            contextWindow: spec.contextWindow ?? 200000,
+            maxTokens: spec.maxTokens ?? 64000,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        };
+    });
+    if (foundryModels.length > 0) {
+        register(FOUNDRY_PROVIDER, {
+            baseUrl: FOUNDRY_BASE_URL,
+            api: FOUNDRY_API,
+            apiKey: token,
+            streamSimple: streamSimpleFoundryOpenAICompletions,
+            models: foundryModels,
+        });
+    }
 }
-export const azureOpenAI = async (pi) => {
+function registerProvider(pi, token) {
+    registerAzureProviders((name, config) => pi.registerProvider(name, config), token);
+}
+export default function (pi) {
+    logExtensionLoaded();
+    pi.on("context", async (event, ctx) => {
+        const currentModel = ctx.model;
+        if (!currentModel)
+            return;
+        const idMap = new Map();
+        let modified = false;
+        const messages = event.messages.map((message) => {
+            if (message.role === "assistant") {
+                const assistant = message;
+                if (isSameModel(assistant, currentModel))
+                    return message;
+                let contentChanged = false;
+                const content = assistant.content.map((block) => {
+                    if (block.type !== "toolCall")
+                        return block;
+                    const toolCall = block;
+                    const { id, changed } = stripToolCallItemId(toolCall.id);
+                    if (!changed)
+                        return toolCall;
+                    idMap.set(toolCall.id, id);
+                    contentChanged = true;
+                    return { ...toolCall, id };
+                });
+                if (!contentChanged)
+                    return message;
+                modified = true;
+                return { ...assistant, content };
+            }
+            if (message.role === "toolResult") {
+                const toolResult = message;
+                const mapped = idMap.get(toolResult.toolCallId);
+                if (!mapped || mapped === toolResult.toolCallId)
+                    return message;
+                modified = true;
+                return { ...toolResult, toolCallId: mapped };
+            }
+            return message;
+        });
+        if (!modified)
+            return;
+        return { messages };
+    });
+    pi.registerCommand("image", {
+        description: "Generate an image with Azure OpenAI",
+        handler: async (input, ctx) => {
+            const parsed = parseArgs(input || "");
+            if (!parsed) {
+                pi.sendMessage({
+                    customType: "image",
+                    content: "Usage: /image <prompt> [--size 1024x1024] [--count 1] [--quality low|medium|high] [--style natural|vivid]",
+                    display: true,
+                });
+                return;
+            }
+            const statusText = `⏳ Generating image… (${AOAI_IMAGE_MODEL_ID})`;
+            const placeholderId = await postPlaceholder(statusText);
+            void (async () => {
+                try {
+                    const images = await generateImage(BASE_URL, AOAI_IMAGE_MODEL_ID, parsed, true);
+                    const lines = saveImages("azure-image", parsed.prompt, images);
+                    const caption = `Azure image (${AOAI_IMAGE_MODEL_ID}) — ${parsed.prompt}`;
+                    const message = [caption, "", ...lines].join("\n");
+                    if (placeholderId) {
+                        await updatePost(placeholderId, message);
+                    }
+                    else {
+                        pi.sendMessage({ customType: "image", content: message, display: true });
+                    }
+                }
+                catch (error) {
+                    const errMsg = error instanceof Error ? error.message : String(error);
+                    const failContent = `Image generation failed: ${errMsg}`;
+                    if (placeholderId) {
+                        await updatePost(placeholderId, failContent);
+                    }
+                    else {
+                        pi.sendMessage({ customType: "image", content: failContent, display: true });
+                    }
+                }
+            })();
+        },
+    });
+    pi.registerCommand("flux", {
+        description: "Generate an image with Azure Foundry (FLUX.2-pro)",
+        handler: async (input, ctx) => {
+            const parsed = parseArgs(input || "");
+            if (!parsed) {
+                pi.sendMessage({
+                    customType: "flux",
+                    content: "Usage: /flux <prompt> [--size 1024x1024] [--count 1] [--quality low|medium|high]",
+                    display: true,
+                });
+                return;
+            }
+            const statusText = `⏳ Generating Foundry image… (${FOUNDRY_IMAGE_MODEL_ID})`;
+            const placeholderId = await postPlaceholder(statusText);
+            void (async () => {
+                try {
+                    const images = await generateFoundryImage(FOUNDRY_IMAGE_MODEL_ID, parsed);
+                    const lines = saveImages("foundry-image", parsed.prompt, images);
+                    const caption = `Foundry image (${FOUNDRY_IMAGE_MODEL_ID}) — ${parsed.prompt}`;
+                    const message = [caption, "", ...lines].join("\n");
+                    if (placeholderId) {
+                        await updatePost(placeholderId, message);
+                    }
+                    else {
+                        pi.sendMessage({ customType: "flux", content: message, display: true });
+                    }
+                }
+                catch (error) {
+                    const errMsg = error instanceof Error ? error.message : String(error);
+                    const failContent = `Foundry image generation failed: ${errMsg}`;
+                    if (placeholderId) {
+                        await updatePost(placeholderId, failContent);
+                    }
+                    else {
+                        pi.sendMessage({ customType: "flux", content: failContent, display: true });
+                    }
+                }
+            })();
+        },
+    });
     let timer = null;
-    const refresh = async () => {
-        if (timer) {
+    const scheduleNext = (expiresOnEpoch) => {
+        if (timer)
             clearTimeout(timer);
-            timer = null;
+        const now = Math.floor(Date.now() / 1000);
+        const delaySeconds = expiresOnEpoch
+            ? Math.max(60, expiresOnEpoch - now - SKEW_SECONDS)
+            : 60;
+        timer = setTimeout(() => void refresh(), delaySeconds * 1000);
+    };
+    const refresh = async () => {
+        logExtensionLoaded();
+        // In proxy/api-key mode, register once with the static key and don't
+        // schedule periodic refreshes — the remote proxy handles MI tokens.
+        if (STATIC_API_KEY) {
+            registerProvider(pi, STATIC_API_KEY);
+            return;
         }
         const cache = await ensureToken();
         if (cache.accessToken) {
             registerProvider(pi, cache.accessToken);
         }
-        else {
-            console.error("[azure-openai] No token — check managed identity has 'Cognitive Services OpenAI User' role.");
-        }
-        const delayMs = cache.expiresOnEpoch
-            ? Math.max(60, cache.expiresOnEpoch - Math.floor(Date.now() / 1000) - SKEW_SECONDS) * 1000
-            : 60_000;
-        timer = setTimeout(() => void refresh(), delayMs);
+        scheduleNext(cache.expiresOnEpoch);
     };
-    pi.on("session_start", () => void refresh());
-    pi.on("session_shutdown", () => { if (timer) {
-        clearTimeout(timer);
-        timer = null;
-    } });
-    await refresh();
-};
+    pi.on("session_start", () => {
+        void refresh();
+    });
+    pi.on("session_shutdown", () => {
+        if (timer)
+            clearTimeout(timer);
+    });
+    void refresh();
+}

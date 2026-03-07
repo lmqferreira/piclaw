@@ -19,7 +19,7 @@
  *   import anything from this module tree.
  */
 import { html, render, useState, useEffect, useCallback, useRef } from './vendor/preact-htm.js';
-import { searchPosts, deletePost, getAgents, getAgentThought, setAgentThoughtVisibility, getAgentStatus, getAgentContext, getWorkspaceFile, updateWorkspaceFile } from './api.js';
+import { searchPosts, deletePost, getAgents, getAgentThought, setAgentThoughtVisibility, getAgentStatus, getAgentContext, getAgentModels, getWorkspaceFile, updateWorkspaceFile } from './api.js';
 import { ComposeBox } from './components/compose-box.js';
 import { AgentRequestModal, AgentStatus, ConnectionStatus } from './components/status.js';
 import { Timeline } from './components/timeline.js';
@@ -152,6 +152,8 @@ function App() {
     } = useAgentState();
     const [agents, setAgents] = useState({});
     const [activeModel, setActiveModel] = useState(null);
+    const [activeThinkingLevel, setActiveThinkingLevel] = useState(null);
+    const [supportsThinking, setSupportsThinking] = useState(false);
     const [contextUsage, setContextUsage] = useState(null);
     const {
         notificationsEnabled,
@@ -165,6 +167,7 @@ function App() {
     const [editorSaving, setEditorSaving] = useState(false);
     const [editorSaveError, setEditorSaveError] = useState(null);
     const [editorSavedAt, setEditorSavedAt] = useState(null);
+    const [editorDirty, setEditorDirty] = useState(false);
     const [userProfile, setUserProfile] = useState({ name: 'You', avatar_url: null, avatar_background: null });
     const hasConnectedOnceRef = useRef(false);
     const wasAgentActiveRef = useRef(false); // tracks active→idle transition for timeline refresh
@@ -862,6 +865,22 @@ function App() {
         });
     }, []);
 
+    const applyModelState = useCallback((payload) => {
+        if (!payload || typeof payload !== 'object') return;
+        const nextModel = payload.model ?? payload.current;
+        if (nextModel !== undefined) setActiveModel(nextModel);
+        if (payload.thinking_level !== undefined) setActiveThinkingLevel(payload.thinking_level ?? null);
+        if (payload.supports_thinking !== undefined) setSupportsThinking(Boolean(payload.supports_thinking));
+    }, []);
+
+    const refreshModelState = useCallback(() => {
+        getAgentModels()
+            .then((payload) => {
+                if (payload) applyModelState(payload);
+            })
+            .catch(() => {});
+    }, [applyModelState]);
+
     const handleSseEvent = useCallback((eventType, data) => {
         const turnId = data?.turn_id;
 
@@ -906,6 +925,7 @@ function App() {
                 .catch((err) => {
                     console.warn('Failed to fetch agent status:', err);
                 });
+            refreshModelState();
             return;
         }
 
@@ -925,11 +945,17 @@ function App() {
                 }
                 wasAgentActiveRef.current = false;
                 clearAgentRunState();
-                setAgentStatus(null);
                 setAgentDraft({ text: '', totalLines: 0 });
                 setAgentPlan('');
                 setAgentThought({ text: '', totalLines: 0 });
                 setPendingRequest(null);
+                if (data.type === 'error') {
+                    // Show error status briefly so the user sees what failed
+                    setAgentStatus({ type: 'error', title: data.title || 'Agent error' });
+                    setTimeout(() => setAgentStatus(null), 8000);
+                } else {
+                    setAgentStatus(null);
+                }
             } else {
                 if (turnId) setActiveTurn(turnId);
                 noteAgentActivity({ running: true, clearSilence: true });
@@ -977,6 +1003,11 @@ function App() {
                     totalLines: estimatePreviewLines(fullText),
                     fullText,
                 }));
+            } else {
+                // Collapsed: update preview text so the panel shows content, not empty
+                const fullText = draftBufferRef.current;
+                const totalLines = estimatePreviewLines(fullText);
+                setAgentDraft({ text: fullText, totalLines });
             }
             return;
         }
@@ -1075,7 +1106,11 @@ function App() {
         }
 
         if (eventType === 'model_changed') {
-            if (data?.model) setActiveModel(data.model);
+            if (data?.model !== undefined) setActiveModel(data.model);
+            if (data?.thinking_level !== undefined) setActiveThinkingLevel(data.thinking_level ?? null);
+            if (data?.supports_thinking !== undefined) setSupportsThinking(Boolean(data.supports_thinking));
+            // Refresh context usage — the context window size changes with the model
+            getAgentContext().then((ctx) => { if (ctx) setContextUsage(ctx); }).catch(() => {});
             return;
         }
 
@@ -1119,7 +1154,7 @@ function App() {
                 }
             }
         }
-    }, [clearAgentRunState, clearLastActivityFlag, noteAgentActivity, notifyForFinalResponse, preserveTimelineScrollTop, refreshTimeline, removeStalledPost, setActiveTurn, showLastActivity, updateAgentProfile, updateUserProfile]);
+    }, [clearAgentRunState, clearLastActivityFlag, noteAgentActivity, notifyForFinalResponse, preserveTimelineScrollTop, refreshTimeline, removeStalledPost, setActiveTurn, showLastActivity, updateAgentProfile, updateUserProfile, refreshModelState]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -1188,39 +1223,107 @@ function App() {
 
     const EDITOR_MAX_BYTES = 256 * 1024;
 
+    const findNodeByPath = (node, targetPath) => {
+        if (!node) return null;
+        if (node.path === targetPath) return node;
+        const children = Array.isArray(node.children) ? node.children : null;
+        if (!children) return null;
+        for (const child of children) {
+            const found = findNodeByPath(child, targetPath);
+            if (found) return found;
+        }
+        return null;
+    };
+
+    const applyEditorPayload = useCallback((path, data) => {
+        if (data?.error) {
+            setEditorState({ open: true, path, content: '', loading: false, error: data.error, mtime: null, size: null });
+            return false;
+        }
+        if (data?.kind && data.kind !== 'text') {
+            setEditorState({ open: true, path, content: '', loading: false, error: 'File is not editable', mtime: data.mtime, size: data.size });
+            return false;
+        }
+        setEditorState({
+            open: true,
+            path,
+            content: data?.text || '',
+            loading: false,
+            error: null,
+            mtime: data?.mtime || null,
+            size: data?.size || null,
+        });
+        return true;
+    }, []);
+
+    const loadEditorFile = useCallback(async (path) => {
+        const data = await getWorkspaceFile(path, EDITOR_MAX_BYTES, 'edit');
+        applyEditorPayload(path, data);
+    }, [applyEditorPayload]);
+
+    const reloadEditorFromDisk = useCallback(async (path) => {
+        setEditorState((prev) => ({
+            ...prev,
+            loading: true,
+            error: null,
+        }));
+        let data;
+        try {
+            data = await getWorkspaceFile(path, EDITOR_MAX_BYTES, 'edit');
+        } catch (err) {
+            setEditorState((prev) => ({
+                ...prev,
+                loading: false,
+                error: err.message || 'Failed to reload file',
+            }));
+            return;
+        }
+        if (data?.error || (data?.kind && data.kind !== 'text')) {
+            applyEditorPayload(path, data);
+            return;
+        }
+        const nextMtime = data?.mtime || null;
+        if (nextMtime && editorState.mtime && nextMtime === editorState.mtime) {
+            setEditorState((prev) => ({
+                ...prev,
+                loading: false,
+            }));
+            return;
+        }
+        if (editorDirty) {
+            const confirmReload = window.confirm('This file changed on disk. Reload and discard local changes?');
+            if (!confirmReload) {
+                setEditorState((prev) => ({
+                    ...prev,
+                    loading: false,
+                }));
+                return;
+            }
+        }
+        setEditorSaveError(null);
+        setEditorSavedAt(null);
+        setEditorDirty(false);
+        applyEditorPayload(path, data);
+    }, [applyEditorPayload, editorDirty, editorState.mtime]);
+
     const openEditor = useCallback(async (path) => {
         if (!path) return;
         setEditorSaveError(null);
         setEditorSavedAt(null);
+        setEditorDirty(false);
         setEditorState({ open: true, path, content: '', loading: true, error: null, mtime: null, size: null });
         try {
-            const data = await getWorkspaceFile(path, EDITOR_MAX_BYTES, 'edit');
-            if (data?.error) {
-                setEditorState({ open: true, path, content: '', loading: false, error: data.error, mtime: null, size: null });
-                return;
-            }
-            if (data?.kind && data.kind !== 'text') {
-                setEditorState({ open: true, path, content: '', loading: false, error: 'File is not editable', mtime: data.mtime, size: data.size });
-                return;
-            }
-            setEditorState({
-                open: true,
-                path,
-                content: data?.text || '',
-                loading: false,
-                error: null,
-                mtime: data?.mtime || null,
-                size: data?.size || null,
-            });
+            await loadEditorFile(path);
         } catch (err) {
             setEditorState({ open: true, path, content: '', loading: false, error: err.message || 'Failed to load file', mtime: null, size: null });
         }
-    }, []);
+    }, [loadEditorFile]);
 
     const closeEditor = useCallback(() => {
         setEditorState({ open: false, path: null, content: '', loading: false, error: null, mtime: null, size: null });
         setEditorSaveError(null);
         setEditorSavedAt(null);
+        setEditorDirty(false);
     }, []);
 
     const handleEditorSave = useCallback(async (value) => {
@@ -1243,12 +1346,68 @@ function App() {
         }
     }, [editorState?.path, editorSaving]);
 
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const handleWorkspaceUpdate = (event) => {
+            if (!editorState.open || !editorState.path || editorState.loading) return;
+            const updates = event?.detail?.updates || [];
+            if (!Array.isArray(updates) || updates.length === 0) return;
+            const targetPath = editorState.path;
+            let nextMtime = null;
+            let sawMatch = false;
+            for (const update of updates) {
+                if (!update?.root) continue;
+                const updatePath = update.path || '.';
+                const matches = updatePath === '.' || targetPath === updatePath || targetPath.startsWith(`${updatePath}/`);
+                if (!matches) continue;
+                sawMatch = true;
+                const node = findNodeByPath(update.root, targetPath);
+                if (node && node.type === 'file') {
+                    nextMtime = node.mtime || null;
+                    break;
+                }
+            }
+            if (!sawMatch) return;
+            if (nextMtime && editorState.mtime && nextMtime === editorState.mtime) return;
+            if (!nextMtime) {
+                reloadEditorFromDisk(targetPath);
+                return;
+            }
+            if (editorDirty) {
+                const confirmReload = window.confirm('This file changed on disk. Reload and discard local changes?');
+                if (!confirmReload) return;
+            }
+            setEditorSaveError(null);
+            setEditorSavedAt(null);
+            setEditorDirty(false);
+            setEditorState((prev) => ({
+                ...prev,
+                loading: true,
+                error: null,
+            }));
+            loadEditorFile(targetPath).catch((err) => {
+                setEditorState((prev) => ({
+                    ...prev,
+                    loading: false,
+                    error: err.message || 'Failed to reload file',
+                }));
+            });
+        };
+        window.addEventListener('workspace-update', handleWorkspaceUpdate);
+        return () => window.removeEventListener('workspace-update', handleWorkspaceUpdate);
+    }, [editorState.open, editorState.path, editorState.mtime, editorState.loading, editorDirty, loadEditorFile, reloadEditorFromDisk]);
+
     const steerQueued = Boolean(steerQueuedTurnId && (steerQueuedTurnId === (agentStatus?.turn_id || currentTurnId)));
     const editorOpen = Boolean(editorState.open);
 
     return html`
         <div class=${`app-shell${workspaceOpen ? '' : ' workspace-collapsed'}${editorOpen ? ' editor-open' : ''}`} ref=${appShellRef}>
-            <${WorkspaceExplorer} onFileSelect=${addFileRef} visible=${workspaceOpen} onOpenEditor=${openEditor} />
+            <${WorkspaceExplorer}
+                onFileSelect=${addFileRef}
+                visible=${workspaceOpen}
+                active=${workspaceOpen || editorOpen}
+                onOpenEditor=${openEditor}
+            />
             <button
                 class=${`workspace-toggle-tab${workspaceOpen ? ' open' : ' closed'}`}
                 onClick=${toggleWorkspace}
@@ -1271,6 +1430,7 @@ function App() {
                     savedAt=${editorSavedAt}
                     onSave=${handleEditorSave}
                     onClose=${closeEditor}
+                    onDirtyChange=${setEditorDirty}
                 />
                 <div class="editor-splitter" onMouseDown=${handleEditorSplitterMouseDown} onTouchStart=${handleEditorSplitterTouchStart}></div>
             `}
@@ -1320,11 +1480,14 @@ function App() {
                     onRemoveFileRef=${removeFileRef}
                     onClearFileRefs=${clearFileRefs}
                     activeModel=${activeModel}
+                    thinkingLevel=${activeThinkingLevel}
+                    supportsThinking=${supportsThinking}
                     contextUsage=${contextUsage}
                     notificationsEnabled=${notificationsEnabled}
                     notificationPermission=${notificationPermission}
                     onToggleNotifications=${handleToggleNotifications}
                     onModelChange=${setActiveModel}
+                    onModelStateChange=${applyModelState}
                 />
                 <${ConnectionStatus} status=${connectionStatus} />
                 <${AgentRequestModal}

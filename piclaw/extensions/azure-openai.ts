@@ -56,6 +56,8 @@ const MODEL_NAMES = (process.env.AOAI_MODEL_NAMES || "")
   .map((entry) => entry.trim());
 const BASE_URL = process.env.AOAI_BASE_URL || "https://{RESOURCE_NAME}.openai.azure.com/openai/v1";
 const AOAI_IMAGE_MODEL_ID = process.env.AOAI_IMAGE_MODEL_ID || "gpt-image-1-5";
+// API version for direct Azure OpenAI access. The proxy ignores this, but it must
+// be settable locally so the extension works against Azure endpoints without a proxy.
 const AOAI_API_VERSION = process.env.AOAI_API_VERSION || process.env.OPENAI_API_VERSION || "2024-02-15-preview";
 const FOUNDRY_BASE_URL =
   process.env.FOUNDRY_BASE_URL || "https://{FOUNDRY_RESOURCE}.cognitiveservices.azure.com/openai/v1";
@@ -67,8 +69,11 @@ const FOUNDRY_MODEL_NAMES = (process.env.FOUNDRY_MODEL_NAMES || "")
   .split(",")
   .map((entry) => entry.trim());
 const FOUNDRY_IMAGE_MODEL_ID = process.env.FOUNDRY_IMAGE_MODEL_ID || "flux-2-pro";
+// API version constants — used for direct Azure/Foundry access (non-proxy mode).
+// Even when running through a proxy, these env vars should be settable locally
+// so the extension can be pointed at Azure endpoints directly without code changes.
 const FOUNDRY_API_VERSION = process.env.FOUNDRY_API_VERSION || AOAI_API_VERSION;
-const FOUNDRY_IMAGE_API_VERSION = process.env.FOUNDRY_IMAGE_API_VERSION || "preview";
+const FOUNDRY_IMAGE_API_VERSION = process.env.FOUNDRY_IMAGE_API_VERSION || FOUNDRY_API_VERSION;
 const FOUNDRY_IMAGE_BASE_URL = process.env.FOUNDRY_IMAGE_BASE_URL || "";
 const FOUNDRY_TEXT_MODEL_IDS = FOUNDRY_MODEL_IDS.filter(
   (id) => id !== FOUNDRY_IMAGE_MODEL_ID && !id.startsWith("flux-")
@@ -148,17 +153,6 @@ function sanitizeOpenAIId(value?: string): string | undefined {
   let next = value.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+$/, "");
   if (next.length > 64) next = next.slice(0, 64).replace(/_+$/, "");
   return next;
-}
-
-function sanitizeToolCallId(value?: string): string | undefined {
-  if (!value) return value;
-  if (!value.includes("|")) return sanitizeOpenAIId(value);
-  const [callId, itemId, ...rest] = value.split("|");
-  const sanitizedCallId = sanitizeOpenAIId(callId) || callId;
-  const sanitizedItemId = sanitizeOpenAIId(itemId) || itemId;
-  const tail = rest.length ? `|${rest.join("|")}` : "";
-  if (sanitizedItemId) return `${sanitizedCallId}|${sanitizedItemId}${tail}`;
-  return sanitizedCallId;
 }
 
 function logStreamFailureEvent(event: any, requestSummary?: Record<string, unknown>, loggedRef?: { logged: boolean }): void {
@@ -241,19 +235,12 @@ function applyPhasesToResponseInput(items: Array<any>, phases: Map<string, strin
 }
 
 function stripOrphanReasoningItems(items: Array<any>): Array<any> {
+  // Azure pairs reasoning items (rs_) with both messages (msg_) and function_calls (fc_).
+  // We strip msg_ and fc_ IDs to avoid pairing validation errors, which makes ALL reasoning
+  // items orphans. Strip them entirely — the model generates fresh reasoning each turn and
+  // the encrypted_content blobs would just waste context tokens.
   if (!Array.isArray(items) || items.length === 0) return items;
-  const cleaned: Array<any> = [];
-  for (let i = 0; i < items.length; i += 1) {
-    const item = items[i];
-    if (item?.type === "reasoning") {
-      const next = items[i + 1];
-      if (!next || next.type !== "message") {
-        continue;
-      }
-    }
-    cleaned.push(item);
-  }
-  return cleaned;
+  return items.filter((item) => item?.type !== "reasoning");
 }
 
 // After streaming completes, copy the phase from Responses output items onto our stored text blocks
@@ -695,12 +682,15 @@ function streamAzureOpenAIResponses(model: any, context: any, options: any) {
 
       // Post-conversion sanitization for Azure OpenAI compatibility.
       // Azure requires: id/call_id max 64 chars, only [a-zA-Z0-9_-].
-      // Additionally, Azure pairs fc_ IDs with rs_ reasoning items and rejects
-      // function_calls whose reasoning partner is missing. Stripping all fc_ IDs
-      // bypasses this validation entirely (same as cross-provider replay).
+      // Additionally, Azure pairs rs_ reasoning items with msg_ messages AND
+      // fc_ function_calls. Stripping reasoning items (to save tokens) makes
+      // any msg_/fc_ IDs orphans. Strip those IDs so the API cannot enforce
+      // the pairing validation (same approach as cross-provider replay).
       for (const item of messages) {
         if (item.id && typeof item.id === "string") {
           if ((item as any).type === "function_call" && (item.id as string).startsWith("fc_")) {
+            (item as any).id = undefined;
+          } else if ((item as any).type === "message" && (item.id as string).startsWith("msg_")) {
             (item as any).id = undefined;
           } else {
             const nextId = sanitizeOpenAIId(item.id);
@@ -768,71 +758,98 @@ function streamAzureOpenAIResponses(model: any, context: any, options: any) {
 
       await getAccessToken();
 
-      let openaiStream;
-      try {
-        openaiStream = await createStream();
-      } catch (error) {
-        if (!isAuthError(error)) throw error;
-        // Force-refresh MI token on auth errors (no-op in proxy/api-key mode)
-        if (!STATIC_API_KEY) await ensureToken(true);
-        openaiStream = await createStream();
-      }
+      const MAX_RETRIES = 2;
+      let streamStarted = false;
 
-      // Capture `phase` for assistant output items so we can persist it on stored messages.
-      // This uses the Responses stream events to avoid any SDK version mismatches.
-      const outputPhases = new Map<string, string>();
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        if (options?.signal?.aborted) throw new Error("Request was aborted");
 
-      const loggingStream = (async function* () {
-        for await (const event of openaiStream) {
-          if (event?.type === "response.output_item.added" || event?.type === "response.output_item.done") {
-            const item = (event as { item?: any }).item;
-            const phase = item?.phase;
-            if (item?.type === "message" && item?.id && typeof phase === "string") {
-              outputPhases.set(item.id, phase);
-            }
-          }
+        // Reset per-attempt state
+        streamErrorDetail = "";
+        output.content = [];
+        output.stopReason = "stop";
+        (output as any).errorMessage = undefined;
+        (output as any).reasoning = undefined;
 
-          // Extract a descriptive error from response.failed / error events
-          // BEFORE pi-ai's processResponsesStream throws the generic "Unknown error".
-          if (event?.type === "response.failed") {
-            const resp = (event as { response?: any }).response;
-            const errObj = resp?.error;
-            if (errObj && typeof errObj === "object") {
-              streamErrorDetail = `${errObj.code || "error"}: ${errObj.message || JSON.stringify(errObj)}`;
-            } else if (resp?.status) {
-              streamErrorDetail = `Azure response failed (status: ${resp.status})`;
-            } else {
-              streamErrorDetail = "Azure response failed (no error details returned)";
-            }
-          } else if (event?.type === "error") {
-            const { code, message } = event as { code?: string; message?: string };
-            streamErrorDetail = `${code || "stream_error"}: ${message || "unknown"}`;
-          }
-
-          logStreamFailureEvent(event, requestSummary, loggedRef);
-          yield event;
+        let openaiStream;
+        try {
+          openaiStream = await createStream();
+        } catch (error) {
+          if (!isAuthError(error)) throw error;
+          if (!STATIC_API_KEY) await ensureToken(true);
+          openaiStream = await createStream();
         }
-      })();
 
-      stream.push({ type: "start", partial: output });
-      await processResponsesStream(loggingStream, output, stream, model);
-      applyPhasesToOutputMessage(output, outputPhases);
-      if (LOG_PHASES && outputPhases.size > 0) {
-        console.error("[azure-openai] Output phases:", JSON.stringify({ total: outputPhases.size, phases: Array.from(outputPhases.entries()).slice(0, 6) }));
+        const outputPhases = new Map<string, string>();
+
+        const loggingStream = (async function* () {
+          for await (const event of openaiStream) {
+            if (event?.type === "response.output_item.added" || event?.type === "response.output_item.done") {
+              const item = (event as { item?: any }).item;
+              const phase = item?.phase;
+              if (item?.type === "message" && item?.id && typeof phase === "string") {
+                outputPhases.set(item.id, phase);
+              }
+            }
+
+            if (event?.type === "response.failed") {
+              const resp = (event as { response?: any }).response;
+              const errObj = resp?.error;
+              if (errObj && typeof errObj === "object") {
+                streamErrorDetail = `${errObj.code || "error"}: ${errObj.message || JSON.stringify(errObj)}`;
+              } else if (resp?.status) {
+                streamErrorDetail = `Azure response failed (status: ${resp.status})`;
+              } else {
+                streamErrorDetail = "Azure response failed (no error details returned)";
+              }
+            } else if (event?.type === "error") {
+              const { code, message } = event as { code?: string; message?: string };
+              streamErrorDetail = `${code || "stream_error"}: ${message || "unknown"}`;
+            }
+
+            logStreamFailureEvent(event, requestSummary, loggedRef);
+            yield event;
+          }
+        })();
+
+        if (!streamStarted) {
+          stream.push({ type: "start", partial: output });
+          streamStarted = true;
+        }
+        await processResponsesStream(loggingStream, output, stream, model);
+        applyPhasesToOutputMessage(output, outputPhases);
+
+        if (LOG_PHASES && outputPhases.size > 0) {
+          console.error("[azure-openai] Output phases:", JSON.stringify({ total: outputPhases.size, phases: Array.from(outputPhases.entries()).slice(0, 6) }));
+        }
+
+        if (options?.signal?.aborted) {
+          throw new Error("Request was aborted");
+        }
+
+        // Success — break out of retry loop
+        if (output.stopReason !== "aborted" && output.stopReason !== "error") {
+          stream.push({ type: "done", reason: output.stopReason, message: output });
+          stream.end();
+          return;
+        }
+
+        // Determine if error is retryable (NOT a client-side 4xx error)
+        const detail = streamErrorDetail || (output as any).errorMessage || "unknown error";
+        const isClientError = /^(400|401|403|404|422)\b/.test(detail) ||
+          detail.includes("invalid_request_error");
+        if (isClientError || attempt >= MAX_RETRIES) {
+          throw new Error(`Azure request failed: ${detail}`);
+        }
+
+        const delayMs = (attempt + 1) * 2000;
+        console.error(`[azure-openai] Attempt ${attempt + 1}/${MAX_RETRIES + 1} failed (${detail}), retrying in ${delayMs}ms...`);
+        loggedRef.logged = false;
+        await new Promise((r) => setTimeout(r, delayMs));
       }
 
-      if (options?.signal?.aborted) {
-        throw new Error("Request was aborted");
-      }
-      if (output.stopReason === "aborted" || output.stopReason === "error") {
-        // Use the detailed error we extracted from the stream event if available,
-        // rather than the generic "unknown error" from pi-ai.
-        const detail = streamErrorDetail || output.errorMessage || "unknown error";
-        throw new Error(`Azure request failed: ${detail}`);
-      }
-
-      stream.push({ type: "done", reason: output.stopReason, message: output });
-      stream.end();
+      // Should not reach here, but just in case
+      throw new Error("Azure request failed after retries");
     } catch (error) {
       logAzureError(model.id, error, requestSummary, loggedRef);
       for (const block of output.content) delete (block as any).index;
@@ -966,7 +983,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerCommand("image", {
     description: "Generate an image with Azure OpenAI",
-    handler: async (input, ctx) => {
+    handler: async (input, _ctx) => {
       const parsed = parseArgs(input || "");
       if (!parsed) {
         pi.sendMessage({
@@ -1007,7 +1024,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerCommand("flux", {
     description: "Generate an image with Azure Foundry (FLUX.2-pro)",
-    handler: async (input, ctx) => {
+    handler: async (input, _ctx) => {
       const parsed = parseArgs(input || "");
       if (!parsed) {
         pi.sendMessage({

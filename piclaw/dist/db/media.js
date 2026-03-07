@@ -26,6 +26,9 @@ export function attachMediaToMessage(messageRowId, mediaIds) {
     for (const mediaId of mediaIds) {
         stmt.run(messageRowId, mediaId);
     }
+    // Extract searchable text from text-based media (SVG, markdown, plain text)
+    // and append it to the FTS index so media content is full-text searchable.
+    appendMediaTextToFts(db, messageRowId, mediaIds);
 }
 /**
  * Return the sorted list of media IDs attached to a single message.
@@ -119,4 +122,67 @@ export function getMediaInfoById(id) {
         metadata: row.metadata ? JSON.parse(row.metadata) : null,
         created_at: row.created_at,
     };
+}
+// ── FTS text extraction for media ────────────────────────────────────────
+/** Content types whose text content should be indexed alongside the message. */
+const FTS_INDEXABLE_TYPES = new Set([
+    "image/svg+xml",
+    "text/markdown",
+    "text/plain",
+    "text/html",
+    "text/csv",
+    "text/xml",
+    "application/xml",
+    "application/json",
+]);
+function isTextIndexable(contentType) {
+    return FTS_INDEXABLE_TYPES.has(contentType) || contentType.startsWith("text/");
+}
+/** Strip XML/HTML/SVG tags and return only the text content. */
+function stripTags(text) {
+    return text
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+/**
+ * Extract readable text from media blobs and append to the message's FTS entry.
+ * Called by attachMediaToMessage() after linking media to a message.
+ */
+function appendMediaTextToFts(db, messageRowId, mediaIds) {
+    const placeholders = mediaIds.map(() => "?").join(",");
+    const rows = db
+        .prepare(`SELECT content_type, data FROM media WHERE id IN (${placeholders})`)
+        .all(...mediaIds);
+    const textParts = [];
+    for (const row of rows) {
+        if (!isTextIndexable(row.content_type))
+            continue;
+        try {
+            const raw = new TextDecoder().decode(row.data);
+            const text = row.content_type.includes("svg") ||
+                row.content_type.includes("html") ||
+                row.content_type.includes("xml")
+                ? stripTags(raw)
+                : raw;
+            if (text.length > 0 && text.length < 100_000) {
+                textParts.push(text);
+            }
+        }
+        catch {
+            // skip non-decodable blobs
+        }
+    }
+    if (textParts.length === 0)
+        return;
+    const msg = db
+        .prepare("SELECT content, chat_jid, sender, sender_name, timestamp, is_bot_message FROM messages WHERE rowid = ?")
+        .get(messageRowId);
+    if (!msg)
+        return;
+    const combined = msg.content + "\n\n" + textParts.join("\n");
+    // FTS5 content-sync: delete old entry, insert updated one
+    db.prepare("INSERT INTO messages_fts(messages_fts, rowid, content, chat_jid, sender, sender_name, timestamp, is_bot_message) VALUES ('delete', ?, ?, ?, ?, ?, ?, ?)").run(messageRowId, msg.content, msg.chat_jid, msg.sender, msg.sender_name, msg.timestamp, msg.is_bot_message);
+    db.prepare("INSERT INTO messages_fts(rowid, content, chat_jid, sender, sender_name, timestamp, is_bot_message) VALUES (?, ?, ?, ?, ?, ?, ?)").run(messageRowId, combined, msg.chat_jid, msg.sender, msg.sender_name, msg.timestamp, msg.is_bot_message);
 }

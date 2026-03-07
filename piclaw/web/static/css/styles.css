@@ -156,7 +156,7 @@ body {
     position: fixed;
     top: 50%;
     transform: translateY(-50%);
-    z-index: 40;
+    z-index: 9;
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
@@ -348,6 +348,14 @@ body {
     line-height: 22px;
 }
 
+.workspace-count {
+    font-size: 10px;
+    color: var(--text-secondary);
+    opacity: 0.6;
+    margin-left: 4px;
+    flex-shrink: 0;
+}
+
 /* ── Splitter ── */
 .workspace-splitter {
     display: none;
@@ -356,7 +364,7 @@ body {
     cursor: col-resize;
     background: transparent;
     position: relative;
-    z-index: 10;
+    z-index: 50;
     touch-action: none;
     opacity: 1;
     transition: width var(--ui-transition-fast), opacity var(--ui-transition-fast);
@@ -377,6 +385,7 @@ body {
 .workspace-splitter:hover::after,
 .workspace-splitter.dragging::after {
     background: var(--accent-color);
+    width: 2px;
 }
 
 .editor-splitter {
@@ -502,7 +511,7 @@ body {
     overflow: hidden;
     flex-shrink: 0;
     border-left: 1px solid var(--border-color);
-    border-right: 1px solid var(--border-color);
+    border-right: none;
     position: relative;
 }
 
@@ -901,6 +910,17 @@ body {
         left: calc(var(--sidebar-width, 280px) - var(--workspace-tab-width, 20px));
     }
 
+    .app-shell.sidebar-resizing .workspace-toggle-tab {
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .app-shell.sidebar-resizing .workspace-sidebar,
+    .app-shell.sidebar-resizing .workspace-splitter,
+    .app-shell.sidebar-resizing .container {
+        transition: none;
+    }
+
     .app-shell.workspace-collapsed .container {
         max-width: var(--chat-max-width, 900px);
         min-width: var(--chat-min-width, 640px);
@@ -985,22 +1005,22 @@ body {
 .compose-box {
     flex-shrink: 0;
     border-top: 1px solid var(--border-color);
-    padding: var(--spacing-sm) var(--spacing-md);
+    padding: 2px 6px;
     background-color: var(--bg-primary);
     display: flex;
-    gap: var(--spacing-sm);
+    gap: 2px;
     align-items: flex-end;
 }
 
 .compose-input-wrapper {
     flex: 1;
     display: flex;
-    align-items: flex-end;
-    gap: var(--spacing-xs);
+    flex-direction: column;
+    gap: 0;
     background-color: var(--bg-secondary);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
-    padding: var(--spacing-xs);
+    padding: 2px 3px;
 }
 
 .compose-input-wrapper:focus-within {
@@ -1017,7 +1037,7 @@ body {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-xs);
+    gap: 1px;
     min-width: 0;
     position: relative;
 }
@@ -1071,18 +1091,22 @@ body {
 
 .compose-box textarea {
     flex: 1;
-    min-height: 36px;
-    max-height: 120px;
+    width: 100%;
+    min-height: 50px;
+    max-height: none;
     border: none;
     resize: none;
+    field-sizing: content;
     font-family: inherit;
     font-size: var(--font-size-md);
     color: var(--text-primary);
     background-color: transparent;
     outline: none;
-    padding: 2px var(--spacing-xs) var(--spacing-xs) 2px;
+    padding: 1px var(--spacing-xs) 2px 1px;
     line-height: 1.4;
-    overflow-y: auto;
+    overflow-y: hidden;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .compose-box textarea::placeholder {
@@ -1137,48 +1161,173 @@ body {
     text-overflow: ellipsis;
 }
 
-/* Model hint — bottom-left of input, low opacity */
+/* Compose metadata row (model hint + context usage) */
+.compose-meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--spacing-xs);
+    min-height: 12px;
+    padding: 0 2px;
+    flex: 1;
+    min-width: 0;
+}
+
+.compose-footer {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--spacing-xs);
+}
+
 .compose-model-hint {
-    position: absolute;
-    bottom: 2px;
-    left: 2px;
     font-size: 10px;
     color: var(--text-secondary);
     opacity: var(--model-hint-opacity, 0.85);
-    pointer-events: none;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 70%;
     line-height: 1;
     font-family: var(--font-mono, monospace);
     letter-spacing: 0.01em;
+    min-width: 0;
+    flex: 1;
 }
 
-/* Context window usage pie chart — sits after the model hint */
-.compose-context-pie {
+.compose-model-hint-btn {
+    border: none;
+    background: transparent;
+    padding: 0;
+    margin: 0;
+    text-align: left;
+    cursor: pointer;
+}
+
+.compose-model-hint-btn:hover,
+.compose-model-hint-btn:focus-visible {
+    opacity: 1;
+    color: var(--text-primary);
+    outline: none;
+}
+
+.compose-model-hint-btn:disabled {
+    cursor: default;
+}
+
+.compose-model-popup {
     position: absolute;
-    bottom: 1px;
-    right: 4px;
+    left: 0;
+    right: 0;
+    bottom: calc(100% + 6px);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.25);
+    padding: var(--spacing-sm);
+    z-index: 120;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+}
+
+.compose-model-popup-title {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+
+.compose-model-popup-menu {
+    max-height: 220px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-primary);
+}
+
+.compose-model-popup-empty {
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding: 10px 8px;
+}
+
+.compose-model-popup-item {
+    width: 100%;
+    text-align: left;
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    font-family: var(--font-family-mono);
+    font-size: 12px;
+    padding: 7px 8px;
+    cursor: pointer;
+}
+
+.compose-model-popup-item:hover,
+.compose-model-popup-item:focus-visible {
+    background: var(--bg-hover);
+    outline: none;
+}
+
+.compose-model-popup-item.active {
+    color: var(--accent-color);
+    font-weight: 600;
+}
+
+.compose-model-popup-actions {
+    display: flex;
+    gap: var(--spacing-xs);
+    justify-content: flex-end;
+}
+
+.compose-model-popup-btn {
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    padding: 4px 8px;
+    cursor: pointer;
+}
+
+.compose-model-popup-btn.primary {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+}
+
+.compose-model-popup-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.compose-context-pie {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border-radius: 0;
+    box-sizing: border-box;
     line-height: 0;
     opacity: 0.7;
     cursor: default;
     transition: opacity 0.15s;
+    flex-shrink: 0;
 }
 .compose-context-pie:hover {
     opacity: 1;
 }
+
 
 .compose-actions {
     display: flex;
     align-items: center;
     gap: calc(var(--spacing-xs) - 2px);
     margin-right: -2px;
-    margin-bottom: -2px;
 }
 
 .compose-actions.search-mode {
     gap: calc(var(--spacing-sm) - 2px);
+}
+
+.compose-actions .icon-btn {
+    padding: var(--spacing-xs);
 }
 
 .compose-actions .icon-btn svg {
@@ -2081,6 +2230,22 @@ body {
     white-space: nowrap;
 }
 
+.agent-status-error {
+    background: rgba(220, 38, 38, 0.08);
+    border: 1px solid rgba(220, 38, 38, 0.25);
+    border-radius: 8px;
+}
+
+.agent-status-error .agent-status-text {
+    color: var(--error-color, #dc2626);
+    font-weight: 500;
+}
+
+.agent-status-error-icon {
+    font-size: 14px;
+    line-height: 1;
+}
+
 .agent-status-panel {
     display: flex;
     flex-direction: column;
@@ -2088,7 +2253,6 @@ body {
     flex-shrink: 0;
     width: 100%;
     box-sizing: border-box;
-    overflow: hidden;
 }
 
 .agent-thinking {
@@ -2102,7 +2266,8 @@ body {
     max-width: 100%;
     min-width: 0;
     box-sizing: border-box;
-    overflow: hidden;
+    overflow-x: clip;
+    overflow-y: visible;
     transition: background-color var(--ui-transition-fast), border-color var(--ui-transition-fast);
 }
 
@@ -2130,20 +2295,22 @@ body {
     overflow-wrap: anywhere;
     font-family: inherit;
     line-height: 1.35;
-    padding-bottom: 0.15em;
+    padding-top: 0.15em;
+    padding-bottom: 0.2em;
     max-width: 100%;
     --agent-thinking-line-height: 1.35;
     transition: max-height 0.18s ease, opacity 0.18s ease;
 }
 
 .agent-thinking-body-collapsible {
-    overflow: hidden;
-    max-height: calc(var(--agent-thinking-line-height) * 1em * var(--agent-thinking-collapsed-lines, 8));
+    overflow-y: hidden;
+    max-height: calc((var(--agent-thinking-line-height) * 1em * var(--agent-thinking-collapsed-lines, 8)) + 0.4em);
     opacity: 0.94;
 }
 
 .agent-thinking[data-expanded="true"] .agent-thinking-body-collapsible {
-    max-height: 70vh;
+    max-height: none;
+    overflow: visible;
     opacity: 1;
 }
 
@@ -2578,7 +2745,7 @@ body {
     }
     
     .compose-box textarea {
-        min-height: 60px;
+        min-height: 50px;
         font-size: var(--font-size-md);
     }
     
@@ -2659,7 +2826,7 @@ body {
     }
     
     .compose-box textarea {
-        min-height: 100px;
+        min-height: 70px;
     }
 }
 

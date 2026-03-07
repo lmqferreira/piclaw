@@ -34,6 +34,9 @@ sudo mkdir -p "$DEST"
 sudo tar -xzf "$TARBALL" -C "$DEST" --strip-components=1
 rm -f "$TARBALL"
 cd "$DEST" && sudo BUN_INSTALL_CACHE_DIR=/tmp/bun-cache bun install --production || true
+if [ -d "$DEST/extensions" ] && [ -d "$DEST/node_modules" ]; then
+  sudo ln -sfn "$DEST/node_modules" "$DEST/extensions/node_modules" 2>/dev/null || true
+fi
 
 # 3. Quick sanity check: show where piclaw resolves from
 PICLAW_BIN=$(command -v piclaw || true)

@@ -130,7 +130,7 @@ function FileAttachmentCard({ mediaId }) {
 // ── WorkspaceExplorer ─────────────────────────────────────────────────────────
 
 /** Preact component: file tree explorer with upload, rename, and preview. */
-export function WorkspaceExplorer({ onFileSelect, visible = true, onOpenEditor }) {
+export function WorkspaceExplorer({ onFileSelect, visible = true, active = undefined, onOpenEditor }) {
     const [tree,          setTree]          = useState(null);
     const [expanded,      setExpanded]      = useState(new Set(['.']));
     const [selectedPath,  setSelectedPath]  = useState(null);
@@ -162,6 +162,7 @@ export function WorkspaceExplorer({ onFileSelect, visible = true, onOpenEditor }
     const previewHeightRef= useRef(0);
     const showHiddenRef   = useRef(showHidden);
     const visibleRef      = useRef(visible);
+    const activeRef       = useRef(active ?? visible);
     const dragDepthRef    = useRef(0);
     const dropTargetRef   = useRef(dropTarget);
     const dragActiveRef   = useRef(dragActive);
@@ -172,6 +173,7 @@ export function WorkspaceExplorer({ onFileSelect, visible = true, onOpenEditor }
     useEffect(() => { expandedRef.current = expanded; }, [expanded]);
     useEffect(() => { showHiddenRef.current = showHidden; }, [showHidden]);
     useEffect(() => { visibleRef.current = visible; }, [visible]);
+    useEffect(() => { activeRef.current = active ?? visible; }, [active, visible]);
     useEffect(() => { dropTargetRef.current = dropTarget; }, [dropTarget]);
     useEffect(() => { dragActiveRef.current = dragActive; }, [dragActive]);
 
@@ -195,7 +197,9 @@ export function WorkspaceExplorer({ onFileSelect, visible = true, onOpenEditor }
     const loadTree = async () => {
         if (!visibleRef.current) return;
         try {
-            const data = await getWorkspaceTree('', 4, showHiddenRef.current);
+            // Use depth 1 for root to avoid scanning huge workspaces upfront.
+            // Individual folders are expanded on-demand via loadSubtree().
+            const data = await getWorkspaceTree('', 1, showHiddenRef.current);
             const sig = treeSignature(data.root, expandedRef.current, showHiddenRef.current);
             if (sig === lastSigRef.current) {
                 // Structure unchanged – just clear the initial spinner if needed.
@@ -225,7 +229,7 @@ export function WorkspaceExplorer({ onFileSelect, visible = true, onOpenEditor }
         if (pendingSubtreeRef.current.has(path)) return;
         pendingSubtreeRef.current.add(path);
         try {
-            const data = await getWorkspaceTree(path, 3, showHiddenRef.current);
+            const data = await getWorkspaceTree(path, 1, showHiddenRef.current);
             setTree(prev => replaceNodeAtPath(prev, path, data.root));
         } catch (err) {
             setError(err.message || 'Failed to load workspace');
@@ -280,7 +284,9 @@ export function WorkspaceExplorer({ onFileSelect, visible = true, onOpenEditor }
     const updateVisibility = useRef(() => {
         if (typeof window === 'undefined') return;
         const media = window.matchMedia('(min-width: 1024px) and (orientation: landscape)');
-        const visible = media.matches && document.visibilityState !== 'hidden' && visibleRef.current;
+        const active = activeRef.current ?? visibleRef.current;
+        const visible = document.visibilityState !== 'hidden'
+            && (active || (media.matches && visibleRef.current));
         setWorkspaceVisibility(visible, showHiddenRef.current).catch(() => {});
     }).current;
 
@@ -300,7 +306,7 @@ export function WorkspaceExplorer({ onFileSelect, visible = true, onOpenEditor }
             loadTreeFnRef.current?.();
         }
         scheduleVisibilityUpdate();
-    }, [visible]);
+    }, [visible, active]);
 
     // Mount once; interval always calls the ref, never a stale copy.
     useEffect(() => {
@@ -655,6 +661,9 @@ export function WorkspaceExplorer({ onFileSelect, visible = true, onOpenEditor }
                                             : html`<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>`}
                                     </svg>
                                     <span class="workspace-label">${node.name}</span>
+                                    ${isDir && !isOpen && Array.isArray(node.children) && node.children.length > 0 && html`
+                                        <span class="workspace-count">${node.children.length}</span>
+                                    `}
                                 </div>
                             `;
                         })}

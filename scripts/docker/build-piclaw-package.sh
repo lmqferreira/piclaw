@@ -55,6 +55,11 @@ sudo BUN_INSTALL="$BUN_INSTALL" "$BUN_INSTALL/bin/bun" add -g "$TARBALL"
 rm -f "$TARBALL"
 rm -rf "$PACK_DIR"
 
+DEST="$BUN_INSTALL/install/global/node_modules/piclaw"
+if [ -d "$DEST/extensions" ] && [ -d "$DEST/node_modules" ]; then
+  sudo ln -sfn "$DEST/node_modules" "$DEST/extensions/node_modules" 2>/dev/null || true
+fi
+
 # Ensure world-readable after install
 sudo chmod -R a+rX "$BUN_INSTALL"
 

@@ -260,6 +260,7 @@ test("web channel queues steering without advancing cursor", async () => {
   const db = await import("../../../src/db.js");
   db.initDatabase();
   db.getDb().exec("DELETE FROM message_media; DELETE FROM messages; DELETE FROM chats;");
+  db.getDb().exec("DELETE FROM chat_cursors;");
   db.storeChatMetadata("web:default", new Date().toISOString(), "Web");
 
   const events: Array<{ type: string; data: any }> = [];
@@ -288,7 +289,7 @@ test("web channel queues steering without advancing cursor", async () => {
   expect(res.status).toBe(201);
   const json = await res.json();
   expect(json.queued).toBe("steer");
-  expect(web.state.lastAgentTimestamp["web:default"]).toBeUndefined();
+  expect(db.getChatCursor("web:default")).toBe("");
   const pending = (web as any).pendingSteering.get("web:default") ?? [];
   expect(pending.length).toBe(1);
   expect(events.some((event) => event.type === "agent_steer_queued")).toBe(true);
@@ -302,6 +303,7 @@ test("processChat advances cursor to pending steering timestamp", async () => {
   const db = await import("../../../src/db.js");
   db.initDatabase();
   db.getDb().exec("DELETE FROM message_media; DELETE FROM messages; DELETE FROM chats;");
+  db.getDb().exec("DELETE FROM chat_cursors;");
   db.storeChatMetadata("web:default", new Date().toISOString(), "Web");
 
   const messageTs = "2024-01-01T00:00:00.000Z";
@@ -330,7 +332,7 @@ test("processChat advances cursor to pending steering timestamp", async () => {
   web.queuePendingSteering("web:default", pendingTs);
 
   await web.processChat("web:default", "default");
-  expect(web.state.lastAgentTimestamp["web:default"]).toBe(pendingTs);
+  expect(db.getChatCursor("web:default")).toBe(pendingTs);
 });
 
 test("web channel clears stale agent status on load", async () => {

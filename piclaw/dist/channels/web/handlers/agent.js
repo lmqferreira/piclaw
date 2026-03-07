@@ -10,7 +10,7 @@
 import { ASSISTANT_AVATAR, ASSISTANT_NAME, BACKGROUND_AGENT_TIMEOUT, TRIGGER_PATTERN, USER_AVATAR, USER_AVATAR_BACKGROUND, USER_NAME, } from "../../../core/config.js";
 import { parseControlCommand } from "../../../agent-control/index.js";
 import { normalizeAgentMessagePayload, parseAgentMessageRequest, storeAgentUserMessage, } from "../agent-message-service.js";
-import { getMessageRowIdById, getMessagesSince } from "../../../db.js";
+import { getMessagesSince, getChatCursor, beginChatRun, endChatRun, endChatRunWithError, setChatCursor } from "../../../db.js";
 import { detectChannel, formatMessages, formatOutbound } from "../../../router.js";
 import { createAgentProfileBuilder } from "../agent-utils.js";
 import { resolveAvatarUrl } from "../avatar-service.js";
@@ -44,8 +44,7 @@ export async function handleAgentMessage(channel, req, pathname, chatJid, defaul
     const threadId = resolveThreadId(normalized.threadId, interaction.id);
     const markCommandHandled = () => {
         if (interaction?.timestamp) {
-            channel.state.lastAgentTimestamp[chatJid] = interaction.timestamp;
-            channel.saveState();
+            setChatCursor(chatJid, interaction.timestamp);
         }
     };
     const command = parseControlCommand(content, TRIGGER_PATTERN);
@@ -65,14 +64,29 @@ export async function handleAgentMessage(channel, req, pathname, chatJid, defaul
         const modelCommands = ["model", "thinking", "cycle_model", "cycle_thinking"];
         if (result.status === "success" && modelCommands.includes(command.type)) {
             let nextModel = result.model_label ?? null;
-            if (!nextModel) {
+            let thinkingLevel = result.thinking_level ?? null;
+            let supportsThinking = undefined;
+            try {
+                const modelState = await channel.agentPool.getAvailableModels(chatJid);
+                if (!nextModel)
+                    nextModel = modelState.current ?? null;
+                if (thinkingLevel == null)
+                    thinkingLevel = modelState.thinking_level ?? null;
+                supportsThinking = modelState.supports_thinking;
+            }
+            catch {
                 const getModel = channel.agentPool
                     .getCurrentModelLabel;
                 if (typeof getModel === "function") {
                     nextModel = await getModel(chatJid).catch(() => null);
                 }
             }
-            channel.broadcastEvent("model_changed", { chat_jid: chatJid, model: nextModel ?? null });
+            channel.broadcastEvent("model_changed", {
+                chat_jid: chatJid,
+                model: nextModel ?? null,
+                thinking_level: thinkingLevel ?? null,
+                supports_thinking: supportsThinking,
+            });
         }
         if (result.status === "success" && (command.type === "model" || command.type === "cycle_model")) {
             channel.skipFailedOnModelSwitch(chatJid);
@@ -117,28 +131,27 @@ export async function handleAgentMessage(channel, req, pathname, chatJid, defaul
     }
     channel.queue.enqueue(async () => {
         await processChat(channel, chatJid, agentId, interaction.id);
-    }, `chat:${chatJid}`);
+    }, `chat:${chatJid}:${interaction.id}`);
     return channel.json({ user_message: interaction, thread_id: threadId }, 201);
 }
 /** Process a chat message: detect commands, queue agent run, or store post. */
 export async function processChat(channel, chatJid, agentId, threadRootId) {
-    const since = channel.state.lastAgentTimestamp[chatJid] || "";
-    const messages = getMessagesSince(chatJid, since, ASSISTANT_NAME);
+    const prevCursor = getChatCursor(chatJid);
+    const messages = getMessagesSince(chatJid, prevCursor, ASSISTANT_NAME);
     if (messages.length === 0)
         return;
     const channelName = detectChannel(chatJid);
     const prompt = formatMessages(messages, channelName);
-    const prevCursor = channel.state.lastAgentTimestamp[chatJid] || "";
     const lastMessage = messages[messages.length - 1];
-    const pendingThreadRootId = getMessageRowIdById(chatJid, lastMessage.id) ?? null;
-    channel.state.setPendingResume(chatJid, {
-        prevTimestamp: prevCursor,
+    // Atomically advance the cursor AND write an inflight marker in one SQL
+    // statement. If the process is killed before endChatRun(), the next
+    // startup sees the inflight marker, rolls the cursor back to prevCursor,
+    // and retries this turn.
+    beginChatRun(chatJid, lastMessage.timestamp, {
+        prevTs: prevCursor,
         messageId: lastMessage.id,
-        threadRootId: pendingThreadRootId,
-        createdAt: new Date().toISOString(),
+        startedAt: new Date().toISOString(),
     });
-    channel.state.lastAgentTimestamp[chatJid] = lastMessage.timestamp;
-    channel.saveState();
     const threadId = lastMessage.timestamp;
     const THOUGHT_PREVIEW_LINES = 8;
     const DRAFT_PREVIEW_LINES = 8;
@@ -178,45 +191,6 @@ export async function processChat(channel, chatJid, agentId, threadRootId) {
     const timeoutMs = hasActiveClients ? undefined : BACKGROUND_AGENT_TIMEOUT;
     const output = await channel.agentPool.runAgent(prompt, chatJid, {
         timeoutMs,
-        onAutoCompact: (notice) => {
-            const phaseLabel = notice.phase === "pre"
-                ? "Auto-compacting to free context"
-                : "Auto-compacting after response";
-            if (notice.status === "start") {
-                trackedEmitter.status({
-                    thread_id: threadId,
-                    agent_id: agentId,
-                    type: "intent",
-                    title: phaseLabel,
-                    turn_id: turnId,
-                });
-            }
-            else if (notice.status === "end" && notice.phase === "pre") {
-                trackedEmitter.status({
-                    thread_id: threadId,
-                    agent_id: agentId,
-                    type: "thinking",
-                    title: "Thinking...",
-                    turn_id: turnId,
-                });
-            }
-            else if (notice.status === "error" && notice.phase === "pre") {
-                trackedEmitter.status({
-                    thread_id: threadId,
-                    agent_id: agentId,
-                    type: "intent",
-                    title: "Auto-compaction failed; continuing",
-                    turn_id: turnId,
-                });
-                trackedEmitter.status({
-                    thread_id: threadId,
-                    agent_id: agentId,
-                    type: "thinking",
-                    title: "Thinking...",
-                    turn_id: turnId,
-                });
-            }
-        },
         onEvent: streamingHandler,
         onTurnComplete: (turn) => {
             // Intermediate turn completed (follow-up boundary) — store as threaded message
@@ -232,13 +206,11 @@ export async function processChat(channel, chatJid, agentId, threadRootId) {
         },
     });
     if (output.status === "error") {
-        // Keep lastAgentTimestamp advanced past the failed message — do NOT roll
-        // it back to prevCursor. Rolling back causes the failed user turn to be
-        // re-processed on every reload or model switch, creating an infinite loop.
-        // The failedRun record preserves the failure details for diagnostics.
-        channel.state.clearPendingResume(chatJid);
         if (output.error && output.error.includes("already processing")) {
-            channel.saveState();
+            // A concurrent run is already handling this chat. Clear the inflight
+            // marker we set (the other run will manage its own) and throw so the
+            // queue retries after backoff.
+            endChatRun(chatJid);
             trackedEmitter.status({
                 thread_id: threadId,
                 agent_id: agentId,
@@ -248,14 +220,15 @@ export async function processChat(channel, chatJid, agentId, threadRootId) {
             });
             throw new Error(output.error);
         }
-        channel.state.setFailedRun(chatJid, {
-            prevTimestamp: prevCursor,
-            failedTimestamp: lastMessage.timestamp,
+        // Single UPDATE: clears inflight AND writes failed_run atomically.
+        // No window exists where inflight is gone but failed_run is not yet set.
+        endChatRunWithError(chatJid, {
+            prevTs: prevCursor,
+            failedTs: lastMessage.timestamp,
             messageId: lastMessage.id,
-            threadRootId: resolvedThreadRootId,
+            threadRootId: resolvedThreadRootId ?? null,
             createdAt: new Date().toISOString(),
         });
-        channel.saveState();
         trackedEmitter.status({
             thread_id: threadId,
             agent_id: agentId,
@@ -276,18 +249,16 @@ export async function processChat(channel, chatJid, agentId, threadRootId) {
             threadId: resolvedThreadRootId,
         });
     }
-    channel.state.clearFailedRun(chatJid);
+    // Single UPDATE: clears inflight AND clears any stale failed_run atomically.
+    endChatRun(chatJid);
     const pendingSteerTimestamp = channel.consumePendingSteering(chatJid);
     if (pendingSteerTimestamp) {
-        const current = channel.state.lastAgentTimestamp[chatJid] || "";
+        const current = getChatCursor(chatJid);
         if (!current || current < pendingSteerTimestamp) {
-            channel.state.lastAgentTimestamp[chatJid] = pendingSteerTimestamp;
-            channel.saveState();
+            setChatCursor(chatJid, pendingSteerTimestamp);
         }
     }
-    channel.state.clearPendingResume(chatJid);
     channel.saveState();
-    // Include context usage in the done event so the UI can update its indicator.
     const contextUsage = await channel.agentPool.getContextUsageForChat(chatJid);
     trackedEmitter.status({
         thread_id: threadId,

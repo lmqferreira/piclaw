@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { html, useRef, useState, useEffect, useCallback } from '../vendor/preact-htm.js';
-import { sendAgentMessage, uploadMedia } from '../api.js';
+import { getAgentModels, sendAgentMessage, uploadMedia } from '../api.js';
 import { getLocalStorageItem, setLocalStorageItem } from '../utils/storage.js';
 import { FilePill } from './file-pill.js';
 
@@ -64,8 +64,8 @@ function ContextPie({ usage }) {
         : `Context: ${pct.toFixed(0)}%`;
 
     // Pie arc: SVG circle with stroke-dasharray trick.
-    // Circle circumference = 2πr = 2π×8 ≈ 50.27
-    const r = 8;
+    // Circle circumference = 2πr = 2π×7 ≈ 43.98
+    const r = 7;
     const circ = 2 * Math.PI * r;
     const filled = (pct / 100) * circ;
 
@@ -74,16 +74,16 @@ function ContextPie({ usage }) {
                 : 'var(--context-green, #22c55e)';
 
     return html`
-        <span class="compose-context-pie" title=${label}>
-            <svg width="18" height="18" viewBox="0 0 20 20">
+        <span class="compose-context-pie icon-btn" title=${label}>
+            <svg width="16" height="16" viewBox="0 0 20 20">
                 <circle cx="10" cy="10" r=${r}
                     fill="none"
                     stroke="var(--context-track, rgba(128,128,128,0.2))"
-                    stroke-width="3" />
+                    stroke-width="2.5" />
                 <circle cx="10" cy="10" r=${r}
                     fill="none"
                     stroke=${color}
-                    stroke-width="3"
+                    stroke-width="2.5"
                     stroke-dasharray=${`${filled} ${circ}`}
                     stroke-linecap="round"
                     transform="rotate(-90 10 10)" />
@@ -113,11 +113,14 @@ export function ComposeBox({
     onRemoveFileRef,
     onClearFileRefs,
     activeModel = null,
+    thinkingLevel = null,
+    supportsThinking = false,
     contextUsage = null,
     notificationsEnabled = false,
     notificationPermission = 'default',
     onToggleNotifications,
     onModelChange,
+    onModelStateChange,
 }) {
     const [content, setContent] = useState('');
     const [searchText, setSearchText] = useState('');
@@ -127,8 +130,14 @@ export function ComposeBox({
     const [slashMatches, setSlashMatches] = useState([]);
     const [slashIndex, setSlashIndex] = useState(0);
     const [showSlash, setShowSlash] = useState(false);
+    const [switchingModel, setSwitchingModel] = useState(false);
+    const [showModelPopup, setShowModelPopup] = useState(false);
+    const [modelOptions, setModelOptions] = useState([]);
+    const [loadingModels, setLoadingModels] = useState(false);
     const textareaRef = useRef(null);
     const slashRef = useRef(null);
+    const modelPopupRef = useRef(null);
+    const modelHintRef = useRef(null);
     const dragCounterRef = useRef(0);
     const historyMax = 200;
     const normaliseHistory = (items) => {
@@ -172,12 +181,32 @@ export function ComposeBox({
     const notificationActive = notificationPermission === 'granted' && notificationsEnabled;
     const notificationTitle = notificationActive ? 'Disable notifications' : 'Enable notifications';
 
-    const resizeTextarea = () => {
-        const textarea = textareaRef.current;
+    const modelHintSuffix = supportsThinking && thinkingLevel ? ` (${thinkingLevel})` : '';
+    const modelHintLabel = activeModel ? `${activeModel}${modelHintSuffix}` : '';
+
+    const emitModelState = (payload) => {
+        if (!payload || typeof payload !== 'object') return;
+        const modelLabel = payload.model ?? payload.current;
+        if (typeof onModelStateChange === 'function') {
+            onModelStateChange({
+                model: modelLabel ?? null,
+                thinking_level: payload.thinking_level ?? null,
+                supports_thinking: payload.supports_thinking,
+            });
+        }
+        if (modelLabel && typeof onModelChange === 'function') {
+            onModelChange(modelLabel);
+        }
+    };
+
+    const resizeTextarea = (target) => {
+        const textarea = target || textareaRef.current;
         if (!textarea) return;
         textarea.style.height = 'auto';
-        textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+        textarea.style.height = `${textarea.scrollHeight}px`;
+        textarea.style.overflowY = 'hidden';
     };
+
 
     /** Update slash autocomplete matches based on current input. */
     const updateSlashAutocomplete = (value) => {
@@ -225,7 +254,6 @@ export function ComposeBox({
             textarea.selectionStart = len;
             textarea.selectionEnd = len;
             textarea.focus();
-            resizeTextarea();
         });
     };
 
@@ -236,7 +264,7 @@ export function ComposeBox({
             setContent(value);
             updateSlashAutocomplete(value);
         }
-        requestAnimationFrame(resizeTextarea);
+        requestAnimationFrame(() => resizeTextarea());
     };
 
     const appendToValue = (snippet) => {
@@ -246,8 +274,59 @@ export function ComposeBox({
         updateValue(next);
     };
 
-    const handleSubmit = async () => {
-        if (!content.trim() && mediaFiles.length === 0 && fileRefs.length === 0) return;
+    const extractCurrentModel = (response) => {
+        const fromLabel = response?.command?.model_label;
+        if (fromLabel) return fromLabel;
+        const message = response?.command?.message;
+        if (typeof message === 'string') {
+            const currentMatch = message.match(/•\s+([^\n]+?)\s+\(current\)/);
+            if (currentMatch?.[1]) return currentMatch[1].trim();
+        }
+        return null;
+    };
+
+    const runModelCommand = async (commandText) => {
+        if (searchMode || loading || switchingModel) return;
+
+        setSwitchingModel(true);
+        try {
+            const response = await sendAgentMessage('default', commandText, null, []);
+            const nextModel = extractCurrentModel(response);
+            emitModelState({
+                model: nextModel ?? activeModel ?? null,
+                thinking_level: response?.command?.thinking_level,
+                supports_thinking: response?.command?.supports_thinking,
+            });
+            onPost?.();
+            return true;
+        } catch (error) {
+            console.error('Failed to switch model:', error);
+            alert('Failed to switch model: ' + error.message);
+            return false;
+        } finally {
+            setSwitchingModel(false);
+        }
+    };
+
+    const handleCycleModel = async () => {
+        await runModelCommand('/cycle-model');
+    };
+
+    const handleSelectModel = async (modelLabel) => {
+        if (!modelLabel || switchingModel) return;
+        const ok = await runModelCommand(`/model ${modelLabel}`);
+        if (ok) setShowModelPopup(false);
+    };
+
+    const toggleModelPopup = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setShowModelPopup((prev) => !prev);
+    };
+
+    const handleSubmit = async (overrideContent) => {
+        const currentContent = overrideContent !== undefined ? overrideContent : content;
+        if (!currentContent.trim() && mediaFiles.length === 0 && fileRefs.length === 0) return;
 
         setLoading(true);
         try {
@@ -258,7 +337,7 @@ export function ComposeBox({
                 mediaIds.push(result.id);
             }
 
-            const baseContent = content.trim();
+            const baseContent = currentContent.trim();
             const fileBlock = fileRefs.length
                 ? `Files:\n${fileRefs.map((path) => `- ${path}`).join('\n')}`
                 : '';
@@ -273,8 +352,12 @@ export function ComposeBox({
 
             // Send to agent by default
             const response = await sendAgentMessage('default', message, null, mediaIds);
-            if (response?.command?.model_label && typeof onModelChange === 'function') {
-                onModelChange(response.command.model_label);
+            if (response?.command) {
+                emitModelState({
+                    model: response.command.model_label ?? activeModel ?? null,
+                    thinking_level: response.command.thinking_level,
+                    supports_thinking: response.command.supports_thinking,
+                });
             }
 
             if (baseContent) {
@@ -303,6 +386,7 @@ export function ComposeBox({
     };
 
     const handleKeyDown = (e) => {
+        if (e.isComposing) return;
         if (searchMode && e.key === 'Escape') {
             e.preventDefault();
             setSearchText('');
@@ -377,12 +461,13 @@ export function ComposeBox({
         }
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
+            const currentValue = textareaRef.current?.value ?? (searchMode ? searchText : content);
             if (searchMode) {
-                if (searchText.trim()) {
-                    onSearch?.(searchText.trim());
+                if (currentValue.trim()) {
+                    onSearch?.(currentValue.trim());
                 }
             } else {
-                handleSubmit();
+                handleSubmit(currentValue);
             }
         }
     };
@@ -458,11 +543,58 @@ export function ComposeBox({
         );
     };
 
+    useEffect(() => {
+        if (!showModelPopup) return;
+
+        setLoadingModels(true);
+        getAgentModels()
+            .then((payload) => {
+                const models = Array.isArray(payload?.models)
+                    ? payload.models.filter((model) => typeof model === 'string' && model.trim().length > 0)
+                    : [];
+                setModelOptions(models);
+                emitModelState(payload);
+            })
+            .catch((error) => {
+                console.warn('Failed to load model list:', error);
+                setModelOptions([]);
+            })
+            .finally(() => {
+                setLoadingModels(false);
+            });
+    }, [showModelPopup, activeModel]);
+
+    useEffect(() => {
+        if (searchMode) setShowModelPopup(false);
+    }, [searchMode]);
+
+    useEffect(() => {
+        if (!showModelPopup) return;
+
+        const onPointerDown = (event) => {
+            const popup = modelPopupRef.current;
+            const hint = modelHintRef.current;
+            const target = event.target;
+            if (popup && popup.contains(target)) return;
+            if (hint && hint.contains(target)) return;
+            setShowModelPopup(false);
+        };
+
+        document.addEventListener('pointerdown', onPointerDown);
+        return () => document.removeEventListener('pointerdown', onPointerDown);
+    }, [showModelPopup]);
+
     // Auto-resize textarea
     const handleInput = (e) => {
         const value = e.target.value;
+        resizeTextarea(e.target);
         updateValue(value);
     };
+
+    useEffect(() => {
+        requestAnimationFrame(() => resizeTextarea());
+    }, [content, searchText, searchMode]);
+
 
     return html`
         <div class="compose-box">
@@ -529,16 +661,62 @@ export function ComposeBox({
                             `)}
                         </div>
                     `}
-                    ${!searchMode && activeModel && html`
-                        <span class="compose-model-hint" title=${activeModel}>
-                            ${activeModel}
-                        </span>
-                    `}
-                    ${!searchMode && contextUsage && contextUsage.percent != null && html`
-                        <${ContextPie} usage=${contextUsage} />
+                    ${showModelPopup && !searchMode && html`
+                        <div class="compose-model-popup" ref=${modelPopupRef}>
+                            <div class="compose-model-popup-title">Select model</div>
+                            <div class="compose-model-popup-menu" role="menu" aria-label="Model picker">
+                                ${loadingModels && html`
+                                    <div class="compose-model-popup-empty">Loading models…</div>
+                                `}
+                                ${!loadingModels && modelOptions.length === 0 && html`
+                                    <div class="compose-model-popup-empty">No models available.</div>
+                                `}
+                                ${!loadingModels && modelOptions.map((modelLabel) => html`
+                                    <button
+                                        key=${modelLabel}
+                                        type="button"
+                                        role="menuitem"
+                                        class=${`compose-model-popup-item${activeModel === modelLabel ? ' active' : ''}`}
+                                        onClick=${() => { void handleSelectModel(modelLabel); }}
+                                        disabled=${switchingModel}
+                                    >
+                                        ${modelLabel}
+                                    </button>
+                                `)}
+                            </div>
+                            <div class="compose-model-popup-actions">
+                                <button
+                                    type="button"
+                                    class="compose-model-popup-btn"
+                                    onClick=${() => { void handleCycleModel(); }}
+                                    disabled=${switchingModel}
+                                >
+                                    Next model
+                                </button>
+                            </div>
+                        </div>
                     `}
                 </div>
-                <div class="compose-actions ${searchMode ? 'search-mode' : ''}">
+                <div class="compose-footer">
+                    ${!searchMode && activeModel && html`
+                        <div class="compose-meta-row">
+                            <button
+                                ref=${modelHintRef}
+                                type="button"
+                                class="compose-model-hint compose-model-hint-btn"
+                                title=${switchingModel ? `Switching model…` : `Current model: ${modelHintLabel} (tap to open model picker)`}
+                                aria-label="Open model picker"
+                                onClick=${toggleModelPopup}
+                                disabled=${loading || switchingModel}
+                            >
+                                ${switchingModel ? 'Switching…' : modelHintLabel}
+                            </button>
+                        </div>
+                    `}
+                    <div class="compose-actions ${searchMode ? 'search-mode' : ''}">
+                    ${contextUsage && contextUsage.percent != null && html`
+                        <${ContextPie} usage=${contextUsage} />
+                    `}
                     <button
                         class="icon-btn search-toggle"
                         onClick=${searchMode ? onExitSearch : onEnterSearch}
@@ -599,6 +777,7 @@ export function ComposeBox({
                     `}
                 </div>
             </div>
+        </div>
         </div>
     `;
 }
