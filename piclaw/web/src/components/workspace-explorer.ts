@@ -285,7 +285,8 @@ export function WorkspaceExplorer({ onFileSelect, visible = true, active = undef
         if (typeof window === 'undefined') return;
         const media = window.matchMedia('(min-width: 1024px) and (orientation: landscape)');
         const active = activeRef.current ?? visibleRef.current;
-        const visible = media.matches && document.visibilityState !== 'hidden' && active;
+        const visible = document.visibilityState !== 'hidden'
+            && (active || (media.matches && visibleRef.current));
         setWorkspaceVisibility(visible, showHiddenRef.current).catch(() => {});
     }).current;
 

@@ -69,7 +69,6 @@ export async function processMessages(chatJid: string, deps: MessageProcessingDe
   if (!hasTrigger) return true;
 
   const channel = detectChannel(chatJid);
-  const prevCursor = deps.state.lastAgentTimestamp[chatJid] || "";
   deps.state.lastAgentTimestamp[chatJid] = messages[messages.length - 1].timestamp;
   deps.state.saveTimestamps();
 

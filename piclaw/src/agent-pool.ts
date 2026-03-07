@@ -212,13 +212,17 @@ export class AgentPool {
   }
 
   /** Return available model labels and current model for a chat session. */
-  async getAvailableModels(chatJid: string): Promise<{ current: string | null; models: string[] }> {
+  async getAvailableModels(chatJid: string): Promise<{ current: string | null; models: string[]; thinking_level: string | null; supports_thinking: boolean }> {
     const session = await this.getOrCreate(chatJid);
     const registry = (session as AgentSession & { modelRegistry?: ModelRegistry }).modelRegistry ?? this.modelRegistry;
     const available = registry.getAvailable();
     const models = available.map((model) => `${model.provider}/${model.id}`);
     const currentModel = session.model ? `${session.model.provider}/${session.model.id}` : null;
-    return { current: currentModel, models };
+    const thinkingLevel = session.thinkingLevel ?? null;
+    const supportsThinking = typeof (session as AgentSession & { supportsThinking?: () => boolean }).supportsThinking === "function"
+      ? (session as AgentSession & { supportsThinking: () => boolean }).supportsThinking()
+      : Boolean(session.model?.reasoning);
+    return { current: currentModel, models, thinking_level: thinkingLevel, supports_thinking: supportsThinking };
   }
 
   /** Return the current context token usage for a chat session, or null if unknown. */
