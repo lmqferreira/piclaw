@@ -260,3 +260,28 @@ test("runScheduledTask logs restore-model failures", async () => {
   expect(logs.length).toBe(1);
   expect(logs[0].status).toBe("success");
 });
+
+test("startSchedulerLoop returns stop function and stop is idempotent", async () => {
+  const ws = getTestWorkspace();
+  restoreEnv = setEnv({ PICLAW_WORKSPACE: ws.workspace, PICLAW_STORE: ws.store, PICLAW_DATA: ws.data });
+
+  const db = await import("../../src/db.js");
+  db.initDatabase();
+
+  const scheduler = await importFresh<typeof import("../src/task-scheduler.js")>("../src/task-scheduler.js");
+
+  const deps = {
+    queue: { enqueueTask: async () => {} },
+    agentPool: {} as any,
+    sendMessage: async () => {},
+  };
+
+  const stop = scheduler.startSchedulerLoop(deps as any);
+  expect(typeof stop).toBe("function");
+
+  const stopAgain = scheduler.startSchedulerLoop(deps as any);
+  expect(typeof stopAgain).toBe("function");
+
+  stop();
+  scheduler.stopSchedulerLoop();
+});

@@ -247,6 +247,7 @@ export async function runScheduledTask(task: ScheduledTask, deps: SchedulerDeps)
 
 /** Guard to prevent starting the loop more than once. */
 let started = false;
+let schedulerTimer: ReturnType<typeof setTimeout> | null = null;
 
 /**
  * Start the scheduler polling loop. Checks for due tasks every
@@ -254,8 +255,8 @@ let started = false;
  *
  * Called once by runtime.ts during startup.
  */
-export function startSchedulerLoop(deps: SchedulerDeps): void {
-  if (started) return;
+export function startSchedulerLoop(deps: SchedulerDeps): () => void {
+  if (started) return stopSchedulerLoop;
   started = true;
   console.log("[scheduler] Started");
   const loop = async () => {
@@ -266,7 +267,17 @@ export function startSchedulerLoop(deps: SchedulerDeps): void {
         deps.queue.enqueueTask(cur.id, () => runScheduledTask(cur, deps));
       }
     } catch (e) { console.error("[scheduler]", e); }
-    setTimeout(loop, SCHEDULER_POLL_INTERVAL);
+    if (!started) return;
+    schedulerTimer = setTimeout(loop, SCHEDULER_POLL_INTERVAL);
   };
   loop();
+  return stopSchedulerLoop;
+}
+
+export function stopSchedulerLoop(): void {
+  started = false;
+  if (schedulerTimer) {
+    clearTimeout(schedulerTimer);
+    schedulerTimer = null;
+  }
 }

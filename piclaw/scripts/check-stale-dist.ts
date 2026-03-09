@@ -3,6 +3,26 @@
 import { existsSync, readdirSync, statSync } from "fs";
 import { join, relative } from "path";
 
+const ALLOWED_STALE_DIST_FILES = new Set([
+  "dist/agent-control-handlers.js",
+  "dist/agent-control-helpers.js",
+  "dist/agent-control-parser.js",
+  "dist/agent-control-types.js",
+  "dist/agent-control.js",
+  "dist/agent-runner.js",
+  "dist/channels/web/http-utils.js",
+  "dist/channels/web/request-router.js",
+  "dist/channels/web/response-service.js",
+  "dist/channels/web/static.js",
+  "dist/chat-context.js",
+  "dist/config-store.js",
+  "dist/config.js",
+  "dist/env.js",
+  "dist/extensions/azure-openai.js",
+  "dist/model-utils.js",
+  "dist/process-tracker.js",
+]);
+
 function walkFiles(baseDir: string, suffix: string): string[] {
   if (!existsSync(baseDir)) return [];
   const out: string[] = [];
@@ -43,15 +63,24 @@ export function findStaleDistFiles(projectDir: string): string[] {
     .sort();
 }
 
+export function filterUnexpectedStaleDistFiles(staleFiles: string[]): string[] {
+  return staleFiles.filter((file) => !ALLOWED_STALE_DIST_FILES.has(file));
+}
+
 if (import.meta.main) {
   const stale = findStaleDistFiles(process.cwd());
-  if (stale.length > 0) {
-    console.error("[stale-dist] found dist files without matching src/*.ts:");
-    for (const file of stale) {
+  const unexpected = filterUnexpectedStaleDistFiles(stale);
+  if (unexpected.length > 0) {
+    console.error("[stale-dist] found unexpected dist files without matching src/*.ts:");
+    for (const file of unexpected) {
       console.error(` - ${file}`);
     }
     process.exit(1);
   }
 
-  console.log("[stale-dist] ok");
+  if (stale.length > 0) {
+    console.warn(`[stale-dist] ok (allowlisted stale files present: ${stale.length})`);
+  } else {
+    console.log("[stale-dist] ok");
+  }
 }

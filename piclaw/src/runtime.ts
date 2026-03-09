@@ -34,8 +34,8 @@ import {
 import { initDatabase, storeMessage, storeChatMetadata } from "./db.js";
 import { AgentPool } from "./agent-pool.js";
 import { AgentQueue } from "./queue.js";
-import { startIpcWatcher } from "./ipc.js";
-import { startSchedulerLoop } from "./task-scheduler.js";
+import { startIpcWatcher, stopIpcWatcher } from "./ipc.js";
+import { startSchedulerLoop, stopSchedulerLoop } from "./task-scheduler.js";
 import { WhatsAppChannel } from "./channels/whatsapp.js";
 import { WebChannel } from "./channels/web.js";
 import { PushoverChannel } from "./channels/pushover.js";
@@ -186,6 +186,8 @@ export async function main(): Promise<void> {
       process.exit(0);
     }, 15000);
 
+    stopIpcWatcher();
+    stopSchedulerLoop();
     await withTimeout(queue.shutdown(5000), 7000, "queue shutdown");
     await withTimeout(agentPool.shutdown(), 8000, "agent pool shutdown");
     await withTimeout(whatsapp.disconnect(), 8000, "whatsapp disconnect");

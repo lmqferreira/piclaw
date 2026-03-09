@@ -58,6 +58,7 @@ beforeAll(async () => {
 
 
 afterAll(() => {
+  ipc.stopIpcWatcher();
   restoreEnv?.();
 });
 

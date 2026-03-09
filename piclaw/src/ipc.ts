@@ -46,6 +46,32 @@ export interface IpcDeps {
 
 /** Guard to prevent starting the watcher more than once. */
 let running = false;
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function processIpcDir(
+  dirPath: string,
+  ipcDir: string,
+  kind: "message" | "task",
+  handler: (data: Record<string, any>) => Promise<void>
+): Promise<void> {
+  if (!existsSync(dirPath)) return;
+
+  for (const file of readdirSync(dirPath).filter((f) => f.endsWith(".json"))) {
+    const fp = join(dirPath, file);
+    try {
+      const data = JSON.parse(readFileSync(fp, "utf-8"));
+      await handler(data);
+      unlinkSync(fp);
+    } catch (e) {
+      console.error(`[ipc] Error processing ${kind} ${file}:`, e);
+      try {
+        renameSync(fp, join(ipcDir, `error-${file}`));
+      } catch {
+        // ignore rename errors
+      }
+    }
+  }
+}
 
 /**
  * Start the IPC directory watcher. Polls for new JSON files in the messages
@@ -53,8 +79,8 @@ let running = false;
  *
  * Called once by runtime.ts during application startup.
  */
-export function startIpcWatcher(deps: IpcDeps): void {
-  if (running) return;
+export function startIpcWatcher(deps: IpcDeps): () => void {
+  if (running) return stopIpcWatcher;
   running = true;
 
   const ipcDir = join(DATA_DIR, "ipc");
@@ -66,37 +92,33 @@ export function startIpcWatcher(deps: IpcDeps): void {
   const poll = async () => {
     // --- Process outbound message files ---
     try {
-      if (existsSync(messagesDir)) {
-        for (const file of readdirSync(messagesDir).filter((f) => f.endsWith(".json"))) {
-          const fp = join(messagesDir, file);
-          try {
-            const data = JSON.parse(readFileSync(fp, "utf-8"));
-            await processMessageCommand(data, deps);
-            unlinkSync(fp);
-          } catch (e) { console.error(`[ipc] Error processing message ${file}:`, e); try { renameSync(fp, join(ipcDir, `error-${file}`)); } catch {} }
-        }
-      }
-    } catch (e) { console.error("[ipc] Error reading messages dir:", e); }
+      await processIpcDir(messagesDir, ipcDir, "message", (data) => processMessageCommand(data, deps));
+    } catch (e) {
+      console.error("[ipc] Error reading messages dir:", e);
+    }
 
     // --- Process task command files ---
     try {
-      if (existsSync(tasksDir)) {
-        for (const file of readdirSync(tasksDir).filter((f) => f.endsWith(".json"))) {
-          const fp = join(tasksDir, file);
-          try {
-            const data = JSON.parse(readFileSync(fp, "utf-8"));
-            await processTaskCommand(data, deps);
-            unlinkSync(fp);
-          } catch (e) { console.error(`[ipc] Error processing task ${file}:`, e); try { renameSync(fp, join(ipcDir, `error-${file}`)); } catch {} }
-        }
-      }
-    } catch (e) { console.error("[ipc] Error reading tasks dir:", e); }
+      await processIpcDir(tasksDir, ipcDir, "task", (data) => processTaskCommand(data, deps));
+    } catch (e) {
+      console.error("[ipc] Error reading tasks dir:", e);
+    }
 
-    setTimeout(poll, IPC_POLL_INTERVAL);
+    if (!running) return;
+    pollTimer = setTimeout(poll, IPC_POLL_INTERVAL);
   };
 
   poll();
   console.log("[ipc] Watcher started");
+  return stopIpcWatcher;
+}
+
+export function stopIpcWatcher(): void {
+  running = false;
+  if (pollTimer) {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+  }
 }
 
 /**

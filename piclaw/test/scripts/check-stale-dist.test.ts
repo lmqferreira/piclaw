@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { findStaleDistFiles } from "../../scripts/check-stale-dist.ts";
+import { findStaleDistFiles, filterUnexpectedStaleDistFiles } from "../../scripts/check-stale-dist.ts";
 
 describe("check-stale-dist", () => {
   test("returns empty when dist is missing", () => {
@@ -26,6 +26,7 @@ describe("check-stale-dist", () => {
       writeFileSync(join(dir, "dist", "legacy.js"), "\n");
 
       expect(findStaleDistFiles(dir)).toEqual(["dist/legacy.js"]);
+      expect(filterUnexpectedStaleDistFiles(["dist/legacy.js"])).toEqual(["dist/legacy.js"]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -43,5 +44,11 @@ describe("check-stale-dist", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  test("filterUnexpectedStaleDistFiles ignores allowlisted stale entries", () => {
+    expect(filterUnexpectedStaleDistFiles(["dist/config.js", "dist/new-stale.js"])).toEqual([
+      "dist/new-stale.js",
+    ]);
   });
 });
