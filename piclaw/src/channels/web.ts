@@ -16,14 +16,17 @@
 import { AgentQueue } from "../queue.js";
 import type { AgentPool } from "../agent-pool.js";
 import { initTheme } from "@mariozechner/pi-coding-agent";
-import { handleAuthVerifyRequest } from "./web/totp-auth.js";
 import {
-  handleWebauthnLoginFinish as handleWebauthnLoginFinishRequest,
-  handleWebauthnLoginStart as handleWebauthnLoginStartRequest,
-  handleWebauthnRegisterFinish as handleWebauthnRegisterFinishRequest,
-  handleWebauthnRegisterStart as handleWebauthnRegisterStartRequest,
-} from "./web/webauthn-auth.js";
-import { handleWebauthnEnrollPageRequest } from "./web/webauthn-enrol-page.js";
+  handleAuthVerifyEndpoint,
+  handleWebauthnEnrollPageEndpoint,
+  handleWebauthnLoginFinishEndpoint,
+  handleWebauthnLoginStartEndpoint,
+  handleWebauthnRegisterFinishEndpoint,
+  handleWebauthnRegisterStartEndpoint,
+  redirectToLoginResponse,
+  serveLoginPageResponse,
+  type AuthEndpointsContext,
+} from "./web/auth-endpoints.js";
 import { WebauthnChallengeTracker } from "./web/webauthn-challenges.js";
 import { TotpFailureTracker } from "./web/totp-failure-tracker.js";
 import {
@@ -503,41 +506,45 @@ export class WebChannel {
     });
   }
 
+  private getAuthEndpointsContext(): AuthEndpointsContext {
+    return {
+      createTotpContext: () => this.authGateway.createTotpContext(),
+      createWebauthnContext: () => this.authGateway.createWebauthnContext(),
+      createWebauthnEnrolPageContext: () => this.authGateway.createWebauthnEnrolPageContext(),
+      serveStatic: (relPath) => this.serveStatic(relPath),
+    };
+  }
+
   async handleAuthVerify(req: Request): Promise<Response> {
-    return await handleAuthVerifyRequest(req, this.authGateway.createTotpContext());
+    return await handleAuthVerifyEndpoint(req, this.getAuthEndpointsContext());
   }
 
   async handleWebauthnLoginStart(req: Request): Promise<Response> {
-    return await handleWebauthnLoginStartRequest(req, this.authGateway.createWebauthnContext());
+    return await handleWebauthnLoginStartEndpoint(req, this.getAuthEndpointsContext());
   }
 
   async handleWebauthnLoginFinish(req: Request): Promise<Response> {
-    return await handleWebauthnLoginFinishRequest(req, this.authGateway.createWebauthnContext());
+    return await handleWebauthnLoginFinishEndpoint(req, this.getAuthEndpointsContext());
   }
 
   async handleWebauthnRegisterStart(req: Request): Promise<Response> {
-    return await handleWebauthnRegisterStartRequest(req, this.authGateway.createWebauthnContext());
+    return await handleWebauthnRegisterStartEndpoint(req, this.getAuthEndpointsContext());
   }
 
   async handleWebauthnRegisterFinish(req: Request): Promise<Response> {
-    return await handleWebauthnRegisterFinishRequest(req, this.authGateway.createWebauthnContext());
+    return await handleWebauthnRegisterFinishEndpoint(req, this.getAuthEndpointsContext());
   }
 
   async handleWebauthnEnrollPage(_req: Request): Promise<Response> {
-    return handleWebauthnEnrollPageRequest(this.authGateway.createWebauthnEnrolPageContext());
+    return await handleWebauthnEnrollPageEndpoint(this.getAuthEndpointsContext());
   }
 
   async serveLoginPage(): Promise<Response> {
-    return this.serveStatic("login.html");
+    return await serveLoginPageResponse(this.getAuthEndpointsContext());
   }
 
   redirectToLogin(): Response {
-    return new Response(null, {
-      status: 302,
-      headers: {
-        Location: "/login",
-      },
-    });
+    return redirectToLoginResponse();
   }
 
   async handleRequest(req: Request): Promise<Response> {

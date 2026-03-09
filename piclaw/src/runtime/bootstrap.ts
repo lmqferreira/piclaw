@@ -60,9 +60,16 @@ export type RuntimeBootstrapWhatsApp =
 /** Optional pushover channel contract required by runtime bootstrap orchestration. */
 export type RuntimeBootstrapPushover = RuntimePushoverWorkerChannel & NonNullable<ShutdownDeps["pushover"]>;
 
+/** Runtime core services contract consumed by bootstrap orchestration. */
+export interface RuntimeBootstrapCoreServices {
+  queue: RuntimeBootstrapQueue;
+  agentPool: RuntimeBootstrapAgentPool;
+  state: RuntimeBootstrapState;
+}
+
 /** Dependency injection contract for the runtime bootstrap sequence. */
 export interface RuntimeBootstrapDeps {
-  core: RuntimeCoreServices;
+  core: RuntimeBootstrapCoreServices;
   assistantName: string;
   triggerPattern: RegExp;
   pollIntervalMs: number;
@@ -104,19 +111,15 @@ export function createDefaultRuntimeBootstrapDeps(core: RuntimeCoreServices): Ru
     triggerPattern: TRIGGER_PATTERN,
     pollIntervalMs: POLL_INTERVAL,
     signalRegistrar: process,
-    initializeRuntimeEnvironment: (state) => initializeRuntimeEnvironment(state as RuntimeCoreServices["state"]),
-    registerOptionalProviders: (agentPool) => registerOptionalProviders(agentPool as RuntimeCoreServices["agentPool"]),
-    startWebChannel: (queue, agentPool) =>
-      startWebChannel(
-        queue as RuntimeCoreServices["queue"],
-        agentPool as RuntimeCoreServices["agentPool"]
-      ) as Promise<RuntimeBootstrapWeb>,
-    startOptionalPushoverChannel: () => startOptionalPushoverChannel() as Promise<RuntimeBootstrapPushover | null>,
-    createWhatsAppChannel: (state) => createWhatsAppChannel(state as RuntimeCoreServices["state"]) as RuntimeBootstrapWhatsApp,
+    initializeRuntimeEnvironment: () => initializeRuntimeEnvironment(core.state),
+    registerOptionalProviders: () => registerOptionalProviders(core.agentPool),
+    startWebChannel: () => startWebChannel(core.queue, core.agentPool),
+    startOptionalPushoverChannel: () => startOptionalPushoverChannel(),
+    createWhatsAppChannel: () => createWhatsAppChannel(core.state),
     createShutdownHandler,
     registerRuntimeShutdownSignals,
-    createRuntimeSenders: (web, whatsapp, pushover) => createRuntimeSenders(web, whatsapp, pushover),
-    startRuntimeWorkers: (queue, agentPool, web, senders) => startRuntimeWorkers(queue, agentPool, web, senders),
+    createRuntimeSenders,
+    startRuntimeWorkers,
     startRuntimeLoop,
     log: (message) => console.log(message),
     stopIpcWatcher,
@@ -130,13 +133,13 @@ export function createDefaultRuntimeBootstrapDeps(core: RuntimeCoreServices): Ru
 export async function bootstrapRuntime(deps: RuntimeBootstrapDeps): Promise<void> {
   const { queue, agentPool, state } = deps.core;
 
-  deps.initializeRuntimeEnvironment(state as RuntimeBootstrapState);
-  deps.registerOptionalProviders(agentPool as RuntimeBootstrapAgentPool);
+  deps.initializeRuntimeEnvironment(state);
+  deps.registerOptionalProviders(agentPool);
   deps.log("=== Piclaw - Pi Coding Agent Assistant ===");
 
-  const web = await deps.startWebChannel(queue as RuntimeBootstrapQueue, agentPool as RuntimeBootstrapAgentPool);
+  const web = await deps.startWebChannel(queue, agentPool);
   const pushover = await deps.startOptionalPushoverChannel();
-  const whatsapp = deps.createWhatsAppChannel(state as RuntimeBootstrapState);
+  const whatsapp = deps.createWhatsAppChannel(state);
 
   const shutdown = deps.createShutdownHandler({
     queue,
@@ -150,7 +153,7 @@ export async function bootstrapRuntime(deps: RuntimeBootstrapDeps): Promise<void
   deps.registerRuntimeShutdownSignals(deps.signalRegistrar, shutdown);
 
   const senders = deps.createRuntimeSenders(web, whatsapp, pushover);
-  deps.startRuntimeWorkers(queue as RuntimeBootstrapQueue, agentPool as RuntimeBootstrapAgentPool, web, senders);
+  deps.startRuntimeWorkers(queue, agentPool, web, senders);
 
   await whatsapp.connect();
 

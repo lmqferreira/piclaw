@@ -88,6 +88,27 @@ interface TurnTracker {
   getTurnCount: () => number;
 }
 
+interface AgentContentBlock {
+  type?: unknown;
+  id?: unknown;
+  text?: unknown;
+}
+
+interface AgentMessageRecord {
+  role?: unknown;
+  content?: unknown;
+  toolCallId?: unknown;
+}
+
+interface SessionWithInternalAgent extends AgentSession {
+  agent?: {
+    state?: {
+      messages?: AgentMessageRecord[];
+    };
+    replaceMessages?: (messages: AgentMessageRecord[]) => void;
+  };
+}
+
 /** How long (ms) an idle session stays cached before being disposed. */
 const IDLE_TTL = 10 * 60 * 1000; // 10 minutes
 const CLEANUP_INTERVAL = 60 * 1000; // check every minute
@@ -416,20 +437,22 @@ export class AgentPool {
   }
 
   private pruneOrphanToolResults(session: AgentSession, chatJid: string): void {
-    const messages = (session as any).agent?.state?.messages as Array<Record<string, any>> | undefined;
+    const internalSession = session as SessionWithInternalAgent;
+    const messages = internalSession.agent?.state?.messages;
     if (!Array.isArray(messages) || messages.length === 0) return;
 
     const toolCallIds = new Set<string>();
     for (const msg of messages) {
       if (msg?.role !== "assistant" || !Array.isArray(msg.content)) continue;
       for (const block of msg.content) {
-        if (block && block.type === "toolCall" && typeof block.id === "string") {
-          toolCallIds.add(block.id);
+        const contentBlock = block as AgentContentBlock;
+        if (contentBlock?.type === "toolCall" && typeof contentBlock.id === "string") {
+          toolCallIds.add(contentBlock.id);
         }
       }
     }
 
-    const shouldKeepToolResult = (msg: Record<string, any>) => {
+    const shouldKeepToolResult = (msg: AgentMessageRecord) => {
       if (msg?.role !== "toolResult") return true;
       if (toolCallIds.size === 0) return false;
       const id = msg.toolCallId;
@@ -440,7 +463,7 @@ export class AgentPool {
 
     if (pruned.length !== messages.length) {
       try {
-        (session as any).agent?.replaceMessages(pruned as any);
+        internalSession.agent?.replaceMessages?.(pruned);
         console.warn(`[agent-pool] Pruned ${messages.length - pruned.length} orphan tool result(s) for ${chatJid}`);
       } catch (err) {
         console.warn(`[agent-pool] Failed to prune orphan tool results for ${chatJid}:`, err);
@@ -456,13 +479,16 @@ export class AgentPool {
     let turnCount = 0;
     let messageHasDelta = false;
 
-    const extractTextFromContent = (content: any): string => {
+    const extractTextFromContent = (content: unknown): string => {
       if (!content) return "";
       if (typeof content === "string") return content;
       if (Array.isArray(content)) {
         return content
-          .filter((block) => block && block.type === "text")
-          .map((block) => (typeof block.text === "string" ? block.text : ""))
+          .map((block) => {
+            const contentBlock = block as AgentContentBlock;
+            if (contentBlock?.type !== "text") return "";
+            return typeof contentBlock.text === "string" ? contentBlock.text : "";
+          })
           .join("");
       }
       return "";
@@ -540,7 +566,7 @@ export class AgentPool {
       tracker.handleMessageUpdate(event);
 
       if (event.type === "message_end") {
-        recordMessageUsage(chatJid, (event as any).message);
+        recordMessageUsage(chatJid, (event as { message?: unknown }).message);
       }
     });
   }

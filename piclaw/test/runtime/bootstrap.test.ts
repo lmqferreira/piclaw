@@ -50,7 +50,7 @@ describe("runtime bootstrap", () => {
     let capturedShutdownDeps: { stopIpcWatcher: () => void; stopSchedulerLoop: () => void } | null = null;
 
     const deps: RuntimeBootstrapDeps = {
-      core: { queue, agentPool, state } as RuntimeCoreServices,
+      core: { queue, agentPool, state },
       assistantName: "Pi",
       triggerPattern: /@pi/i,
       pollIntervalMs: 123,
