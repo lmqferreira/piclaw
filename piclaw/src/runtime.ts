@@ -18,23 +18,19 @@ import {
   POLL_INTERVAL,
   TRIGGER_PATTERN,
 } from "./core/config.js";
-import { AgentPool } from "./agent-pool.js";
 import { stopIpcWatcher } from "./ipc.js";
-import { AgentQueue } from "./queue.js";
+import { createRuntimeCoreServices, registerRuntimeShutdownSignals } from "./runtime/composition.js";
 import { startRuntimeLoop } from "./runtime/coordinator.js";
 import { registerOptionalProviders } from "./runtime/provider-bootstrap.js";
 import { createShutdownHandler } from "./runtime/shutdown.js";
 import { initializeRuntimeEnvironment, startOptionalPushoverChannel, startWebChannel, createWhatsAppChannel } from "./runtime/startup.js";
-import { RuntimeState } from "./runtime/state.js";
 import { createRuntimeSenders, startRuntimeWorkers } from "./runtime/wiring.js";
 import { stopSchedulerLoop } from "./task-scheduler.js";
 
-const queue = new AgentQueue();
-const agentPool = new AgentPool();
-const state = new RuntimeState(DATA_DIR);
-
 /** Boot all subsystems (DB, channels, agent pool, scheduler) and enter the main loop. */
 export async function main(): Promise<void> {
+  const { queue, agentPool, state } = createRuntimeCoreServices({ dataDir: DATA_DIR });
+
   initializeRuntimeEnvironment(state);
   registerOptionalProviders(agentPool);
 
@@ -53,8 +49,7 @@ export async function main(): Promise<void> {
     stopIpcWatcher,
     stopSchedulerLoop,
   });
-  process.on("SIGTERM", () => shutdown("SIGTERM"));
-  process.on("SIGINT", () => shutdown("SIGINT"));
+  registerRuntimeShutdownSignals(process, shutdown);
 
   const senders = createRuntimeSenders(web, whatsapp, pushover);
   startRuntimeWorkers(queue, agentPool, web, senders);
