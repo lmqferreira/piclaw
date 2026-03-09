@@ -84,6 +84,7 @@ Scope reviewed: `piclaw/piclaw/src`, `piclaw/piclaw/extensions`, `piclaw/piclaw/
   - tightened Azure tool-call limit utilities in `src/utils/azure-tool-call-limit.ts` by removing `any` from message/item handling and introducing guarded record access helpers for reasoning/function-call parsing
   - removed residual `as [any, ...any[]]` SQL update spread casts in `src/db/tasks.ts` and `src/db/remote-interop.ts` by using unknown-value spread arrays directly
   - tightened control helper typing in `src/agent-control/agent-control-helpers.ts` by replacing `any` event/content parameters with `AgentSessionEvent` + guarded unknown content parsing and `Model<unknown>` model matching signatures
+  - enforced commenting standards on recently hardened src seams by adding module-purpose headers and exported API JSDoc in `src/remote/service.ts` and `src/utils/azure-tool-call-limit.ts`
 
 ### Recent commit sequence (latest first)
 
@@ -210,7 +211,7 @@ Scope reviewed: `piclaw/piclaw/src`, `piclaw/piclaw/extensions`, `piclaw/piclaw/
   - Pending: continue reducing `any` density in remaining hotspots (especially residual `src/agent-pool/*` internals and remote/tooling payload boundaries).
 
 - [ ] **Commenting/documentation standards consistency**
-  - In progress: extracted seam modules include module-level purpose headers and JSDoc on exported contracts/helpers (recently reaffirmed for `runtime/composition.ts` and `runtime/bootstrap.ts`).
+  - In progress: extracted seam modules include module-level purpose headers and JSDoc on exported contracts/helpers (recently reaffirmed for `runtime/composition.ts`, `runtime/bootstrap.ts`, `remote/service.ts`, and `utils/azure-tool-call-limit.ts`).
   - Pending: apply same standards to remaining large hotspots touched in upcoming tranches and enforce in review checklist.
 
 - [ ] **Test redundancy analysis (suite signal-to-noise)**

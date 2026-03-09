@@ -1,3 +1,12 @@
+/**
+ * utils/azure-tool-call-limit.ts – Azure tool-call history trimming helpers.
+ *
+ * Azure OpenAI responses can fail when historical function-call +
+ * function_call_output items exceed service limits. This module removes or
+ * deduplicates older tool-call items and inserts a compact assistant summary so
+ * conversational continuity is preserved while staying under the cap.
+ */
+
 type ToolCallEntry = {
   callId: string;
   itemId?: string;
@@ -13,6 +22,7 @@ type ToolCallEntry = {
 
 type ToolCallMessage = Record<string, unknown>;
 
+/** Options controlling tool-call trimming and summary generation behavior. */
 export type ToolCallLimitConfig = {
   limit: number;
   summaryMax: number;
@@ -20,6 +30,7 @@ export type ToolCallLimitConfig = {
   dedupeToolOutputSearch: boolean;
 };
 
+/** Result payload after applying tool-call limits to response-input messages. */
 export type ToolCallLimitResult = {
   messages: ToolCallMessage[];
   toolCallTotal: number;
@@ -128,6 +139,12 @@ function describeToolCall(entry: ToolCallEntry, outputChars: number): string {
   return `• ${name}: ${outputPreview}`;
 }
 
+/**
+ * Remove/dedupe older function-call items and inject an assistant summary.
+ *
+ * The returned message array preserves order for retained items and inserts the
+ * synthetic summary where removed blocks originally began.
+ */
 export function applyToolCallLimit(messages: ToolCallMessage[], config: ToolCallLimitConfig): ToolCallLimitResult {
   const entries: ToolCallEntry[] = [];
   const entryByCallId = new Map<string, ToolCallEntry>();

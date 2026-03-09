@@ -1,3 +1,12 @@
+/**
+ * remote/service.ts – Remote interop HTTP service orchestration.
+ *
+ * This module owns `/api/remote/*` endpoint dispatch and request handling for
+ * pair requests, pair confirmations, signed ping/proposal/execute flows, and
+ * revocation. It centralizes auth verification, SSRF-safe callback proof
+ * checks, per-endpoint rate limiting, and short-circuit execution guards.
+ */
+
 import { createUuid } from "../utils/ids.js";
 import { loadOrCreateIdentity, deriveFingerprint, deriveInstanceId, verifyPayload } from "./identity.js";
 import {
@@ -252,6 +261,12 @@ function logAudit(peer: RemotePeerRecord | null, endpoint: string, status: strin
   });
 }
 
+/**
+ * RemoteInteropService validates and serves remote interop API requests.
+ *
+ * The service is intentionally stateful for nonce/replay windows, endpoint
+ * rate-limit buckets, and bounded concurrent execute requests.
+ */
 export class RemoteInteropService {
   private nonceCache = new RemoteNonceCache(DEFAULT_NONCE_TTL_MS, DEFAULT_NONCE_CACHE_SIZE);
   private pairLimiter = new SlidingWindowLimiter(PAIR_REQUEST_LIMIT, PAIR_REQUEST_WINDOW_MS);
@@ -265,6 +280,7 @@ export class RemoteInteropService {
 
   constructor(private agentPool?: AgentPool) {}
 
+  /** Route an incoming `/api/remote/*` request to its endpoint handler. */
   async handleRequest(req: Request): Promise<Response> {
     if (!isRemoteInteropEnabled()) {
       return jsonResponse({ error: "Not found" }, 404);
