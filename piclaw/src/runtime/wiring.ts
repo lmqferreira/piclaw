@@ -2,26 +2,36 @@
  * runtime/wiring.ts – Runtime message/scheduler wiring helpers.
  */
 
-import { startIpcWatcher } from "../ipc.js";
-import type { AgentQueue } from "../queue.js";
-import { startSchedulerLoop } from "../task-scheduler.js";
-import type { AgentPool } from "../agent-pool.js";
-import type { PushoverChannel } from "../channels/pushover.js";
-import type { WebChannel } from "../channels/web.js";
-import type { WhatsAppChannel } from "../channels/whatsapp.js";
+import { startIpcWatcher, type IpcDeps } from "../ipc.js";
+import { startSchedulerLoop, type SchedulerDeps } from "../task-scheduler.js";
 
-export type RuntimeSendMessageOptions = { forceRoot?: boolean; threadId?: number | null; source?: string };
+export type RuntimeSenders = Pick<IpcDeps, "sendMessage" | "sendNudge">;
 
-export type RuntimeSenders = {
-  sendMessage: (jid: string, text: string, options?: RuntimeSendMessageOptions) => Promise<void>;
-  sendNudge?: (text: string) => Promise<void>;
-};
+export type RuntimeSendMessageOptions = Parameters<RuntimeSenders["sendMessage"]>[2];
+
+export interface RuntimeWebWorkerChannel {
+  sendMessage: RuntimeSenders["sendMessage"];
+  resumeChat: (chatJid: string, threadRootId?: number | null) => void;
+  resumePendingChats: (chatJid?: string) => void;
+}
+
+export interface RuntimeWhatsAppWorkerChannel {
+  sendMessage: (jid: string, text: string) => Promise<void>;
+}
+
+export interface RuntimePushoverWorkerChannel {
+  sendMessage: (jid: string, text: string) => Promise<void>;
+}
+
+export interface RuntimeModelResolver {
+  resolveModelInput: NonNullable<IpcDeps["resolveModel"]>;
+}
 
 /** Build sendMessage/sendNudge closures for runtime workers. */
 export function createRuntimeSenders(
-  web: WebChannel,
-  whatsapp: WhatsAppChannel,
-  pushover: PushoverChannel | null
+  web: RuntimeWebWorkerChannel,
+  whatsapp: RuntimeWhatsAppWorkerChannel,
+  pushover: RuntimePushoverWorkerChannel | null
 ): RuntimeSenders {
   const sendMessage = async (jid: string, text: string, options?: RuntimeSendMessageOptions) => {
     if (jid.startsWith("web:")) {
@@ -44,9 +54,9 @@ export function createRuntimeSenders(
 
 /** Start IPC and scheduler background workers with runtime callbacks. */
 export function startRuntimeWorkers(
-  queue: AgentQueue,
-  agentPool: AgentPool,
-  web: WebChannel,
+  queue: SchedulerDeps["queue"],
+  agentPool: SchedulerDeps["agentPool"] & RuntimeModelResolver,
+  web: RuntimeWebWorkerChannel,
   senders: RuntimeSenders
 ): void {
   startIpcWatcher({

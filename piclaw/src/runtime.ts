@@ -19,9 +19,6 @@ import {
   TRIGGER_PATTERN,
 } from "./core/config.js";
 import { AgentPool } from "./agent-pool.js";
-import type { PushoverChannel } from "./channels/pushover.js";
-import type { WebChannel } from "./channels/web.js";
-import type { WhatsAppChannel } from "./channels/whatsapp.js";
 import { stopIpcWatcher } from "./ipc.js";
 import { AgentQueue } from "./queue.js";
 import { startRuntimeLoop } from "./runtime/coordinator.js";
@@ -34,12 +31,7 @@ import { stopSchedulerLoop } from "./task-scheduler.js";
 
 const queue = new AgentQueue();
 const agentPool = new AgentPool();
-let whatsapp: WhatsAppChannel;
-let web: WebChannel;
-let pushover: PushoverChannel | null = null;
-
 const state = new RuntimeState(DATA_DIR);
-
 
 /** Boot all subsystems (DB, channels, agent pool, scheduler) and enter the main loop. */
 export async function main(): Promise<void> {
@@ -48,9 +40,9 @@ export async function main(): Promise<void> {
 
   console.log("=== Piclaw - Pi Coding Agent Assistant ===");
 
-  web = await startWebChannel(queue, agentPool);
-  pushover = await startOptionalPushoverChannel();
-  whatsapp = createWhatsAppChannel(state);
+  const web = await startWebChannel(queue, agentPool);
+  const pushover = await startOptionalPushoverChannel();
+  const whatsapp = createWhatsAppChannel(state);
 
   const shutdown = createShutdownHandler({
     queue,

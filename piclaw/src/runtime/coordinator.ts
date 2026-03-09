@@ -2,22 +2,23 @@
  * runtime/coordinator.ts – Runtime message-loop orchestration helpers.
  */
 
-import type { AgentPool } from "../agent-pool.js";
-import type { WhatsAppChannel } from "../channels/whatsapp.js";
-import type { AgentQueue } from "../queue.js";
-import { processMessages, runMessageLoop } from "./message-loop.js";
-import type { RuntimeState } from "./state.js";
+import {
+  processMessages,
+  runMessageLoop,
+  type MessageLoopDeps,
+  type MessageProcessingDeps,
+} from "./message-loop.js";
 
 export type StartRuntimeLoopDeps = {
-  queue: AgentQueue;
-  state: RuntimeState;
-  agentPool: AgentPool;
-  whatsapp: WhatsAppChannel;
-  assistantName: string;
-  triggerPattern: RegExp;
-  pollIntervalMs: number;
-  runMessageLoopFn?: typeof runMessageLoop;
-  processMessagesFn?: typeof processMessages;
+  queue: MessageLoopDeps["queue"];
+  state: MessageLoopDeps["state"];
+  agentPool: MessageProcessingDeps["agentPool"];
+  whatsapp: MessageProcessingDeps["whatsapp"];
+  assistantName: MessageLoopDeps["assistantName"];
+  triggerPattern: MessageProcessingDeps["triggerPattern"];
+  pollIntervalMs: MessageLoopDeps["pollIntervalMs"];
+  runMessageLoopFn?: (deps: MessageLoopDeps) => Promise<void>;
+  processMessagesFn?: (chatJid: string, deps: MessageProcessingDeps) => Promise<boolean>;
 };
 
 /**
