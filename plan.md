@@ -45,6 +45,7 @@ Scope reviewed: `piclaw/piclaw/src`, `piclaw/piclaw/extensions`, `piclaw/piclaw/
 
 ### Recent commit sequence (latest first)
 
+- `99e5b92` Extract TOTP verify endpoint orchestration from web channel
 - `5076b35` Extract passkey enrol page response from web channel
 - `a568e6b` Extract WebAuthn auth endpoint orchestration from web channel
 - `98484d4` Extract WebAuthn challenge helpers from web channel
