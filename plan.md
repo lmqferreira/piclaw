@@ -40,6 +40,7 @@ Scope reviewed: `piclaw/piclaw/src`, `piclaw/piclaw/extensions`, `piclaw/piclaw/
 
 ### Recent commit sequence (latest first)
 
+- `7bd2bc3` Extract web session auth helpers from web channel
 - `be2bcca` Extract TOTP failure tracking from web channel and refresh plan
 - `c0e59d9` Extract runtime message-loop coordinator and update plan
 - `a4f7ddc` Extract runtime startup/wiring helpers and refresh plan status
