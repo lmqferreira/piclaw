@@ -108,7 +108,7 @@ export const uiThemeExtension: ExtensionFactory = (pi: ExtensionAPI) => {
         return;
       }
 
-      const trimmed = args.trim();
+      const trimmed = (args || '').trim();
       if (!trimmed || trimmed.toLowerCase() === "list") {
         sendThemeMessage(pi, formatThemeList());
         return;
@@ -139,7 +139,7 @@ export const uiThemeExtension: ExtensionFactory = (pi: ExtensionAPI) => {
         return;
       }
 
-      const trimmed = args.trim();
+      const trimmed = (args || '').trim();
       if (!trimmed) {
         sendThemeMessage(pi, "Usage: /tint #hex (e.g. /tint #3b82f6), /tint orange, or /tint off");
         return;
