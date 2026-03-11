@@ -83,11 +83,23 @@ export function useEditorState() {
 
     /** Close all other tabs. */
     const handleTabCloseOthers = useCallback((id) => {
+        const others = tabStore.getTabs().filter(t => t.id !== id && !t.pinned);
+        const dirtyCount = others.filter(t => t.dirty).length;
+        if (dirtyCount > 0) {
+            const confirmed = window.confirm(`${dirtyCount} unsaved tab${dirtyCount > 1 ? 's' : ''} will be closed. Continue?`);
+            if (!confirmed) return;
+        }
         tabStore.closeOthers(id);
     }, []);
 
     /** Close all tabs. */
     const handleTabCloseAll = useCallback(() => {
+        const tabs = tabStore.getTabs().filter(t => !t.pinned);
+        const dirtyCount = tabs.filter(t => t.dirty).length;
+        if (dirtyCount > 0) {
+            const confirmed = window.confirm(`${dirtyCount} unsaved tab${dirtyCount > 1 ? 's' : ''} will be closed. Continue?`);
+            if (!confirmed) return;
+        }
         tabStore.closeAll();
     }, []);
 
