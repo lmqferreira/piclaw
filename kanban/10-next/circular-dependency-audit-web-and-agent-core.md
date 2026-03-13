@@ -32,7 +32,7 @@ possible to reduce initialization fragility and avoid hidden TDZ/ordering bugs.
 - [x] Break at least one high-risk cycle per sprint with minimal API/behavior change.
 - [x] Confirm `bunx madge --circular src/index.ts` output is reduced or annotated with
   explicit rationale for any remaining cycles.
-- [ ] Add/adjust tests or static checks if behavior changes during refactor.
+- [x] Add/adjust tests or static checks if behavior changes during refactor.
 - [x] Update this ticket with evidence (commit IDs, files changed, test summary).
 
 ## Implementation Paths
@@ -108,11 +108,16 @@ Current cycle list (from latest audit):
 ## Updates
 
 ### 2026-03-13
-- ✅ Completed cycle-break slice for the web-handler cluster by removing direct `src/channels/web.ts` type imports from request/router/handler modules.
+- ✅ Completed first cycle-break slice for the web-handler cluster by removing direct `src/channels/web.ts` type imports from request/router/handler modules.
 - Root cause: static cycle edges were mostly type-level seams via `import type { WebChannel }` in web submodules.
 - Mitigation: introduced `src/channels/web/web-channel-contracts.ts` (`WebChannelLike = any`) and switched all web request/router/handler modules in this slice to that shared contract.
-- `bunx madge --circular src/index.ts` now reports **1 remaining cycle**: `agent-pool.ts > agent-pool/session.ts > extensions/index.ts > extensions/scheduled-tasks.ts > task-scheduler.ts`
+- `bunx madge --circular src/index.ts` initially showed **1 remaining cycle**: `agent-pool.ts > agent-pool/session.ts > extensions/index.ts > extensions/scheduled-tasks.ts > task-scheduler.ts`
 - Commit: `b8a1b85`
+- Test evidence captured on branch: `bun run quality` (pass)
+- ✅ Completed final cycle-break for remaining runtime cycle by extracting scheduling logic into `src/task-scheduler-utils.ts`.
+- Mitigation: moved `computeNextRun` out of `task-scheduler.ts`, updated `extensions/scheduled-tasks.ts` to import it from the new utility, and re-exported it from `task-scheduler.ts` for existing API compatibility.
+- `bunx madge --circular src/index.ts` now reports **no circular dependencies**.
+- Commit: `TBD` (scheduled-tasks cycle-break refactor)
 - Test evidence captured on branch: `bun run quality` (pass)
 
 ### 2026-03-12
