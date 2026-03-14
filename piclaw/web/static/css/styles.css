@@ -494,17 +494,22 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     flex: 1;
-    line-height: var(--workspace-row-height);
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    line-height: 1.2;
     user-select: none;
     -webkit-user-select: none;
 }
 
 .workspace-label-text {
-    display: inline-block;
+    display: block;
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    line-height: 1.2;
     -webkit-user-drag: none;
 }
 
@@ -528,6 +533,10 @@ body {
     opacity: 0.6;
     margin-left: 4px;
     flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    height: 100%;
+    line-height: 1;
 }
 
 /* ── Splitter ── */
