@@ -85,6 +85,9 @@ export async function handleAgentMessage(channel, req, pathname, chatJid, defaul
     // current turn fully finalizes. Queue them in server state first, then
     // persist/broadcast the real user message only when consumed.
     const shouldDeferQueuedFollowup = !command && isStreaming && (requestMode === "queue" || requestMode === "auto");
+    console.log(`[web] handleAgentMessage ${chatJid}: mode=${requestMode}, isStreaming=${isStreaming}, ` +
+        `shouldDefer=${shouldDeferQueuedFollowup}, hasCommand=${!!command}, ` +
+        `content=${content.slice(0, 60)}`);
     if (shouldDeferQueuedFollowup) {
         return queueDeferredFollowup(content, {
             mediaIds: normalized.mediaIds,
@@ -344,6 +347,8 @@ export async function handleAgentMessage(channel, req, pathname, chatJid, defaul
     }
     // Normal (non-queued) message processing — broadcast to timeline now
     broadcastNewPost();
+    console.log(`[web] handleAgentMessage ${chatJid}: normal path → enqueue processChat ` +
+        `(key=chat:${chatJid}:${interaction.id})`);
     channel.queue.enqueue(async () => {
         await processChat(channel, chatJid, agentId, interaction.data?.thread_id ?? interaction.id);
     }, `chat:${chatJid}:${interaction.id}`);
@@ -396,6 +401,9 @@ export async function processChat(channel, chatJid, agentId, threadRootId) {
     };
     const prevCursor = getChatCursor(chatJid);
     const messages = getMessagesSince(chatJid, prevCursor, ASSISTANT_NAME);
+    console.log(`[web] processChat ${chatJid}: cursor=${prevCursor}, ` +
+        `pendingMessages=${messages.length}${messages.length > 0 ? ` [${messages.map(m => `${m.id}@${m.timestamp}`).join(", ")}]` : ""}, ` +
+        `threadRootId=${threadRootId ?? "none"}`);
     if (messages.length === 0) {
         materializeNextDeferredFollowup();
         return;
@@ -491,6 +499,7 @@ export async function processChat(channel, chatJid, agentId, threadRootId) {
     const finalizeSuccessfulRun = async () => {
         // Single UPDATE: clears inflight AND clears any stale failed_run atomically.
         endChatRun(chatJid);
+        const cursorAfterEnd = getChatCursor(chatJid);
         const pendingSteerTimestamp = channel.consumePendingSteering(chatJid);
         if (pendingSteerTimestamp) {
             const current = getChatCursor(chatJid);
@@ -498,6 +507,7 @@ export async function processChat(channel, chatJid, agentId, threadRootId) {
                 setChatCursor(chatJid, pendingSteerTimestamp);
             }
         }
+        const cursorAfterSteer = getChatCursor(chatJid);
         channel.saveState();
         const contextUsage = await channel.agentPool.getContextUsageForChat(chatJid);
         trackedEmitter.status({
@@ -512,7 +522,11 @@ export async function processChat(channel, chatJid, agentId, threadRootId) {
         // If more persisted user messages already exist after the cursor, process
         // them before consuming deferred queued items. This preserves one-message-
         // per-turn ordering and prevents cross-thread batching.
-        const remainingPersisted = getMessagesSince(chatJid, getChatCursor(chatJid), ASSISTANT_NAME);
+        const cursorNow = getChatCursor(chatJid);
+        const remainingPersisted = getMessagesSince(chatJid, cursorNow, ASSISTANT_NAME);
+        console.log(`[web] finalizeSuccessfulRun ${chatJid}: cursorAfterEnd=${cursorAfterEnd}, ` +
+            `cursorAfterSteer=${cursorAfterSteer}, cursorNow=${cursorNow}, ` +
+            `remaining=${remainingPersisted.length}${remainingPersisted.length > 0 ? ` [${remainingPersisted.map(m => `${m.id}@${m.timestamp}`).join(", ")}]` : ""}`);
         if (remainingPersisted.length > 0) {
             channel.resumeChat(chatJid);
             return;
