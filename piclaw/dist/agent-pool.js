@@ -23,6 +23,7 @@
 import { mkdirSync } from "fs";
 import { join } from "path";
 import { AuthStorage, createBashTool, createEditTool, createReadTool, createWriteTool, ModelRegistry, SettingsManager, getAgentDir, } from "@mariozechner/pi-coding-agent";
+import { streamSimple } from "@mariozechner/pi-ai";
 import { applyControlCommand } from "./agent-control/index.js";
 import { AGENT_TIMEOUT, SESSION_AUTO_ROTATE, SESSION_MAX_SIZE_BYTES, SESSIONS_DIR, WORKSPACE_DIR } from "./core/config.js";
 import { detectChannel } from "./router.js";
@@ -37,6 +38,31 @@ import { recordMessageUsage } from "./agent-pool/usage.js";
 import { resolveModelLabel } from "./utils/model-utils.js";
 import { withChatContext } from "./core/chat-context.js";
 import { getSessionFileSize, rotateSession } from "./session-rotation.js";
+function extractAssistantText(message) {
+    if (!Array.isArray(message?.content))
+        return "";
+    return message.content
+        .map((block) => block && typeof block === "object" && block.type === "text"
+        ? String(block.text ?? "")
+        : "")
+        .join("")
+        .trim();
+}
+function extractAssistantThinking(message) {
+    if (!Array.isArray(message?.content))
+        return "";
+    return message.content
+        .map((block) => block && typeof block === "object" && block.type === "thinking"
+        ? String(block.thinking ?? "")
+        : "")
+        .join("")
+        .trim();
+}
+function toSideReasoning(level) {
+    return level === "minimal" || level === "low" || level === "medium" || level === "high" || level === "xhigh"
+        ? level
+        : undefined;
+}
 /** How long (ms) an idle session stays cached before being disposed. */
 const IDLE_TTL = 10 * 60 * 1000; // 10 minutes
 const CLEANUP_INTERVAL = 60 * 1000; // check every minute
@@ -59,10 +85,12 @@ export class AgentPool {
     sessionBinder;
     bashOperations = createTrackedBashOperations();
     attachments = getAttachmentRegistry();
+    sideStreamSimple;
     constructor(options = {}) {
         this.createSession = options.createSession;
         this.authStorage = AuthStorage.create();
         this.modelRegistry = options.modelRegistry ?? new ModelRegistry(this.authStorage);
+        this.sideStreamSimple = options.sideStreamSimple ?? streamSimple;
         mkdirSync(SESSIONS_DIR, { recursive: true });
         mkdirSync(this.logsDir, { recursive: true });
         this.cleanupTimer = setInterval(() => this.evictIdle(), CLEANUP_INTERVAL);
@@ -187,6 +215,91 @@ export class AgentPool {
         const session = await this.getOrCreate(chatJid);
         const model = session.model;
         return model ? `${model.provider}/${model.id}` : null;
+    }
+    async runSidePrompt(chatJid, prompt, options = {}) {
+        const session = await this.getOrCreate(chatJid);
+        const model = session.model;
+        if (!model) {
+            return { status: "error", result: null, thinking: null, error: "No active model selected.", model: null };
+        }
+        const apiKey = await this.modelRegistry.getApiKey(model);
+        if (!apiKey) {
+            return {
+                status: "error",
+                result: null,
+                thinking: null,
+                error: `No credentials available for ${model.provider}/${model.id}.`,
+                model: `${model.provider}/${model.id}`,
+            };
+        }
+        const stream = this.sideStreamSimple(model, {
+            ...(options.systemPrompt ? { systemPrompt: options.systemPrompt } : {}),
+            messages: [
+                {
+                    role: "user",
+                    content: [{ type: "text", text: prompt }],
+                    timestamp: Date.now(),
+                },
+            ],
+        }, {
+            apiKey,
+            reasoning: toSideReasoning(session.thinkingLevel),
+            signal: options.signal,
+        });
+        let text = "";
+        let thinking = "";
+        let finalMessage = null;
+        for await (const event of stream) {
+            options.onEvent?.(event);
+            if (event.type === "text_delta") {
+                text += event.delta;
+                options.onTextDelta?.(event.delta);
+            }
+            else if (event.type === "thinking_delta") {
+                thinking += event.delta;
+                options.onThinkingDelta?.(event.delta);
+            }
+            else if (event.type === "done") {
+                finalMessage = event.message;
+            }
+            else if (event.type === "error") {
+                finalMessage = event.error;
+            }
+        }
+        if (!finalMessage) {
+            return {
+                status: "error",
+                result: null,
+                thinking: null,
+                error: "Side prompt finished without a response.",
+                model: `${model.provider}/${model.id}`,
+            };
+        }
+        try {
+            recordMessageUsage(chatJid, finalMessage);
+        }
+        catch (err) {
+            console.warn(`[agent-pool] Failed to persist side-prompt usage for ${chatJid}:`, err);
+        }
+        if (finalMessage.stopReason === "error" || finalMessage.stopReason === "aborted") {
+            return {
+                status: "error",
+                result: null,
+                thinking: thinking || extractAssistantThinking(finalMessage),
+                error: finalMessage.errorMessage || "Side prompt failed.",
+                model: `${model.provider}/${model.id}`,
+                usage: finalMessage.usage,
+                stopReason: finalMessage.stopReason,
+            };
+        }
+        return {
+            status: "success",
+            result: text || extractAssistantText(finalMessage) || null,
+            thinking: thinking || extractAssistantThinking(finalMessage) || null,
+            model: `${model.provider}/${model.id}`,
+            usage: finalMessage.usage,
+            stopReason: finalMessage.stopReason,
+        };
     }
     /** Return available model labels and current model for a chat session. */
     async getAvailableModels(chatJid) {

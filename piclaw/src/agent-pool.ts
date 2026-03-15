@@ -35,6 +35,7 @@ import {
   SettingsManager,
   getAgentDir,
 } from "@mariozechner/pi-coding-agent";
+import { streamSimple, type AssistantMessageEvent, type AssistantMessageEventStream, type Model, type Api, type Usage } from "@mariozechner/pi-ai";
 
 import { applyControlCommand, type AgentControlCommand, type AgentControlResult } from "./agent-control/index.js";
 import { AGENT_TIMEOUT, SESSION_AUTO_ROTATE, SESSION_MAX_SIZE_BYTES, SESSIONS_DIR, WORKSPACE_DIR } from "./core/config.js";
@@ -65,6 +66,24 @@ export interface TurnOutput {
   attachments: AttachmentInfo[];
 }
 
+export interface SidePromptResult {
+  status: "success" | "error";
+  result: string | null;
+  thinking: string | null;
+  error?: string;
+  model: string | null;
+  usage?: Usage;
+  stopReason?: string;
+}
+
+export interface SidePromptOptions {
+  systemPrompt?: string;
+  signal?: AbortSignal;
+  onEvent?: (event: AssistantMessageEvent) => void;
+  onTextDelta?: (delta: string) => void;
+  onThinkingDelta?: (delta: string) => void;
+}
+
 /** Options for AgentPool.runAgent(): chatJid, messages, callbacks. */
 export interface RunAgentOptions {
   onEvent?: (event: AgentSessionEvent) => void;
@@ -78,6 +97,11 @@ export interface RunAgentOptions {
 export interface AgentPoolOptions {
   createSession?: (chatJid: string, sessionDir: string) => Promise<AgentSession>;
   modelRegistry?: ModelRegistry;
+  sideStreamSimple?: (
+    model: Model<Api>,
+    context: Parameters<typeof streamSimple>[1],
+    options?: Parameters<typeof streamSimple>[2]
+  ) => AssistantMessageEventStream;
 }
 
 interface PoolEntry {
@@ -95,6 +119,32 @@ interface AgentContentBlock {
   type?: unknown;
   id?: unknown;
   text?: unknown;
+}
+
+function extractAssistantText(message: { content?: unknown[] } | null | undefined): string {
+  if (!Array.isArray(message?.content)) return "";
+  return message.content
+    .map((block) => block && typeof block === "object" && (block as { type?: unknown }).type === "text"
+      ? String((block as { text?: unknown }).text ?? "")
+      : "")
+    .join("")
+    .trim();
+}
+
+function extractAssistantThinking(message: { content?: unknown[] } | null | undefined): string {
+  if (!Array.isArray(message?.content)) return "";
+  return message.content
+    .map((block) => block && typeof block === "object" && (block as { type?: unknown }).type === "thinking"
+      ? String((block as { thinking?: unknown }).thinking ?? "")
+      : "")
+    .join("")
+    .trim();
+}
+
+function toSideReasoning(level: unknown): "minimal" | "low" | "medium" | "high" | "xhigh" | undefined {
+  return level === "minimal" || level === "low" || level === "medium" || level === "high" || level === "xhigh"
+    ? level
+    : undefined;
 }
 
 /** How long (ms) an idle session stays cached before being disposed. */
@@ -121,11 +171,13 @@ export class AgentPool {
   private sessionBinder?: (session: AgentSession, chatJid: string) => Promise<void> | void;
   private bashOperations = createTrackedBashOperations();
   private attachments = getAttachmentRegistry();
+  private sideStreamSimple: NonNullable<AgentPoolOptions["sideStreamSimple"]>;
 
   constructor(options: AgentPoolOptions = {}) {
     this.createSession = options.createSession;
     this.authStorage = AuthStorage.create();
     this.modelRegistry = options.modelRegistry ?? new ModelRegistry(this.authStorage);
+    this.sideStreamSimple = options.sideStreamSimple ?? streamSimple;
     mkdirSync(SESSIONS_DIR, { recursive: true });
     mkdirSync(this.logsDir, { recursive: true });
     this.cleanupTimer = setInterval(() => this.evictIdle(), CLEANUP_INTERVAL);
@@ -265,6 +317,100 @@ export class AgentPool {
     const session = await this.getOrCreate(chatJid);
     const model = session.model;
     return model ? `${model.provider}/${model.id}` : null;
+  }
+
+  async runSidePrompt(chatJid: string, prompt: string, options: SidePromptOptions = {}): Promise<SidePromptResult> {
+    const session = await this.getOrCreate(chatJid);
+    const model = session.model;
+    if (!model) {
+      return { status: "error", result: null, thinking: null, error: "No active model selected.", model: null };
+    }
+
+    const apiKey = await this.modelRegistry.getApiKey(model);
+    if (!apiKey) {
+      return {
+        status: "error",
+        result: null,
+        thinking: null,
+        error: `No credentials available for ${model.provider}/${model.id}.`,
+        model: `${model.provider}/${model.id}`,
+      };
+    }
+
+    const stream = this.sideStreamSimple(
+      model,
+      {
+        ...(options.systemPrompt ? { systemPrompt: options.systemPrompt } : {}),
+        messages: [
+          {
+            role: "user",
+            content: [{ type: "text", text: prompt }],
+            timestamp: Date.now(),
+          },
+        ],
+      },
+      {
+        apiKey,
+        reasoning: toSideReasoning((session as AgentSession & { thinkingLevel?: unknown }).thinkingLevel),
+        signal: options.signal,
+      },
+    );
+
+    let text = "";
+    let thinking = "";
+    let finalMessage: { stopReason?: string; errorMessage?: string; usage?: Usage; content?: unknown[]; provider?: string; model?: string; api?: string } | null = null;
+
+    for await (const event of stream) {
+      options.onEvent?.(event);
+      if (event.type === "text_delta") {
+        text += event.delta;
+        options.onTextDelta?.(event.delta);
+      } else if (event.type === "thinking_delta") {
+        thinking += event.delta;
+        options.onThinkingDelta?.(event.delta);
+      } else if (event.type === "done") {
+        finalMessage = event.message;
+      } else if (event.type === "error") {
+        finalMessage = event.error;
+      }
+    }
+
+    if (!finalMessage) {
+      return {
+        status: "error",
+        result: null,
+        thinking: null,
+        error: "Side prompt finished without a response.",
+        model: `${model.provider}/${model.id}`,
+      };
+    }
+
+    try {
+      recordMessageUsage(chatJid, finalMessage);
+    } catch (err) {
+      console.warn(`[agent-pool] Failed to persist side-prompt usage for ${chatJid}:`, err);
+    }
+
+    if (finalMessage.stopReason === "error" || finalMessage.stopReason === "aborted") {
+      return {
+        status: "error",
+        result: null,
+        thinking: thinking || extractAssistantThinking(finalMessage),
+        error: finalMessage.errorMessage || "Side prompt failed.",
+        model: `${model.provider}/${model.id}`,
+        usage: finalMessage.usage,
+        stopReason: finalMessage.stopReason,
+      };
+    }
+
+    return {
+      status: "success",
+      result: text || extractAssistantText(finalMessage) || null,
+      thinking: thinking || extractAssistantThinking(finalMessage) || null,
+      model: `${model.provider}/${model.id}`,
+      usage: finalMessage.usage,
+      stopReason: finalMessage.stopReason,
+    };
   }
 
   /** Return available model labels and current model for a chat session. */

@@ -31,7 +31,20 @@ docker exec -u agent -it piclaw bash
 cd /workspace && pi
 ```
 
-Provision provider credentials via `/shell <command>` in the web UI or `docker exec` with `pi /login`. See [docs/configuration.md](docs/configuration.md) for details.
+### Setting up provider credentials
+
+The easiest way to set up model/provider credentials is from the **terminal pane** in the web UI:
+
+1. Open the web UI.
+2. Click the **terminal** button to open the terminal pane.
+3. Run `pi /login`.
+4. Follow the provider flow:
+   - for OAuth/device-login providers, complete the browser/device-code sign-in
+   - for API-key-based providers, enter or configure the required key/secret as prompted
+
+This stores credentials in the agent profile inside the container, so the web UI and tools can reuse them afterwards.
+
+If you prefer, you can do the same via `docker exec` or `/shell <command>` in the web UI. See [docs/configuration.md](docs/configuration.md) for details.
 
 ## Web UI
 
@@ -43,6 +56,7 @@ The UI is single-user, mobile-friendly, and streams updates over SSE:
 - **Link previews** via server-side OpenGraph fetch
 - **Multi-turn threading** — subsequent turns are visually threaded under the first
 - **Themes + tinting** — presets plus `/theme` and `/tint` commands (Solarized auto light/dark)
+- **Terminal pane** — open a shell inside the container for setup tasks like running `pi /login` to add provider credentials
 - **Mobile-first layout** with webapp manifest
 
 ### Workspace explorer

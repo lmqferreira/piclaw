@@ -2223,3 +2223,42 @@ test("web channel can transition a card to cancelled via Action.Submit metadata"
   expect((updated?.data.content_blocks?.[0] as any)?.state).toBe("cancelled");
   expect((updated?.data.content_blocks?.[0] as any)?.last_submission?.data).toEqual({ reason: "user" });
 });
+
+test("web channel exposes side prompts through /agent/side-prompt", async () => {
+  const webMod = await import("../../../src/channels/web.js");
+  const web = new (webMod.WebChannel as any)({
+    queue: { enqueue: () => {} },
+    agentPool: {
+      runSidePrompt: async (chatJid: string, prompt: string, options: any) => ({
+        status: "success",
+        result: `answer:${prompt}`,
+        thinking: options?.systemPrompt ?? null,
+        model: `model-for:${chatJid}`,
+        stopReason: "stop",
+      }),
+      isStreaming: () => false,
+      runAgent: async () => ({ status: "success", result: "ok" }),
+      getContextUsageForChat: async () => null,
+    },
+  });
+
+  const req = new Request("http://test/agent/side-prompt", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt: "What changed?",
+      system_prompt: "Summarize briefly.",
+      chat_jid: "web:side-test",
+    }),
+  });
+
+  const res = await (web as any).handleRequest(req);
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({
+    status: "success",
+    result: "answer:What changed?",
+    thinking: "Summarize briefly.",
+    model: "model-for:web:side-test",
+    stopReason: "stop",
+  });
+});

@@ -112,6 +112,32 @@ Recovery logic (`recoverInflightRuns`):
 
 That keeps restart recovery on the same code path as an explicit reload instead of depending on a lucky post-reboot user action.
 
+## Adaptive Card actions
+
+The web UI can render `adaptive_card` content blocks inline in timeline posts and route card actions back through the normal web channel.
+
+- `Action.OpenUrl` is handled client-side with URL validation and an explicit secondary action button pattern.
+- `Action.Submit` posts to `POST /agent/card-action`.
+- Submissions are persisted as `adaptive_card_submission` content blocks on the follow-up message.
+- Card lifecycle is tracked on the original card block:
+  - default submit behavior: `active → completed`
+  - explicit terminal variants can resolve to `cancelled` or `failed`
+  - cards with `submit_behavior: "keep_active"` remain interactive after submit
+- Completed/cancelled/failed cards render read-only with a status banner and submission summary.
+- Built-in `/test-card` variants exist specifically to validate these paths, including bad URL handling, submit errors, keep-active cards, and terminal-state transitions.
+
+## Side prompts / Phase 3 groundwork
+
+Piclaw now has a side-prompt primitive for work that should reuse the chat's current model and thinking level without touching the main session tree.
+
+- Backend primitive: `AgentPool.runSidePrompt(chatJid, prompt, options)`
+- Web endpoint: `POST /agent/side-prompt`
+- Uses the current chat model + thinking level
+- Does not append to the main agent session tree
+- Intended as the substrate for future `/btw` / side-conversation UI work
+
+At the moment this is a backend building block rather than a full user-facing side conversation system. The next layer is live streaming and UI presentation for side prompts.
+
 ## Scheduled tasks / IPC
 
 Scheduled tasks run on the same `AgentSession` as normal user messages but are isolated using the **session tree**. Before executing a task, the scheduler saves the current tree position (leaf ID) and the active model. The task's prompt and response are appended to the session as usual, then the scheduler **navigates back** to the saved leaf. This leaves the task's output in a side branch of the session tree — it persists in history but does not pollute the user's conversation context.

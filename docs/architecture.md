@@ -42,12 +42,12 @@ piclaw/
 │   ├── router.ts                # Message routing
 │   ├── queue.ts                 # Agent queue with retry
 │   ├── queue/                   # Retry policy
-│   ├── agent-pool.ts            # AgentSession pool
+│   ├── agent-pool.ts            # AgentSession pool + side-prompt primitive
 │   ├── agent-pool/              # Session helpers, logging, slash commands
 │   ├── agent-control/           # Slash command handling + parsers
 │   ├── extensions/              # Inline extension factories
 │   ├── channels/                # WhatsApp + Web channels
-│   │   └── web/                 # HTTP handlers, SSE, workspace, auth
+│   │   └── web/                 # HTTP handlers, SSE, adaptive cards, workspace, auth
 │   ├── tools/                   # Bash tracking + context wrappers
 │   ├── db/                      # SQLite schema + accessors
 │   ├── db.ts                    # Legacy DB re-export
@@ -176,6 +176,7 @@ Page load
 - Workspace tree responses are cached briefly (1s) and rate-limited to prevent bursty UI reloads (HTTP 429 when exceeded).
 - The **workspace explorer** is a responsive sidebar (visible on desktop/tablet ≥1024px landscape) that shows a file tree of `/workspace`, supports file previews, drag-and-drop upload, inline file creation, inline rename, drag-and-drop move, and file reference pills for prompts.
 - The **code editor** is a standalone pane extension (`extensions/editor/`) using CodeMirror 6 directly (no Preact wrapper). It opens in the tabbed content area when a file is clicked in the explorer. Supports syntax highlighting for 12 languages, search/replace, line wrapping, dirty tracking, Cmd+S save, vim mode, whitespace toggle, and accent-aware theming. The editor bundle is lazy-loaded on first file open. Backend endpoints: `GET /workspace/file?mode=edit` (full content up to 256 KB) and `PUT /workspace/file` (save).
+- **Adaptive Cards** are rendered in the web timeline from `content_blocks` using the vendored Microsoft `adaptivecards` SDK. Action handling currently routes through `POST /agent/card-action`; the web message path also exposes a local `/test-card` command for persistent validation variants.
 - The **tab strip** provides multi-file editing with dirty indicators, pin support, MRU-based tab switching, context menus (Close / Close Others / Close All / Pin / Preview), and keyboard shortcuts (Ctrl+Tab, Ctrl+W).
 - **Markdown preview** is available for `.md` / `.mdx` / `.markdown` files via the tab context menu → Preview. Shows a live split-view with a resizable splitter.
 - **Message permalinks**: clicking a timeline timestamp inserts a `message:{id}` pill in the compose box; Ctrl+Click copies a shareable URL; clicking a reference scrolls to and highlights the target.

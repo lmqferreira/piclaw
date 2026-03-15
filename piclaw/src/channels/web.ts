@@ -996,6 +996,33 @@ export class WebChannel implements WebChannelLike {
     }, forwardRes.status);
   }
 
+  async handleAgentSidePrompt(req: Request): Promise<Response> {
+    let payload: { prompt?: string; system_prompt?: string; chat_jid?: string };
+    try {
+      payload = await req.json();
+    } catch {
+      return this.json({ error: "Invalid JSON" }, 400);
+    }
+
+    const prompt = typeof payload.prompt === "string" ? payload.prompt.trim() : "";
+    const systemPrompt = typeof payload.system_prompt === "string" ? payload.system_prompt.trim() : "";
+    const chatJid = typeof payload.chat_jid === "string" && payload.chat_jid.trim() ? payload.chat_jid.trim() : DEFAULT_CHAT_JID;
+
+    if (!prompt) {
+      return this.json({ error: "Missing or invalid prompt" }, 400);
+    }
+
+    const result = await this.agentPool.runSidePrompt(chatJid, prompt, {
+      ...(systemPrompt ? { systemPrompt } : {}),
+    });
+
+    if (result.status === "error") {
+      return this.json(result, 502);
+    }
+
+    return this.json(result, 200);
+  }
+
   async handleAgentMessage(req: Request, pathname: string): Promise<Response> {
     return handleAgentMessageRequest(this, req, pathname, DEFAULT_CHAT_JID, DEFAULT_AGENT_ID);
   }

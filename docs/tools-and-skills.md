@@ -26,7 +26,7 @@ Core tools (from `pi`):
 - `switch_thinking` — change thinking level (off → xhigh)
 - `keychain` — list, get, set, and delete encrypted keychain entries
 - `schedule_task` — schedule agent prompts or shell commands (cron, interval, or one-shot)
-- `sql_introspect` — run read-only SQL queries against the messages database
+- `introspect_sql` — run read-only SQL queries against the messages database
 - `list_internal_tools` — list available tools with descriptions
 
 `messages` `search` accepts `query`, `chat_jid` (or `*`/`all`), `role`, `after`, `before`, `since`, `limit`, `offset`, and `details_max_chars` for controlling detail payloads.
@@ -121,6 +121,7 @@ Direct commands (no LLM round-trip):
 | `/search <query>` | Search notes and skills in the workspace |
 | `/restart` | Restart the agent and stop subprocesses |
 | `/commands` | List available commands |
+| `/test-card [variant]` | Emit a built-in Adaptive Card validation message in the web UI (`/test-card list` shows variants) |
 | `/tasks [filter]` | List scheduled tasks (via extension) |
 | `/scheduled [filter]` | Alias for `/tasks` |
 
