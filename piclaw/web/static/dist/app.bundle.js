@@ -1240,9 +1240,9 @@ ${Z}`:null].filter(Boolean).join(`
                         title=${Q.dirty?"Unsaved changes":"Close"}
                         aria-label=${Q.dirty?"Unsaved changes":`Close ${Q.label}`}
                     >
-                        ${Q.dirty?V`<span class="tab-dirty-dot" aria-hidden="true"></span>`:V`<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-                                <line x1="4" y1="4" x2="12" y2="12"/>
-                                <line x1="12" y1="4" x2="4" y2="12"/>
+                        ${Q.dirty?V`<span class="tab-dirty-dot" aria-hidden="true"></span>`:V`<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true" focusable="false" style=${{pointerEvents:"none"}}>
+                                <line x1="4" y1="4" x2="12" y2="12" style=${{pointerEvents:"none"}}/>
+                                <line x1="12" y1="4" x2="4" y2="12" style=${{pointerEvents:"none"}}/>
                             </svg>`}
                     </button>
                 </div>
@@ -1459,5 +1459,5 @@ ${Z}`:null].filter(Boolean).join(`
         </div>
     `}Z4(V`<${H5} />`,document.getElementById("app"));
 
-//# debugId=C2AB23C2211DCA8464756E2164756E21
+//# debugId=F0841B5FB824D59364756E2164756E21
 //# sourceMappingURL=app.bundle.js.map

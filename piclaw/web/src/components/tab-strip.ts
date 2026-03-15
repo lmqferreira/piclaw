@@ -152,9 +152,9 @@ export function TabStrip({ tabs, activeId, onActivate, onClose, onCloseOthers, o
                     >
                         ${tab.dirty
                             ? html`<span class="tab-dirty-dot" aria-hidden="true"></span>`
-                            : html`<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-                                <line x1="4" y1="4" x2="12" y2="12"/>
-                                <line x1="12" y1="4" x2="4" y2="12"/>
+                            : html`<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true" focusable="false" style=${{ pointerEvents: 'none' }}>
+                                <line x1="4" y1="4" x2="12" y2="12" style=${{ pointerEvents: 'none' }}/>
+                                <line x1="12" y1="4" x2="4" y2="12" style=${{ pointerEvents: 'none' }}/>
                             </svg>`
                         }
                     </button>

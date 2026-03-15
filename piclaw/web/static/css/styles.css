@@ -992,13 +992,18 @@ body {
     appearance: none;
     -webkit-appearance: none;
     position: relative;
-    z-index: 1;
+    z-index: 2;
+    overflow: visible;
+}
+
+.tab-close > svg {
+    display: block;
 }
 
 .tab-close > svg,
 .tab-close > svg *,
 .tab-close > .tab-dirty-dot {
-    pointer-events: none;
+    pointer-events: none !important;
 }
 
 .tab-item:hover .tab-close,
