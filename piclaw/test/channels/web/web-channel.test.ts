@@ -758,6 +758,49 @@ test("web channel exposes queued follow-up items from queue-state", async () => 
   expect(payloadAfter.items[0].content).toContain("second followup");
 });
 
+test("web channel queue removal respects explicit branch chat_jid", async () => {
+  const ws = createTempWorkspace("piclaw-web-channel-");
+  cleanupWorkspace = ws.cleanup;
+  restoreEnv = setEnv({ PICLAW_WORKSPACE: ws.workspace, PICLAW_STORE: ws.store, PICLAW_DATA: ws.data });
+
+  const db = await import("../../../src/db.js");
+  db.initDatabase();
+  db.getDb().exec("DELETE FROM message_media; DELETE FROM messages; DELETE FROM chats; DELETE FROM chat_cursors;");
+  db.storeChatMetadata("web:default", new Date().toISOString(), "Web");
+  db.storeChatMetadata("web:branch", new Date().toISOString(), "Branch");
+
+  const webMod = await import("../../../src/channels/web.js");
+  const web = new (webMod.WebChannel as any)({
+    queue: { enqueue: () => {} },
+    agentPool: { runAgent: async () => ({ status: "success", result: "ok" }), getContextUsageForChat: async () => null },
+  });
+
+  const defaultRowId = web.enqueueQueuedFollowupItem("web:default", 0, "default followup");
+  const branchRowId = web.enqueueQueuedFollowupItem("web:branch", 0, "branch followup");
+
+  const removeReq = new Request("http://test/agent/queue-remove", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_jid: "web:branch", row_id: branchRowId }),
+  });
+  const removeRes = await (web as any).handleRequest(removeReq);
+  const removeJson = await removeRes.json();
+  expect(removeRes.status).toBe(200);
+  expect(removeJson.removed).toBe(true);
+  expect(web.getQueuedFollowupCount("web:branch")).toBe(0);
+  expect(web.getQueuedFollowupCount("web:default")).toBe(1);
+
+  const defaultQueueState = await (web as any).handleRequest(new Request("http://test/agent/queue-state?chat_jid=web%3Adefault"));
+  const defaultPayload = await defaultQueueState.json();
+  expect(defaultPayload.items).toHaveLength(1);
+  expect(defaultPayload.items[0].row_id).toBe(defaultRowId);
+  expect(defaultPayload.items[0].content).toContain("default followup");
+
+  const branchQueueState = await (web as any).handleRequest(new Request("http://test/agent/queue-state?chat_jid=web%3Abranch"));
+  const branchPayload = await branchQueueState.json();
+  expect(branchPayload.count).toBe(0);
+});
+
 test("web channel reports active agent status", async () => {
   const ws = createTempWorkspace("piclaw-web-channel-");
   cleanupWorkspace = ws.cleanup;
@@ -1095,6 +1138,59 @@ test("web channel atomically converts a queued item into an immediate send when 
   const contents = timeline.map((item: any) => item.data.content);
   expect(contents).toContain("queued send me now");
   expect(contents).toContain("ok");
+});
+
+test("web channel queue steering respects explicit branch chat_jid", async () => {
+  const ws = createTempWorkspace("piclaw-web-channel-");
+  cleanupWorkspace = ws.cleanup;
+  restoreEnv = setEnv({ PICLAW_WORKSPACE: ws.workspace, PICLAW_STORE: ws.store, PICLAW_DATA: ws.data });
+
+  const db = await import("../../../src/db.js");
+  db.initDatabase();
+  db.getDb().exec("DELETE FROM message_media; DELETE FROM messages; DELETE FROM chats; DELETE FROM chat_cursors;");
+  db.storeChatMetadata("web:default", new Date().toISOString(), "Web");
+  db.storeChatMetadata("web:branch", new Date().toISOString(), "Branch");
+
+  const webMod = await import("../../../src/channels/web.js");
+  const web = new (webMod.WebChannel as any)({
+    queue: { enqueue: async (fn: () => Promise<void>) => fn() },
+    agentPool: {
+      isStreaming: () => false,
+      setSessionBinder: () => {},
+      queueStreamingMessage: async () => ({ queued: false }),
+      runAgent: async () => ({ status: "success", result: "ok", attachments: [] }),
+      getContextUsageForChat: async () => null,
+    },
+  });
+
+  const defaultRowId = web.enqueueQueuedFollowupItem("web:default", 0, "default queued send");
+  const branchRowId = web.enqueueQueuedFollowupItem("web:branch", 0, "branch queued send");
+
+  const steerRes = await (web as any).handleRequest(new Request("http://test/agent/queue-steer", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_jid: "web:branch", row_id: branchRowId }),
+  }));
+  const steerJson = await steerRes.json();
+
+  expect(steerRes.status).toBe(201);
+  expect(steerJson.user_message?.chat_jid).toBe("web:branch");
+  expect(steerJson.user_message?.data?.content).toBe("branch queued send");
+  expect(web.getQueuedFollowupCount("web:branch")).toBe(0);
+  expect(web.getQueuedFollowupCount("web:default")).toBe(1);
+
+  const branchTimeline = db.getTimeline("web:branch", 10).map((item: any) => item.data.content);
+  expect(branchTimeline).toContain("branch queued send");
+  expect(branchTimeline).toContain("ok");
+
+  const defaultTimeline = db.getTimeline("web:default", 10).map((item: any) => item.data.content);
+  expect(defaultTimeline).not.toContain("branch queued send");
+  expect(defaultTimeline).not.toContain("ok");
+
+  const defaultQueueState = await (web as any).handleRequest(new Request("http://test/agent/queue-state?chat_jid=web%3Adefault"));
+  const defaultPayload = await defaultQueueState.json();
+  expect(defaultPayload.items).toHaveLength(1);
+  expect(defaultPayload.items[0].row_id).toBe(defaultRowId);
 });
 
 test("web channel defers active compose steer without creating a timeline message", async () => {
