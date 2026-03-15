@@ -56,6 +56,7 @@ import {
     openProvisionalChatWindow,
     primeProvisionalChatWindow,
 } from './ui/chat-window.js';
+import { shouldClearQueuedSteerState } from './ui/queue-state.js';
 import { isCompactionStatus } from './ui/status-duration.js';
 
 function missingApi(name, fallback) {
@@ -686,6 +687,18 @@ function MainApp({ locationParams }) {
         draftExpandedRef.current = false;
     }, [clearLastActivityTimer, setCurrentTurnId, setSteerQueuedTurnId, setIsAgentTurnActive]);
 
+    const clearQueuedSteerStateIfStale = useCallback((remainingQueueCount) => {
+        if (!shouldClearQueuedSteerState({
+            remainingQueueCount,
+            currentTurnId: currentTurnIdRef.current,
+            isAgentTurnActive,
+        })) {
+            return;
+        }
+        steerQueuedTurnIdRef.current = null;
+        setSteerQueuedTurnId(null);
+    }, [isAgentTurnActive, setSteerQueuedTurnId]);
+
     const createEmptyChatPaneState = useCallback(() => ({
         agentStatus: null,
         agentDraft: { text: '', totalLines: 0 },
@@ -1075,13 +1088,14 @@ function MainApp({ locationParams }) {
 
                 // Server queue is empty (after filtering dismissed) — clear dismissed set
                 dismissed.clear();
+                clearQueuedSteerStateIfStale(0);
                 setFollowupQueueItems((prev) => prev.length === 0 ? prev : []);
             })
             .catch(() => {
                 if (activeChatJidRef.current !== targetChatJid) return;
                 setFollowupQueueItems((prev) => prev.length === 0 ? prev : []);
             });
-    }, [currentChatJid, setFollowupQueueItems]);
+    }, [clearQueuedSteerStateIfStale, currentChatJid, setFollowupQueueItems]);
 
     const refreshContextUsage = useCallback(async () => {
         const targetChatJid = currentChatJid;
@@ -1518,7 +1532,7 @@ function MainApp({ locationParams }) {
 
         // Atomically remove the queued item server-side and convert it into
         // steering (or an immediate send if the active stream already ended).
-        steerAgentQueueItem(rowId)
+        steerAgentQueueItem(rowId, resolveQueueActionChatJid(currentChatJid))
             .then(() => {
                 void refreshQueueState();
             })
@@ -1528,18 +1542,20 @@ function MainApp({ locationParams }) {
                 dismissedQueueRowIdsRef.current.delete(rowId);
                 void refreshQueueState();
             });
-    }, [refreshQueueState, setFollowupQueueItems, showIntentToast]);
+    }, [currentChatJid, refreshQueueState, setFollowupQueueItems, showIntentToast]);
 
     const handleRemoveQueuedFollowup = useCallback((queuedItem) => {
         const rowId = queuedItem?.row_id;
         if (rowId == null) return;
+        const remainingQueueCount = followupQueueItemsRef.current.filter((item) => item?.row_id !== rowId).length;
         // Optimistic removal
         dismissedQueueRowIdsRef.current.add(rowId);
+        clearQueuedSteerStateIfStale(remainingQueueCount);
         setFollowupQueueItems((current) => current.filter((item) => item?.row_id !== rowId));
 
         // Remove the queued item server-side without sending it as steering
         // or converting it into a message.
-        removeAgentQueueItem(rowId)
+        removeAgentQueueItem(rowId, resolveQueueActionChatJid(currentChatJid))
             .then(() => {
                 void refreshQueueState();
             })
@@ -1549,7 +1565,7 @@ function MainApp({ locationParams }) {
                 dismissedQueueRowIdsRef.current.delete(rowId);
                 void refreshQueueState();
             });
-    }, [refreshQueueState, setFollowupQueueItems, showIntentToast]);
+    }, [clearQueuedSteerStateIfStale, currentChatJid, refreshQueueState, setFollowupQueueItems, showIntentToast]);
 
     const handleMessageResponse = useCallback((response) => {
         if (!response || typeof response !== "object") return;
@@ -1943,6 +1959,8 @@ function MainApp({ locationParams }) {
             if (!isCurrentChatEvent) return;
             const rowId = data?.row_id;
             if (rowId != null) {
+                const remainingQueueCount = followupQueueItemsRef.current.filter((item) => item.row_id !== rowId).length;
+                clearQueuedSteerStateIfStale(remainingQueueCount);
                 setFollowupQueueItems((current) => current.filter((item) => item.row_id !== rowId));
             }
             void refreshQueueState();
@@ -1956,7 +1974,9 @@ function MainApp({ locationParams }) {
             if (!isCurrentChatEvent) return;
             const rowId = data?.row_id;
             if (rowId != null) {
+                const remainingQueueCount = followupQueueItemsRef.current.filter((item) => item.row_id !== rowId).length;
                 dismissedQueueRowIdsRef.current.add(rowId);
+                clearQueuedSteerStateIfStale(remainingQueueCount);
                 setFollowupQueueItems((current) => current.filter((item) => item.row_id !== rowId));
             }
             void refreshQueueState();
