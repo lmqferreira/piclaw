@@ -1,4 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { openSync, closeSync, readlinkSync, readdirSync, readFileSync } from "node:fs";
+import { FFIType, dlopen } from "bun:ffi";
 import type { ServerWebSocket } from "bun";
 
 import { WORKSPACE_DIR } from "../../../core/config.js";
@@ -31,6 +33,7 @@ interface TerminalProcessLike {
   stderr: { on(event: "data", listener: (chunk: string | Uint8Array) => void): unknown };
   on(event: "exit", listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown;
   kill(signal?: NodeJS.Signals | number): boolean;
+  pid?: number | null;
 }
 
 export interface TerminalSessionServiceOptions {
@@ -45,6 +48,7 @@ interface TerminalSessionRecord {
   cwd: string;
   cols: number;
   rows: number;
+  ptsPath: string | null;
 }
 
 const DEFAULT_COLS = 120;
@@ -54,6 +58,106 @@ const FALLBACK_TERMINAL_OWNER: TerminalSessionOwner = {
   token: "web-terminal-local-default",
   userId: DEFAULT_WEB_USER_ID,
 };
+
+const IS_LINUX = process.platform === "linux";
+
+// ioctl request code for setting terminal window size (Linux)
+const TIOCSWINSZ = 0x5414;
+
+/**
+ * Lazy-loaded libc ioctl binding via Bun FFI.
+ * Used to call ioctl(fd, TIOCSWINSZ, &winsize) for PTY resize.
+ */
+let _libc: { ioctl: (fd: number, request: number, buf: Uint16Array) => number } | null = null;
+let _libcLoaded = false;
+
+function getLibc(): typeof _libc {
+  if (_libcLoaded) return _libc;
+  _libcLoaded = true;
+  try {
+    const lib = dlopen("libc.so.6", {
+      ioctl: {
+        args: [FFIType.i32, FFIType.u64, FFIType.ptr],
+        returns: FFIType.i32,
+      },
+    });
+    _libc = {
+      ioctl: (fd, request, buf) => lib.symbols.ioctl(fd, request, buf) as number,
+    };
+  } catch {
+    _libc = null;
+  }
+  return _libc;
+}
+
+/**
+ * Resize a PTY device via ioctl(TIOCSWINSZ).
+ *
+ * Opens the PTS device path, sets the kernel window size via the winsize
+ * struct, then closes the fd. This is the same mechanism that terminal
+ * emulators and Docker's exec resize API use.
+ */
+function resizePty(ptsPath: string, cols: number, rows: number): boolean {
+  const libc = getLibc();
+  if (!libc) return false;
+  let fd = -1;
+  try {
+    // struct winsize { unsigned short ws_row, ws_col, ws_xpixel, ws_ypixel; }
+    const winsize = new Uint16Array([rows, cols, 0, 0]);
+    fd = openSync(ptsPath, 0); // O_RDONLY
+    return libc.ioctl(fd, TIOCSWINSZ, winsize) === 0;
+  } catch {
+    return false;
+  } finally {
+    if (fd >= 0) {
+      try { closeSync(fd); } catch {}
+    }
+  }
+}
+
+/**
+ * Find child PIDs of a given parent by reading /proc.
+ */
+function getChildPids(parentPid: number): number[] {
+  if (!IS_LINUX) return [];
+  try {
+    return readdirSync("/proc")
+      .filter((entry) => /^\d+$/.test(entry))
+      .map((entry) => {
+        try {
+          const stat = readFileSync(`/proc/${entry}/stat`, "utf8");
+          // Format: pid (comm) state ppid ...
+          const match = stat.match(/^\d+\s+\(.*?\)\s+\S+\s+(\d+)/);
+          return match && parseInt(match[1], 10) === parentPid ? parseInt(entry, 10) : 0;
+        } catch {
+          return 0;
+        }
+      })
+      .filter((pid) => pid > 0);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Find the PTS device path for the shell spawned inside `script`.
+ *
+ * The process tree is: piclaw → script → bash
+ * We walk child PIDs and check /proc/<pid>/fd/0 for a /dev/pts/* link.
+ */
+function findChildPts(parentPid: number): { ptsPath: string; childPids: number[] } | null {
+  if (!IS_LINUX) return null;
+  const childPids = getChildPids(parentPid);
+  for (const cpid of childPids) {
+    try {
+      const target = readlinkSync(`/proc/${cpid}/fd/0`);
+      if (target.startsWith("/dev/pts/")) {
+        return { ptsPath: target, childPids };
+      }
+    } catch {}
+  }
+  return null;
+}
 
 function normalizeChunk(chunk: string | Uint8Array): string {
   if (typeof chunk === "string") return chunk;
@@ -70,6 +174,8 @@ function defaultSpawnProcess(cwd: string): TerminalProcessLike {
       CLICOLOR: process.env.CLICOLOR || "1",
       FORCE_COLOR: process.env.FORCE_COLOR || "1",
       HOME: process.env.HOME || "/home/agent",
+      COLUMNS: String(DEFAULT_COLS),
+      LINES: String(DEFAULT_ROWS),
     },
     stdio: ["pipe", "pipe", "pipe"],
   }) as ChildProcessWithoutNullStreams;
@@ -138,8 +244,11 @@ export class TerminalSessionService {
     if (payload.type === "resize") {
       const cols = Number.isFinite(payload.cols) ? Math.max(20, Math.min(400, Math.floor(payload.cols))) : session.cols;
       const rows = Number.isFinite(payload.rows) ? Math.max(5, Math.min(200, Math.floor(payload.rows))) : session.rows;
-      session.cols = cols;
-      session.rows = rows;
+      if (cols !== session.cols || rows !== session.rows) {
+        session.cols = cols;
+        session.rows = rows;
+        this.resizeSession(session, cols, rows);
+      }
       return;
     }
   }
@@ -167,31 +276,75 @@ export class TerminalSessionService {
     this.sessions.clear();
   }
 
+  /**
+   * Resize a terminal session's PTY via ioctl(TIOCSWINSZ) + SIGWINCH.
+   *
+   * On first resize, discovers the PTS device path by walking /proc for
+   * the child shell's fd/0 link. Once found, caches it for subsequent
+   * resizes. Sends SIGWINCH to all child processes after updating the
+   * kernel window size.
+   */
+  private resizeSession(session: TerminalSessionRecord, cols: number, rows: number): void {
+    const pid = session.process.pid;
+    if (!pid) return;
+
+    if (!session.ptsPath) {
+      const result = findChildPts(pid);
+      if (result) session.ptsPath = result.ptsPath;
+    }
+
+    if (!session.ptsPath) return;
+
+    if (resizePty(session.ptsPath, cols, rows)) {
+      // Send SIGWINCH to child processes so they re-query the terminal size
+      for (const cpid of getChildPids(pid)) {
+        try { process.kill(cpid, "SIGWINCH"); } catch {}
+      }
+    }
+  }
+
   private ensureSession(owner: TerminalSessionOwner): TerminalSessionRecord {
     const existing = this.sessions.get(owner.token);
     if (existing) return existing;
 
-    const process = this.spawnProcess(WORKSPACE_DIR);
+    const proc = this.spawnProcess(WORKSPACE_DIR);
     const session: TerminalSessionRecord = {
       owner,
-      process,
+      process: proc,
       clients: new Set(),
       createdAt: new Date().toISOString(),
       cwd: WORKSPACE_DIR,
       cols: DEFAULT_COLS,
       rows: DEFAULT_ROWS,
+      ptsPath: null,
     };
 
-    process.stdout.on("data", (chunk) => {
+    proc.stdout.on("data", (chunk) => {
       this.broadcast(session, { type: "output", data: normalizeChunk(chunk) });
     });
-    process.stderr.on("data", (chunk) => {
+    proc.stderr.on("data", (chunk) => {
       this.broadcast(session, { type: "output", data: normalizeChunk(chunk) });
     });
-    process.on("exit", (code, signal) => {
+    proc.on("exit", (code, signal) => {
       this.broadcast(session, { type: "exit", code: code ?? null, signal: signal ?? null });
       this.sessions.delete(owner.token);
     });
+
+    // Discover PTS device path after a short delay to let `script` allocate the PTY,
+    // then set the initial window size via ioctl so the shell starts with correct dimensions.
+    if (IS_LINUX && proc.pid) {
+      setTimeout(() => {
+        if (!proc.pid) return;
+        const result = findChildPts(proc.pid);
+        if (result) {
+          session.ptsPath = result.ptsPath;
+          resizePty(result.ptsPath, session.cols, session.rows);
+          for (const cpid of result.childPids) {
+            try { process.kill(cpid, "SIGWINCH"); } catch {}
+          }
+        }
+      }, 300);
+    }
 
     this.sessions.set(owner.token, session);
     return session;
