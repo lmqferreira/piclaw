@@ -32,6 +32,7 @@ describe("web http route classification", () => {
 
   test("maps data rate-limit rules by method and pathname", () => {
     expect(getDataRateLimitRule("POST", "/post")?.bucket).toBe("data/post");
+    expect(getDataRateLimitRule("PATCH", "/post/123")?.bucket).toBe("data/post_update");
     expect(getDataRateLimitRule("POST", "/agent/abc/message")?.bucket).toBe("data/agent_message");
     expect(getDataRateLimitRule("POST", "/agent/queue-remove")?.bucket).toBe("data/agent_queue");
     expect(getDataRateLimitRule("POST", "/agent/queue-steer")?.bucket).toBe("data/agent_queue");
@@ -44,6 +45,8 @@ describe("web http route classification", () => {
     expect(getDataRateLimitRule("POST", "/agent/card-action")?.bucket).toBe("data/agent_ui");
     expect(getDataRateLimitRule("POST", "/agent/side-prompt")?.bucket).toBe("data/agent_side_prompt");
     expect(getDataRateLimitRule("POST", "/agent/side-prompt/stream")?.bucket).toBe("data/agent_side_prompt");
+    expect(getDataRateLimitRule("POST", "/workspace/attach")?.bucket).toBe("data/workspace_attach");
+    expect(getDataRateLimitRule("POST", "/workspace/visibility")?.bucket).toBe("data/workspace_ui");
     expect(getDataRateLimitRule("DELETE", "/workspace/file")?.bucket).toBe("data/write");
     expect(getDataRateLimitRule("PUT", "/workspace/file")?.bucket).toBe("data/write");
     expect(getDataRateLimitRule("GET", "/workspace/file")).toBeNull();

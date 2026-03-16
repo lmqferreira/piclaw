@@ -709,17 +709,9 @@ export class SSEClient {
         this.eventSource.addEventListener('agent_followup_removed', (e) => {
             this.onEvent('agent_followup_removed', JSON.parse(e.data));
         });
-        
-        this.eventSource.addEventListener('agent_request', (e) => {
-            this.onEvent('agent_request', JSON.parse(e.data));
-        });
 
         this.eventSource.addEventListener('workspace_update', (e) => {
             this.onEvent('workspace_update', JSON.parse(e.data));
-        });
-
-        this.eventSource.addEventListener('agent_request_timeout', (e) => {
-            this.onEvent('agent_request_timeout', JSON.parse(e.data));
         });
 
         this.eventSource.addEventListener('agent_draft', (e) => {

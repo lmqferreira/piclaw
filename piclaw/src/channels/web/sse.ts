@@ -24,8 +24,6 @@ const CHAT_SCOPED_EVENT_TYPES = new Set([
   "agent_followup_queued",
   "agent_followup_consumed",
   "agent_followup_removed",
-  "agent_request",
-  "agent_request_timeout",
   "model_changed",
   "ui_theme",
   "extension_ui_timeout",

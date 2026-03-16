@@ -2029,33 +2029,6 @@ function MainApp({ locationParams }) {
             return;
         }
 
-        // Handle agent requests (permission, choices)
-        if (eventType === 'agent_request') {
-            if (!isCurrentChatEvent) return;
-            console.log('Agent request:', data);
-            if (turnId && currentTurnIdRef.current && turnId !== currentTurnIdRef.current) {
-                return;
-            }
-            if (turnId) setActiveTurn(turnId);
-            noteAgentActivity({ running: true, clearSilence: true });
-            setPendingRequest(data);
-            pendingRequestRef.current = data;
-            return;
-        }
-
-        if (eventType === 'agent_request_timeout') {
-            if (!isCurrentChatEvent) return;
-            console.log('Agent request timeout:', data);
-            if (turnId && currentTurnIdRef.current && turnId !== currentTurnIdRef.current) {
-                return;
-            }
-            setPendingRequest(null);
-            pendingRequestRef.current = null;
-            clearAgentRunState();
-            setAgentStatus({ type: 'error', title: 'Permission request timed out' });
-            return;
-        }
-
         if (eventType === 'model_changed') {
             if (!isCurrentChatEvent) return;
             if (data?.model !== undefined) setActiveModel(data.model);

@@ -21,6 +21,9 @@ const DATA_MEDIA_UPLOAD_LIMIT = 20;
 const DATA_WORKSPACE_UPLOAD_LIMIT = 20;
 const DATA_DELETE_LIMIT = 60;
 const DATA_WRITE_LIMIT = 30;
+const DATA_POST_UPDATE_LIMIT = 30;
+const DATA_WORKSPACE_ATTACH_LIMIT = 30;
+const DATA_WORKSPACE_UI_LIMIT = 60;
 const DATA_AGENT_QUEUE_LIMIT = 30;
 const DATA_AGENT_BRANCH_LIMIT = 20;
 const DATA_AGENT_PEER_LIMIT = 30;
@@ -43,6 +46,9 @@ export function getDataRateLimitRule(method: string, pathname: string): DataRate
   }
   if (method === "POST" && pathname === "/reply") {
     return { bucket: "data/reply", limit: DATA_REPLY_LIMIT, message: "Too many replies. Slow down." };
+  }
+  if (method === "PATCH" && pathname.startsWith("/post/")) {
+    return { bucket: "data/post_update", limit: DATA_POST_UPDATE_LIMIT, message: "Too many post updates. Slow down." };
   }
   if (method === "POST" && pathname.endsWith("/message")) {
     return { bucket: "data/agent_message", limit: DATA_AGENT_MESSAGE_LIMIT, message: "Too many agent messages. Slow down." };
@@ -97,6 +103,20 @@ export function getDataRateLimitRule(method: string, pathname: string): DataRate
       bucket: "data/workspace_upload",
       limit: DATA_WORKSPACE_UPLOAD_LIMIT,
       message: "Too many workspace uploads. Slow down.",
+    };
+  }
+  if (method === "POST" && pathname === "/workspace/attach") {
+    return {
+      bucket: "data/workspace_attach",
+      limit: DATA_WORKSPACE_ATTACH_LIMIT,
+      message: "Too many workspace attach actions. Slow down.",
+    };
+  }
+  if (method === "POST" && pathname === "/workspace/visibility") {
+    return {
+      bucket: "data/workspace_ui",
+      limit: DATA_WORKSPACE_UI_LIMIT,
+      message: "Too many workspace UI actions. Slow down.",
     };
   }
   if (method === "DELETE" && pathname.startsWith("/post/")) {

@@ -165,10 +165,27 @@ fixes or follow-up tickets.
 ## Updates
 
 ### 2026-03-16
-- Still active after the first security-hardening slice; this remains the current API-surface umbrella rather than a stale placeholder.
-- The clearest concrete win so far is already landed: missing rate-limit buckets for several mutating `/agent/*` routes were added and covered by tests.
-- The remaining work is the broader inventory/documentation and naming/format consistency pass across endpoint families and SSE event payloads.
-- This board-hygiene pass keeps the ticket in `doing` and updates its date rather than over-closing it after the first hardening slice.
+- Continued the concrete hardening pass instead of leaving the audit at inventory-only status.
+- Found a second explicit rate-limit coverage gap: authenticated mutating routes `PATCH /post/:id`, `POST /workspace/attach`, and `POST /workspace/visibility` were subject to auth/CSRF but still had no dedicated data-bucket classification.
+- Added explicit route-to-bucket mappings in `piclaw/src/channels/web/http/rate-limit-rules.ts`:
+  - `data/post_update`
+  - `data/workspace_attach`
+  - `data/workspace_ui`
+- Extended route-classification coverage in `piclaw/test/channels/web/http-route-classification.test.ts` for those endpoints.
+- Validation evidence:
+  - `bun test --max-concurrency=1 test/channels/web/http-route-classification.test.ts test/channels/web/security-hardening.test.ts test/channels/web/http-dispatch-workspace.test.ts test/channels/web/ui-endpoints.test.ts`
+  - `bun run quality` → passed
+- Added a concrete SSE inventory artefact at `piclaw/piclaw/docs/web-sse-inventory.md`, covering:
+  - currently emitted server events
+  - current client listener registrations
+  - scope classification (chat-scoped vs global)
+  - first naming/payload observations
+- Used that inventory to land another concrete contract cleanup:
+  - removed stale client SSE listeners for `agent_request` and `agent_request_timeout`
+  - removed those obsolete names from the chat-scoped SSE contract set in `src/channels/web/sse.ts`
+  - added regression coverage in `test/channels/web/web-sse-client.test.ts`
+- Remaining work is still the broader endpoint inventory plus deeper payload-shape/documentation consistency across the surviving SSE event families.
+- This ticket remains the active umbrella for that work rather than being closed after incremental guardrail slices.
 
 ### 2026-03-15
 - Lane change: `00-inbox` → `20-doing` to start the API/SSE audit as the next unblocked follow-on after the post-release audit and shell lifecycle refactor were committed.

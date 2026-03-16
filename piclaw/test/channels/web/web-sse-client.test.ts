@@ -71,6 +71,34 @@ test("SSEClient connects to a chat-scoped SSE stream when chatJid is provided", 
   }
 });
 
+test("SSEClient no longer registers stale agent_request listeners", () => {
+  const OriginalEventSource = globalThis.EventSource;
+  const seenEvents: string[] = [];
+
+  class FakeEventSource {
+    onopen: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    constructor(_url: string) {}
+    addEventListener(event: string) {
+      seenEvents.push(event);
+    }
+    close() {}
+  }
+
+  globalThis.EventSource = FakeEventSource as any;
+  try {
+    const client = new SSEClient(() => {}, () => {});
+    client.connect();
+    expect(seenEvents).not.toContain("agent_request");
+    expect(seenEvents).not.toContain("agent_request_timeout");
+    expect(seenEvents).toContain("agent_status");
+    expect(seenEvents).toContain("new_post");
+    expect(seenEvents).toContain("workspace_update");
+  } finally {
+    globalThis.EventSource = OriginalEventSource;
+  }
+});
+
 test("streamSidePrompt parses SSE event frames, returns the final payload, and forwards the active chat_jid", async () => {
   const originalFetch = globalThis.fetch;
   let seenBody: any = null;
