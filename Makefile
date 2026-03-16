@@ -78,7 +78,12 @@ vendor: ## Build the checked-in vendored bundles + metadata
 		piclaw/web/static/fonts/vendor/firacode-nerd-font.meta.json \
 		piclaw/web/static/js/vendor/ghostty-web.js \
 		piclaw/web/static/js/vendor/ghostty-vt.wasm \
-		piclaw/web/static/js/vendor/ghostty-web.meta.json
+		piclaw/web/static/js/vendor/ghostty-web.meta.json \
+		piclaw/extensions/office-viewer/vendor/docx-preview.min.js \
+		piclaw/extensions/office-viewer/vendor/xlsx.full.min.js \
+		piclaw/extensions/office-viewer/vendor/PptxViewJS.min.js \
+		piclaw/extensions/office-viewer/vendor/jszip.min.js \
+		piclaw/extensions/office-viewer/vendor/office-viewer-libs.meta.json
 
 update-mermaid-vendor: ## Rebuild or upgrade vendored mermaid (use MERMAID_VERSION=1.2.3 to upgrade)
 	cd piclaw && bun run update:vendor:mermaid $(if $(MERMAID_VERSION),--version $(MERMAID_VERSION),)
