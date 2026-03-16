@@ -4,7 +4,7 @@ title: Audit API endpoints and SSE events for naming, consistency, formats, and 
 status: doing
 priority: medium
 created: 2026-03-14
-updated: 2026-03-15
+updated: 2026-03-16
 target_release: next
 estimate: M
 risk: medium
@@ -163,6 +163,12 @@ fixes or follow-up tickets.
 - `piclaw/piclaw/src/channels/web/terminal/terminal-session-service.ts`
 
 ## Updates
+
+### 2026-03-16
+- Still active after the first security-hardening slice; this remains the current API-surface umbrella rather than a stale placeholder.
+- The clearest concrete win so far is already landed: missing rate-limit buckets for several mutating `/agent/*` routes were added and covered by tests.
+- The remaining work is the broader inventory/documentation and naming/format consistency pass across endpoint families and SSE event payloads.
+- This board-hygiene pass keeps the ticket in `doing` and updates its date rather than over-closing it after the first hardening slice.
 
 ### 2026-03-15
 - Lane change: `00-inbox` → `20-doing` to start the API/SSE audit as the next unblocked follow-on after the post-release audit and shell lifecycle refactor were committed.

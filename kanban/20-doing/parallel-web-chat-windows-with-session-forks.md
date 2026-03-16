@@ -4,7 +4,7 @@ title: Support multiple parallel web chat windows backed by resumable forked ses
 status: doing
 priority: high
 created: 2026-03-14
-updated: 2026-03-15
+updated: 2026-03-16
 target_release: next
 estimate: L
 risk: high
@@ -357,6 +357,12 @@ Pick and justify one recommended approach that:
 - [ ] Follow-up execution ticket(s) created if implementation is split
 
 ## Updates
+
+### 2026-03-16
+- This ticket remains the main umbrella for the multi-chat / branch-agent work and is now mostly in **hardening/polish** rather than missing-core-architecture territory.
+- Major shipped slices now include: branch registry, branch fork/open flow, browser-aware popup/new-tab behaviour, iOS-safe branch opening, branch picker, branch rename, branch prune/archive, branch-aware read/write/action routing, per-chat pane/model/context state, lane-aware parallel runtime execution, strict chat-scoped SSE enforcement, and dedicated multi-chat isolation coverage.
+- Current status is best described as “functionally implemented, but still being tightened at the edges” — especially around browser-level isolation/E2E coverage, final UX polish, and any remaining real-world queue/recovery regressions the user can still reproduce.
+- Source-only branch fixes from the latest suffix (branch-aware queue steer/remove, stale queued-steer UI clearing, BTW branch-awareness, pruned-handle reuse) remain part of this umbrella until explicitly reloaded/live-validated.
 
 ### 2026-03-15
 - Refined to make the session-forking model explicit: a new pop-out chat window should fork from the current branch/session context at creation time, in the same broad spirit as BTW reseeding, but then persist as a first-class branch with its own queue/recovery/runtime state.

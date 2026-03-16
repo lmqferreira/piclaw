@@ -1,10 +1,11 @@
 ---
 id: extension-system-refactor-for-editor-and-terminal
 title: Refactor extension system — pane contract, editor extraction, and tab support
-status: next
+status: done
 priority: high
 created: 2026-03-11
-updated: 2026-03-11
+updated: 2026-03-16
+completed: 2026-03-11
 target_release: next
 tags:
   - work-item

@@ -4,7 +4,7 @@ title: Pending user turns after reload are still not fully handled
 status: doing
 priority: high
 created: 2026-03-14
-updated: 2026-03-15
+updated: 2026-03-16
 target_release: next
 estimate: M
 risk: medium
@@ -102,6 +102,11 @@ Potential remaining failure modes include:
 - [ ] `bun run quality` passes
 
 ## Updates
+
+### 2026-03-16
+- Kept open intentionally after the first concrete fix landed.
+- The same-millisecond cursor / monotonic timestamp bug is now fixed, but this ticket still represents the broader “is any real reload/pending-turn gap still reproducible in practice?” question.
+- In other words: one real root cause is closed, but the umbrella stays in `doing` until either the remaining concern is disproven or another concrete failure mode is confirmed and fixed.
 
 ### 2026-03-15
 - Lane change: `00-inbox` → `20-doing` after the user confirmed the out-of-turn/off-by-one behaviour is still happening in practice.

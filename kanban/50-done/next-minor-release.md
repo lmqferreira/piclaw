@@ -1,10 +1,11 @@
 ---
 id: next-minor-release
 title: Prepare next minor release
-status: blocked
+status: done
 priority: medium
 created: 2026-03-10
-updated: 2026-03-12
+updated: 2026-03-16
+completed: 2026-03-16
 target_release: next
 tags:
   - work-item
@@ -95,6 +96,11 @@ Use **Path A** for the next release, then invest in **Path B** once the Azure bl
 - [ ] Verify CI is running
 
 ## Updates
+
+### 2026-03-16
+- Closed as stale/superseded.
+- The board did not converge on a single “next minor release” after this ticket was created; instead, the subsequent release work shipped through the patch line (`v1.3.14`, `v1.3.15`, and `v1.3.16`) plus follow-on push-only commits.
+- Keeping this ticket open as blocked is now misleading, so this hygiene pass moves it to done as a superseded planning item rather than an unfinished release.
 
 ### 2026-03-12
 - Board quality review: fixed blocker path to the current Azure ticket location and aligned the ticket id/title with the filename.

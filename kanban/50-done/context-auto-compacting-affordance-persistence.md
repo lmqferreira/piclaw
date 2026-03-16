@@ -1,10 +1,11 @@
 ---
 id: context-auto-compacting-affordance-persistence
 title: Persist the context auto-compacting affordance state
-status: inbox
+status: done
 priority: medium
 created: 2026-03-15
-updated: 2026-03-15
+updated: 2026-03-16
+completed: 2026-03-15
 target_release: next
 estimate: S
 risk: low
@@ -171,6 +172,11 @@ The frontend should store only lightweight UI memory such as:
 - [ ] `bun run quality` passes
 
 ## Updates
+
+### 2026-03-16
+- Closed as shipped.
+- The chosen hybrid persistence model was implemented and later fixed in the restore path, then shipped in the v1.3.16 line and documented in README/docs updates.
+- Ticket was left in inbox after the work landed; this board-hygiene pass moves it to done.
 
 ### 2026-03-15 (refinement)
 - Refined live with the user using Adaptive Card decision points in the web UI.

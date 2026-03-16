@@ -26,7 +26,7 @@ Source reference:
 
 ## Blockers
 
-- `kanban/10-next/extension-system-refactor-for-editor-and-terminal.md`
+- `kanban/50-done/extension-system-refactor-for-editor-and-terminal.md` (extension-system prerequisite shipped; remaining blocker is now product direction rather than missing pane infrastructure)
 
 ## Acceptance Criteria
 
@@ -81,6 +81,11 @@ Use **Path A** and start design prep now, but do implementation only after exten
 
 ## Updates
 
+### 2026-03-16
+- Marked as superseded in practice, though not auto-closed in this pass.
+- `/btw` has since shipped as a core web-native side-conversation surface rather than as a direct port of the older popup-oriented extension model tracked here.
+- The remaining open work is better represented by current BTW product tickets (for tool-capable side-agent behaviour and longer-lived productisation) than by this older “port the popup extension” framing.
+
 ### 2026-03-12
 - Board quality review: added explicit test plan and DoD checklist.
 - Quality: ★★★★☆ 7/10 (problem: 2, scope: 2, test: 1, deps: 1, risk: 1)
@@ -92,6 +97,6 @@ Use **Path A** and start design prep now, but do implementation only after exten
 ## Links
 
 - `https://github.com/noahsaso/my-pi/blob/main/extensions/btw.ts`
-- `kanban/10-next/extension-system-refactor-for-editor-and-terminal.md`
+- `kanban/50-done/extension-system-refactor-for-editor-and-terminal.md`
 - `piclaw/piclaw/src/extensions/index.ts`
 - `piclaw/piclaw/web/src/app.ts`

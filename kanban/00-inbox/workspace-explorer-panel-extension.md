@@ -31,7 +31,7 @@ release, contingent on the success of the pane/tab model.
 ## Dependency
 
 - Requires successful delivery and validation of
-  `kanban/10-next/extension-system-refactor-for-editor-and-terminal.md`
+  `kanban/50-done/extension-system-refactor-for-editor-and-terminal.md`
   (pane contract, editor extraction, tab support).
 - Decision to proceed depends on whether the pane extension model proves
   stable, performant, and developer-friendly.
@@ -124,6 +124,6 @@ interface WebUIRegistry {
 
 ## Links
 
-- `kanban/10-next/extension-system-refactor-for-editor-and-terminal.md` (prerequisite)
+- `kanban/50-done/extension-system-refactor-for-editor-and-terminal.md` (prerequisite now shipped)
 - `piclaw/piclaw/web/src/components/workspace-explorer.ts`
 - `piclaw/piclaw/web/src/app.ts`

@@ -1,10 +1,11 @@
 ---
 id: editor-tab-close-boxes-fail-when-hovering-svg-icon
 title: Fix editor tab close boxes when hovering directly over the SVG icon
-status: inbox
+status: done
 priority: high
 created: 2026-03-15
-updated: 2026-03-15
+updated: 2026-03-16
+completed: 2026-03-15
 target_release: next
 estimate: S
 risk: low
@@ -85,6 +86,11 @@ Likely causes include:
 - [ ] `bun run quality` passes
 
 ## Updates
+
+### 2026-03-16
+- Closed as shipped.
+- The editor tab close SVG hitbox issue was fixed in commit `62f75fc` (`Fix editor tab close SVG hitbox`).
+- Ticket was left in inbox after the code fix landed; this board-hygiene pass moves it to done.
 
 ### 2026-03-15
 - Created from user report that editor close boxes still fail when the mouse hovers directly over the SVG close icon.

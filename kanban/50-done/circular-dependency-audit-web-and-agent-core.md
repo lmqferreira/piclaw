@@ -4,7 +4,8 @@ title: Audit and reduce server-side circular dependencies
 status: done
 priority: medium
 created: 2026-03-11
-updated: 2026-03-13
+updated: 2026-03-16
+completed: 2026-03-13
 target_release: next
 estimate: M
 risk: medium

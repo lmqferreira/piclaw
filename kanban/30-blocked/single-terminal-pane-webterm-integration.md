@@ -30,8 +30,8 @@ This work is gated on the pane extension system which defines the `placement: "d
 
 ## Blockers
 
-- `kanban/10-next/extension-system-refactor-for-editor-and-terminal.md` (pane contract with dock placement)
-- `kanban/10-next/tabbed-editor-interface-design-and-discussion.md`
+- `kanban/50-done/extension-system-refactor-for-editor-and-terminal.md` (pane contract with dock placement — now shipped)
+- `kanban/50-done/tabbed-editor-interface-design-and-discussion.md`
 
 ## Acceptance Criteria
 
@@ -86,6 +86,12 @@ Adopt **Path A** for MVP after tabbed layout decisions land; reserve **Path B** 
 
 ## Updates
 
+### 2026-03-16
+- Marked as functionally superseded in practice, though not auto-closed in this pass.
+- A terminal pane, backend PTY/session service, WebSocket transport, ghostty-web frontend integration, and docked terminal UX have now shipped in core.
+- The remaining distinct concerns are narrower follow-ups such as endpoint/security hardening and windowing/pop-out behaviour, which are already tracked elsewhere.
+- This ticket remains blocked only as a reminder that its original `rcarmo/webterm` framing is no longer the active implementation path.
+
 ### 2026-03-14
 - Re-inspected `rcarmo/webterm` as the backend/session reference model while vendoring terminal frontend assets.
 - Current useful takeaway: `webterm` still represents the right shape for the server side of this feature — authenticated HTTP/WebSocket bootstrap around a PTY/session service.
@@ -131,7 +137,7 @@ Key design question: should terminal state be ephemeral per browser session or r
 
 ## Links
 
-- `kanban/10-next/extension-system-refactor-for-editor-and-terminal.md` (pane contract + dock layout)
+- `kanban/50-done/extension-system-refactor-for-editor-and-terminal.md` (pane contract + dock layout)
 - `kanban/10-next/tabbed-editor-interface-design-and-discussion.md`
 - `https://github.com/rcarmo/webterm`
 - `piclaw/piclaw/src/channels/web.ts`
