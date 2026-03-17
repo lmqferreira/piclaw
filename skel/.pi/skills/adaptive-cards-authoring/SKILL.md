@@ -29,7 +29,7 @@ This skill is written for the current PiClaw web runtime in this workspace.
   - `failed`
 - Card submissions are persisted as structured submission blocks
 - Failed actions can show inline errors in-card
-- `/test-card` exists for built-in validation variants
+- `send_adaptive_card` exists for agent-owned Adaptive Card posting in the web UI
 
 ### Not a good fit today
 Do **not** rely on these as first-class flows unless you are explicitly extending core support:
@@ -142,9 +142,9 @@ These templates are tailored to the current PiClaw runtime rather than generic A
 
 ### For implementation work
 If you are writing code that emits a card in PiClaw itself:
-- web-local testing: `/test-card list`
+- preferred agent-owned posting path: `send_adaptive_card`
 - backend/core posting path: message `content_blocks`
-- persistent broadcast path: `messages` tool with `action: "post"` if appropriate
+- lower-level persistent broadcast path: `messages` tool with `action: "post", type: "agent"` when you explicitly need it
 
 ### For agent-facing prompting
 Prefer asking for one of these card classes explicitly:
