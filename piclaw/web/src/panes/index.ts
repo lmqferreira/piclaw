@@ -9,7 +9,7 @@
 export type { PanePlacement, PaneCapability, PaneContext, PaneInstance, WebPaneExtension } from './pane-types.js';
 export { paneRegistry } from './pane-registry.js';
 export { editorPaneExtension, preloadEditorBundle } from './editor-loader.js';
-export { terminalPaneExtension } from './terminal-pane.js';
+export { terminalPaneExtension, terminalTabPaneExtension, TERMINAL_TAB_PATH } from './terminal-pane.js';
 export { workspacePreviewPaneExtension, workspaceMarkdownPreviewPaneExtension } from './workspace-preview-pane.js';
 export { officeViewerPaneExtension } from './office-viewer-pane.js';
 export { csvViewerPaneExtension } from './csv-viewer-pane.js';

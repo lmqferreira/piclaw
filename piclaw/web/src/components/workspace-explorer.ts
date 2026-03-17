@@ -554,7 +554,15 @@ function FileAttachmentCard({ mediaId }) {
 // ── WorkspaceExplorer ─────────────────────────────────────────────────────────
 
 /** Preact component: file tree explorer with upload, rename, and preview. */
-export function WorkspaceExplorer({ onFileSelect, visible = true, active = undefined, onOpenEditor }) {
+export function WorkspaceExplorer({
+    onFileSelect,
+    visible = true,
+    active = undefined,
+    onOpenEditor,
+    onOpenTerminalTab,
+    onToggleTerminal,
+    terminalVisible = false,
+}) {
     const [tree,          setTree]          = useState(null);
     const [expanded,      setExpanded]      = useState(new Set(['.']));
     const [selectedPath,  setSelectedPath]  = useState(null);
@@ -577,6 +585,7 @@ export function WorkspaceExplorer({ onFileSelect, visible = true, active = undef
         stored: getLocalStorageItem(WORKSPACE_SCALE_STORAGE_KEY),
         ...readWorkspaceScaleEnvironment(),
     }));
+    const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
 
     // ── Stable refs (never trigger re-renders) ────────────────────────────────
     const expandedRef     = useRef(expanded);
@@ -608,6 +617,8 @@ export function WorkspaceExplorer({ onFileSelect, visible = true, active = undef
     const folderChartPathRef = useRef(null);
     const previewPaneHostRef = useRef(null);
     const previewPaneInstanceRef = useRef(null);
+    const headerMenuRef = useRef(null);
+    const headerMenuButtonRef = useRef(null);
     const showHiddenRef   = useRef(showHidden);
     const visibleRef      = useRef(visible);
     const activeRef       = useRef(active ?? visible);
@@ -760,6 +771,35 @@ export function WorkspaceExplorer({ onFileSelect, visible = true, active = undef
         });
         return () => cancelAnimationFrame(timer);
     }, [renamingPath]);
+
+    useEffect(() => {
+        if (!headerMenuOpen) return undefined;
+
+        const handleDocPointer = (event) => {
+            const target = event?.target;
+            if (!(target instanceof Element)) return;
+            if (headerMenuRef.current?.contains(target)) return;
+            if (headerMenuButtonRef.current?.contains(target)) return;
+            setHeaderMenuOpen(false);
+        };
+
+        const handleEscape = (event) => {
+            if (event?.key === 'Escape') {
+                setHeaderMenuOpen(false);
+                headerMenuButtonRef.current?.focus?.();
+            }
+        };
+
+        document.addEventListener('mousedown', handleDocPointer);
+        document.addEventListener('touchstart', handleDocPointer, { passive: true });
+        document.addEventListener('keydown', handleEscape);
+
+        return () => {
+            document.removeEventListener('mousedown', handleDocPointer);
+            document.removeEventListener('touchstart', handleDocPointer);
+            document.removeEventListener('keydown', handleEscape);
+        };
+    }, [headerMenuOpen]);
 
     // ── loadPreview ───────────────────────────────────────────────────────────
     const loadPreview = async (path) => {
@@ -1240,6 +1280,24 @@ export function WorkspaceExplorer({ onFileSelect, visible = true, active = undef
         : preview?.size > 256 * 1024
             ? 'File too large to edit'
             : 'File is not editable';
+
+    const selectedCanRename = Boolean(selectedPath && selectedPath !== '.');
+    const selectedCanDelete = Boolean(selectedPath && !selectedIsDir);
+    const selectedCanDownload = Boolean(selectedPath && !selectedIsDir);
+    const selectedFolderDownloadUrl = selectedPath && selectedIsDir
+        ? getWorkspaceDownloadUrl(selectedPath, showHidden)
+        : null;
+
+    const closeHeaderMenu = useCallback(() => setHeaderMenuOpen(false), []);
+
+    const runMenuAction = useCallback(async (fn) => {
+        closeHeaderMenu();
+        try {
+            await fn?.();
+        } catch {}
+    }, [closeHeaderMenu]);
+
+
 
     useEffect(() => {
         const container = previewPaneHostRef.current;
@@ -1848,6 +1906,60 @@ export function WorkspaceExplorer({ onFileSelect, visible = true, active = undef
         uploadInputRef.current?.click();
     }, [uploading]);
 
+    const handleMenuCreateFile = useCallback(() => {
+        runMenuAction(() => handleCreateFileClick(null));
+    }, [runMenuAction, handleCreateFileClick]);
+
+    const handleMenuUploadFiles = useCallback(() => {
+        runMenuAction(() => handleUploadButtonClick());
+    }, [runMenuAction, handleUploadButtonClick]);
+
+    const handleMenuRefresh = useCallback(() => {
+        runMenuAction(() => handleRefreshClick());
+    }, [runMenuAction, handleRefreshClick]);
+
+    const handleMenuToggleHidden = useCallback(() => {
+        runMenuAction(() => handleToggleHidden());
+    }, [runMenuAction, handleToggleHidden]);
+
+    const handleMenuOpenEditor = useCallback(() => {
+        if (!selectedPath || !canEdit) return;
+        runMenuAction(() => onOpenEditorRef.current?.(selectedPath, preview));
+    }, [runMenuAction, selectedPath, canEdit, preview]);
+
+    const handleMenuRename = useCallback(() => {
+        if (!selectedPath || selectedPath === '.') return;
+        runMenuAction(() => beginRename(selectedPath));
+    }, [runMenuAction, selectedPath, beginRename]);
+
+    const handleMenuDelete = useCallback(() => {
+        if (!selectedPath || selectedIsDir) return;
+        runMenuAction(() => handleDeleteFile());
+    }, [runMenuAction, selectedPath, selectedIsDir, handleDeleteFile]);
+
+    const handleMenuDownload = useCallback(() => {
+        if (!selectedPath || selectedIsDir) return;
+        runMenuAction(() => handleDownload());
+    }, [runMenuAction, selectedPath, selectedIsDir, handleDownload]);
+
+    const handleMenuDownloadFolder = useCallback(() => {
+        if (!selectedFolderDownloadUrl) return;
+        closeHeaderMenu();
+        if (typeof window !== 'undefined') {
+            window.open(selectedFolderDownloadUrl, '_blank', 'noopener');
+        }
+    }, [closeHeaderMenu, selectedFolderDownloadUrl]);
+
+    const handleMenuOpenTerminalTab = useCallback(() => {
+        closeHeaderMenu();
+        onOpenTerminalTab?.();
+    }, [closeHeaderMenu, onOpenTerminalTab]);
+
+    const handleMenuToggleTerminal = useCallback(() => {
+        closeHeaderMenu();
+        onToggleTerminal?.();
+    }, [closeHeaderMenu, onToggleTerminal]);
+
     const handleRowMouseDown = useCallback((event) => {
         if (!event || event.button !== 0) return;
         const rowEl = event.currentTarget;
@@ -1944,7 +2056,69 @@ export function WorkspaceExplorer({ onFileSelect, visible = true, active = undef
         >
             <input type="file" multiple style="display:none" ref=${uploadInputRef} onChange=${handleUploadInputChange} />
             <div class="workspace-header">
-                <span>Workspace</span>
+                <div class="workspace-header-left">
+                    <div class="workspace-menu-wrap">
+                        <button
+                            ref=${headerMenuButtonRef}
+                            class=${`workspace-menu-button${headerMenuOpen ? ' active' : ''}`}
+                            onClick=${(e) => {
+                                e.stopPropagation();
+                                setHeaderMenuOpen((prev) => !prev);
+                            }}
+                            title="Workspace menu"
+                            aria-label="Workspace menu"
+                            aria-haspopup="menu"
+                            aria-expanded=${headerMenuOpen ? 'true' : 'false'}
+                        >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <line x1="4" y1="7" x2="20" y2="7" />
+                                <line x1="4" y1="12" x2="20" y2="12" />
+                                <line x1="4" y1="17" x2="20" y2="17" />
+                            </svg>
+                        </button>
+                        ${headerMenuOpen && html`
+                            <div class="workspace-menu-dropdown" ref=${headerMenuRef} role="menu" aria-label="Workspace options">
+                                <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuCreateFile} disabled=${uploading}>New file</button>
+                                <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuUploadFiles} disabled=${uploading}>Upload files</button>
+                                <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuRefresh}>Refresh tree</button>
+                                <button class=${`workspace-menu-item${showHidden ? ' active' : ''}`} role="menuitem" onClick=${handleMenuToggleHidden}>
+                                    ${showHidden ? 'Hide hidden files' : 'Show hidden files'}
+                                </button>
+
+                                ${selectedPath && html`<div class="workspace-menu-separator"></div>`}
+                                ${selectedPath && !selectedIsDir && html`
+                                    <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuOpenEditor} disabled=${!canEdit}>Open in editor</button>
+                                `}
+                                ${selectedCanRename && html`
+                                    <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuRename}>Rename selected</button>
+                                `}
+                                ${selectedCanDownload && html`
+                                    <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuDownload}>Download selected file</button>
+                                `}
+                                ${selectedFolderDownloadUrl && html`
+                                    <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuDownloadFolder}>Download selected folder (zip)</button>
+                                `}
+                                ${selectedCanDelete && html`
+                                    <button class="workspace-menu-item danger" role="menuitem" onClick=${handleMenuDelete}>Delete selected file</button>
+                                `}
+
+                                ${(onOpenTerminalTab || onToggleTerminal) && html`<div class="workspace-menu-separator"></div>`}
+                                ${onOpenTerminalTab && html`
+                                    <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuOpenTerminalTab}>
+                                        Open terminal in tab
+                                    </button>
+                                `}
+                                ${onToggleTerminal && html`
+                                    <button class="workspace-menu-item" role="menuitem" onClick=${handleMenuToggleTerminal}>
+                                        ${terminalVisible ? 'Hide terminal dock' : 'Show terminal dock'}
+                                    </button>
+                                `}
+                            </div>
+                        `}
+                    </div>
+                    <span>Workspace</span>
+                </div>
                 <div class="workspace-header-actions">
                     <button class="workspace-create" onClick=${handleCreateFileClick} title="New file" disabled=${uploading}>
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -1959,18 +2133,6 @@ export function WorkspaceExplorer({ onFileSelect, visible = true, active = undef
                             <circle cx="12" cy="12" r="8.5" stroke-dasharray="42 12" stroke-dashoffset="6"
                                 transform="rotate(75 12 12)" />
                             <polyline points="21 3 21 9 15 9" />
-                        </svg>
-                    </button>
-                    <button
-                        class=${`workspace-toggle-hidden${showHidden ? ' active' : ''}`}
-                        onClick=${handleToggleHidden}
-                        title=${showHidden ? 'Hide hidden files' : 'Show hidden files'}
-                    >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
-                            <circle cx="12" cy="12" r="3" />
-                            ${!showHidden && html`<line x1="3" y1="3" x2="21" y2="21" />`}
                         </svg>
                     </button>
                 </div>

@@ -104,6 +104,7 @@ Potential remaining failure modes include:
 ## Updates
 
 ### 2026-03-17 (implementation tranche)
+- Explicitly captured user-visible symptom: queued items were not reliably picked up after reload/restart in deferred-only/backlog paths.
 - Implemented restart/recovery fixes for the three confirmed active gaps:
   1. `resumePendingChats(...)` now scans known chats beyond `chat_cursors` rows, so chats with persisted turns but no cursor row are no longer skipped.
   2. `resumePendingChats(...)` now enqueues chats that have deferred queued follow-ups even when persisted backlog is empty.

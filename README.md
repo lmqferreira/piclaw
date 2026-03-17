@@ -99,9 +99,10 @@ The easiest way to set up model/provider credentials is from the **terminal pane
 > ```
 
 1. Open the web UI.
-2. Click the **terminal** button to open the terminal pane.
-3. Run `pi /login`.
-4. Follow the provider flow:
+2. In the workspace sidebar header, use the **hamburger menu on the far left**.
+3. Choose either **Open terminal in tab** or **Show terminal dock**.
+4. Run `pi /login`.
+5. Follow the provider flow:
    - for OAuth/device-login providers, complete the browser/device-code sign-in
    - for API-key-based providers, enter or configure the required key/secret as prompted
 
@@ -124,7 +125,7 @@ The UI is single-user, mobile-friendly, and streams updates over SSE:
 - **Link previews** via server-side OpenGraph fetch
 - **Multi-turn threading** — subsequent turns are visually threaded under the first
 - **Themes + tinting** — presets plus `/theme` and `/tint` commands (Solarized auto light/dark)
-- **Terminal pane** — optional authenticated shell inside the container for setup tasks like running `pi /login` to add provider credentials (enable with `PICLAW_WEB_TERMINAL_ENABLED=1`)
+- **Terminal pane** — optional authenticated shell inside the container for setup tasks like running `pi /login` to add provider credentials; open it from the workspace header **hamburger menu (far left)** via **Open terminal in tab** or **Show terminal dock** (enable with `PICLAW_WEB_TERMINAL_ENABLED=1`)
 - **Context usage indicator** — compose-footer pie indicator refreshes on reconnect and when returning to the tab, instead of lingering until the next poll cycle takes notice
 - **Mobile-first layout** with webapp manifest
 

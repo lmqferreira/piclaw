@@ -57,6 +57,7 @@
     --font-size-lg: 20px;
     --font-size-xl: 24px;
     --line-height: 1.5;
+    --chat-content-font-size: var(--font-size-md);
 
     /* Border radius */
     --radius-sm: 4px;
@@ -410,6 +411,13 @@ body {
     font-size: var(--workspace-header-font-size);
 }
 
+.workspace-header-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
 .workspace-header-actions {
     display: inline-flex;
     align-items: center;
@@ -421,7 +429,8 @@ body {
 .workspace-edit,
 .workspace-delete,
 .workspace-create,
-.workspace-toggle-hidden {
+.workspace-toggle-hidden,
+.workspace-menu-button {
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
@@ -443,7 +452,8 @@ body {
 .workspace-edit svg,
 .workspace-delete svg,
 .workspace-create svg,
-.workspace-toggle-hidden svg {
+.workspace-toggle-hidden svg,
+.workspace-menu-button svg {
     width: var(--workspace-header-icon-size);
     height: var(--workspace-header-icon-size);
     display: block;
@@ -460,20 +470,85 @@ body {
 .workspace-edit:hover,
 .workspace-delete:hover,
 .workspace-create:hover,
-.workspace-toggle-hidden:hover {
+.workspace-toggle-hidden:hover,
+.workspace-menu-button:hover {
     color: var(--text-primary);
     border-color: var(--accent-color);
 }
 
-.workspace-toggle-hidden.active {
+.workspace-toggle-hidden.active,
+.workspace-menu-button.active {
     color: var(--accent-color);
     border-color: var(--accent-color);
+}
+
+.workspace-menu-wrap {
+    position: relative;
+    display: inline-flex;
+}
+
+.workspace-menu-dropdown {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    min-width: 230px;
+    max-width: min(320px, 90vw);
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    padding: 6px;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.workspace-menu-item {
+    appearance: none;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 13px;
+    line-height: 1.35;
+    text-align: left;
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    min-height: 36px;
+    cursor: pointer;
+    transition: background-color var(--ui-transition-fast), border-color var(--ui-transition-fast), color var(--ui-transition-fast);
+}
+
+.workspace-menu-item:hover {
+    background: var(--bg-secondary);
+    border-color: var(--border-color);
+}
+
+.workspace-menu-item:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.workspace-menu-item.active {
+    color: var(--accent-color);
+    font-weight: 600;
+}
+
+.workspace-menu-item.danger {
+    color: var(--danger-color, #d9534f);
+}
+
+.workspace-menu-separator {
+    height: 1px;
+    margin: 2px 4px;
+    background: var(--border-color);
 }
 
 .workspace-download:disabled,
 .workspace-edit:disabled,
 .workspace-delete:disabled,
-.workspace-create:disabled {
+.workspace-create:disabled,
+.workspace-menu-button:disabled {
     opacity: 0.45;
     cursor: not-allowed;
     border-color: var(--border-color);
@@ -2043,12 +2118,12 @@ body {
     resize: none;
     field-sizing: content;
     font-family: inherit;
-    font-size: var(--font-size-sm);
+    font-size: var(--chat-content-font-size);
     color: var(--text-primary);
     background-color: transparent;
     outline: none;
     padding: 1px calc(var(--spacing-xs) + 28px) 2px 1px;
-    line-height: 1.4;
+    line-height: 1.5;
     overflow-y: hidden;
     overflow-wrap: anywhere;
     word-break: break-word;
@@ -2084,8 +2159,8 @@ body {
    Do not gate this behind coarse-pointer media queries: iPad/PWA/hardware-input
    combinations can miss those and still trigger whole-page movement on focus. */
 @supports (-webkit-touch-callout: none) {
-    .compose-box textarea {
-        font-size: max(var(--font-size-sm), 16px);
+    :root {
+        --chat-content-font-size: max(var(--font-size-md), 16px);
     }
 }
 
@@ -2987,6 +3062,7 @@ body {
     word-wrap: break-word;
     overflow-wrap: break-word;
     word-break: break-word;
+    font-size: var(--chat-content-font-size);
     line-height: 1.5;
     max-width: 100%;
 }
@@ -4926,7 +5002,7 @@ body {
 
     .compose-box textarea {
         min-height: 50px;
-        font-size: max(var(--font-size-sm), 16px);
+        font-size: var(--chat-content-font-size);
     }
 
     .compose-footer {

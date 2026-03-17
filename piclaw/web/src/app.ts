@@ -23,7 +23,7 @@ import { Timeline } from './components/timeline.js';
 import { WorkspaceExplorer } from './components/workspace-explorer.js';
 import { TabStrip } from './components/tab-strip.js';
 import { MarkdownPreview } from './components/markdown-preview.js';
-import { paneRegistry, editorPaneExtension, preloadEditorBundle, terminalPaneExtension, workspacePreviewPaneExtension, workspaceMarkdownPreviewPaneExtension, officeViewerPaneExtension, csvViewerPaneExtension, pdfViewerPaneExtension, imageViewerPaneExtension, drawioPaneExtension, tabStore } from './panes/index.js';
+import { paneRegistry, editorPaneExtension, preloadEditorBundle, terminalPaneExtension, terminalTabPaneExtension, TERMINAL_TAB_PATH, workspacePreviewPaneExtension, workspaceMarkdownPreviewPaneExtension, officeViewerPaneExtension, csvViewerPaneExtension, pdfViewerPaneExtension, imageViewerPaneExtension, drawioPaneExtension, tabStore } from './panes/index.js';
 import { getLocalStorageBoolean, getLocalStorageItem, getLocalStorageNumber, setLocalStorageItem } from './utils/storage.js';
 import { useSseConnection } from './ui/use-sse-connection.js';
 import { useNotifications } from './ui/use-notifications.js';
@@ -139,6 +139,8 @@ preloadEditorBundle();
 
 // Terminal dock pane is now part of the default web UI surface.
 paneRegistry.register(terminalPaneExtension);
+// Terminal can also be opened as a full tab via a synthetic path.
+paneRegistry.register(terminalTabPaneExtension);
 
 function MainApp({ locationParams }) {
     const currentChatJid = useMemo(() => {
@@ -261,6 +263,9 @@ function MainApp({ locationParams }) {
     const hasDockPanes = paneRegistry.getDockPanes().length > 0;
     const [dockVisible, setDockVisible] = useState(false);
     const toggleDock = useCallback(() => setDockVisible((v) => !v), []);
+    const openTerminalTab = useCallback(() => {
+        openEditor(TERMINAL_TAB_PATH, { label: 'Terminal' });
+    }, [openEditor]);
     const showEditorPaneContainer = !chatOnlyMode && (editorOpen || (hasDockPanes && dockVisible));
 
     // Mount/dispose editor extension instance when active tab changes
@@ -2443,6 +2448,9 @@ function MainApp({ locationParams }) {
                     visible=${workspaceOpen}
                     active=${workspaceOpen || editorOpen}
                     onOpenEditor=${openEditor}
+                    onOpenTerminalTab=${openTerminalTab}
+                    onToggleTerminal=${hasDockPanes ? toggleDock : undefined}
+                    terminalVisible=${Boolean(hasDockPanes && dockVisible)}
                 />
                 <button
                     class=${`workspace-toggle-tab${workspaceOpen ? ' open' : ' closed'}`}

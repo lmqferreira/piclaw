@@ -65,7 +65,7 @@ export function useEditorState({ onTabClosed } = {}) {
     // ── Tab actions ─────────────────────────────────────────────
 
     /** Open a file in the editor. Creates a tab and sets it active. */
-    const openEditor = useCallback((path) => {
+    const openEditor = useCallback((path, options = {}) => {
         if (!path) return;
         // Verify there's a pane handler for this file type
         const context = { path, mode: 'edit' };
@@ -81,7 +81,8 @@ export function useEditorState({ onTabClosed } = {}) {
         } catch (err) {
             console.warn(`[openEditor] paneRegistry.resolve() error for "${path}":`, err);
         }
-        tabStore.open(path);
+        const label = typeof options?.label === 'string' && options.label.trim() ? options.label.trim() : undefined;
+        tabStore.open(path, label);
     }, []);
 
     /** Close the active tab (with dirty confirmation). */

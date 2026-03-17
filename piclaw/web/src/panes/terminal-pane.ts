@@ -10,6 +10,7 @@ import type { WebPaneExtension, PaneContext, PaneInstance, PaneCapability } from
 
 const GHOSTTY_WEB_MODULE = '/static/js/vendor/ghostty-web.js';
 const GHOSTTY_WASM_MODULE = '/static/js/vendor/ghostty-vt.wasm';
+export const TERMINAL_TAB_PATH = 'piclaw://terminal';
 const TERMINAL_FONT_FAMILY = 'FiraCode Nerd Font Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
 const TERMINAL_FONT_LOAD_SPEC = '400 13px "FiraCode Nerd Font Mono"';
 const TERMINAL_FONT_LOAD_SPEC_BOLD = '700 13px "FiraCode Nerd Font Mono"';
@@ -606,6 +607,22 @@ export const terminalPaneExtension: WebPaneExtension = {
     icon: 'terminal',
     capabilities: ['terminal'] as PaneCapability[],
     placement: 'dock',
+
+    mount(container: HTMLElement, context: PaneContext): PaneInstance {
+        return new TerminalPaneInstance(container, context);
+    },
+};
+
+export const terminalTabPaneExtension: WebPaneExtension = {
+    id: 'terminal-tab',
+    label: 'Terminal',
+    icon: 'terminal',
+    capabilities: ['terminal'] as PaneCapability[],
+    placement: 'tabs',
+
+    canHandle(context: PaneContext): boolean | number {
+        return context?.path === TERMINAL_TAB_PATH ? 10_000 : false;
+    },
 
     mount(container: HTMLElement, context: PaneContext): PaneInstance {
         return new TerminalPaneInstance(container, context);

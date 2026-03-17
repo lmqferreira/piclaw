@@ -1,7 +1,19 @@
 /**
  * channels/web/recovery.ts – crash recovery and pending-resume orchestration.
  */
-import { clearInflightMarker, getAllChatCursors, getDb, getInflightRuns, getMessagesSince, hasAgentRepliesAfter, rollbackInflightRun, } from "../../db.js";
+import { clearInflightMarker, getAllChatCursors, getDb, getDeferredQueuedFollowups, getInflightRuns, getMessagesSince, hasAgentRepliesAfter, rollbackInflightRun, } from "../../db.js";
+function getKnownChatJids() {
+    const rows = getDb().prepare(`
+    SELECT chat_jid FROM chat_cursors
+    UNION
+    SELECT jid as chat_jid FROM chats
+    UNION
+    SELECT chat_jid FROM messages
+  `).all();
+    return rows
+        .map((row) => (typeof row.chat_jid === "string" ? row.chat_jid.trim() : ""))
+        .filter((jid) => jid.length > 0);
+}
 const defaultStore = {
     getInflightRuns,
     transaction: (run) => {
@@ -11,6 +23,8 @@ const defaultStore = {
     clearInflightMarker,
     rollbackInflightRun,
     getAllChatCursors,
+    getKnownChatJids,
+    getDeferredQueuedFollowups,
     getMessagesSince,
 };
 /** Maximum age (ms) of an inflight marker before recovery skips it.
@@ -83,13 +97,15 @@ export function recoverInflightRuns(ctx, store = defaultStore) {
 /** Resume chats with pending messages after a restart. */
 export function resumePendingChats(ctx, chatJid, store = defaultStore) {
     const cursors = store.getAllChatCursors();
-    const jids = chatJid && chatJid !== "all" ? [chatJid] : Object.keys(cursors);
-    for (const jid of jids) {
-        const since = cursors[jid];
-        if (since === undefined)
-            continue; // No cursor → never processed, skip
+    const resolvedJids = chatJid && chatJid !== "all"
+        ? [chatJid]
+        : Array.from(new Set([...Object.keys(cursors), ...store.getKnownChatJids()]));
+    for (const jid of resolvedJids) {
+        const since = Object.prototype.hasOwnProperty.call(cursors, jid) ? cursors[jid] : "";
         const messages = store.getMessagesSince(jid, since, ctx.assistantName);
-        if (messages.length === 0)
+        const deferred = store.getDeferredQueuedFollowups(jid);
+        const hasDeferredQueued = deferred.some((item) => typeof item.queuedContent === "string" && item.queuedContent.trim().length > 0);
+        if (messages.length === 0 && !hasDeferredQueued)
             continue;
         // Use a stable per-chat key so repeated resume_pending triggers (for
         // example, reload IPC plus startup self-queued IPC) collapse to one queued
