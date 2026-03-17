@@ -3801,10 +3801,22 @@ body {
     flex: 0 0 auto;
 }
 
+.adaptive-card-submission-title-wrap {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
 .adaptive-card-submission-title {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.adaptive-card-submission-title-action {
     font-size: 13px;
     font-weight: 700;
     color: var(--text-primary);
+    line-height: 1.2;
 }
 
 .adaptive-card-submission-summary {
@@ -3812,6 +3824,48 @@ body {
     font-size: 13px;
     line-height: 1.4;
     color: var(--text-primary);
+}
+
+.adaptive-card-submission-fields {
+    margin-top: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.adaptive-card-submission-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+    border-radius: 999px;
+    padding: 3px 8px;
+    font-size: 11px;
+    line-height: 1.2;
+    color: var(--text-primary);
+    max-width: 100%;
+    background: var(--bg-secondary);
+}
+
+.adaptive-card-submission-field-key {
+    color: var(--text-secondary);
+}
+
+.adaptive-card-submission-field-value {
+    color: var(--text-primary);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.adaptive-card-submission-field-sep {
+    opacity: 0.8;
+}
+
+.adaptive-card-submission-field-more {
+    color: var(--text-secondary);
+    border-style: dashed;
+    font-style: italic;
+    font-weight: 500;
 }
 
 .adaptive-card-submission-meta {

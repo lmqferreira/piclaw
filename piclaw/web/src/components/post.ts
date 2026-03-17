@@ -907,10 +907,27 @@ export function Post({ post, onClick, onHashtagClick, onMessageRef, onScrollToMe
                                 <div key=${`${block.card_id}-${idx}`} class="adaptive-card-submission-receipt">
                                     <div class="adaptive-card-submission-header">
                                         <span class="adaptive-card-submission-icon" aria-hidden="true">✓</span>
-                                        <span class="adaptive-card-submission-title">${meta.title}</span>
+                                        <div class="adaptive-card-submission-title-wrap">
+                                            <span class="adaptive-card-submission-title">Submitted</span>
+                                            <span class="adaptive-card-submission-title-action">${meta.title}</span>
+                                        </div>
                                     </div>
                                     ${meta.summary && html`
                                         <div class="adaptive-card-submission-summary">${meta.summary}</div>
+                                    `}
+                                    ${meta.fields.length > 0 && html`
+                                        <div class="adaptive-card-submission-fields">
+                                            ${meta.fields.map((field) => html`
+                                                <span class="adaptive-card-submission-field" title=${`${field.key}: ${field.value}`}>
+                                                    <span class="adaptive-card-submission-field-key">${field.key}</span>
+                                                    <span class="adaptive-card-submission-field-sep">:</span>
+                                                    <span class="adaptive-card-submission-field-value">${field.value}</span>
+                                                </span>
+                                            `)}
+                                            ${meta.hiddenFieldCount > 0 && html`
+                                                <span class="adaptive-card-submission-field adaptive-card-submission-field-more">+${meta.hiddenFieldCount} more</span>
+                                            `}
+                                        </div>
                                     `}
                                     <div class="adaptive-card-submission-meta">
                                         Submitted ${formatTimestamp(meta.submittedAt)}

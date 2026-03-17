@@ -8,6 +8,8 @@ export interface AdaptiveCardSubmissionBlock {
   data?: unknown;
 }
 
+const MAX_SUBMISSION_FIELDS = 4;
+
 function formatSubmissionValue(value: unknown): string {
   if (value == null) return "";
   if (typeof value === "string") return value.trim();
@@ -24,6 +26,14 @@ function formatSubmissionValue(value: unknown): string {
       .join(", ");
   }
   return String(value).trim();
+}
+
+function getSubmissionFields(data: unknown): Array<{ key: string; value: string }> {
+  if (!(typeof data === "object") || data == null || Array.isArray(data)) return [];
+  return Object.entries(data as Record<string, unknown>)
+    .filter(([key]) => !key.startsWith("__"))
+    .map(([key, value]) => ({ key, value: formatSubmissionValue(value) }))
+    .filter((entry) => entry.value);
 }
 
 export function isAdaptiveCardSubmissionBlock(block: unknown): block is AdaptiveCardSubmissionBlock {
@@ -49,12 +59,8 @@ export function buildAdaptiveCardSubmissionFallbackText(block: AdaptiveCardSubmi
     return formatted ? `Card submission: ${label} — ${formatted}` : `Card submission: ${label}`;
   }
   if (typeof data === "object") {
-    const entries = Object.entries(data as Record<string, unknown>)
-      .filter(([key]) => !key.startsWith("__"))
-      .map(([key, value]) => ({ key, value: formatSubmissionValue(value) }))
-      .filter((entry) => entry.value)
-      .slice(0, 4)
-      .map(({ key, value }) => `${key}: ${value}`);
+    const fields = getSubmissionFields(data);
+    const entries = fields.slice(0, MAX_SUBMISSION_FIELDS).map(({ key, value }) => `${key}: ${value}`);
     return entries.length > 0
       ? `Card submission: ${label} — ${entries.join(", ")}`
       : `Card submission: ${label}`;
@@ -66,24 +72,24 @@ export function describeAdaptiveCardSubmission(block: AdaptiveCardSubmissionBloc
   title: string;
   summary: string | null;
   fields: Array<{ key: string; value: string }>;
+  fieldCount: number;
+  hiddenFieldCount: number;
   submittedAt: string;
 } {
   const title = String(block.title || block.card_id || "Card submission").trim() || "Card submission";
-  const fields = typeof block.data === "object" && block.data && !Array.isArray(block.data)
-    ? Object.entries(block.data as Record<string, unknown>)
-        .filter(([key]) => !key.startsWith("__"))
-        .map(([key, value]) => ({ key, value: formatSubmissionValue(value) }))
-        .filter((entry) => entry.value)
-        .slice(0, 4)
-    : [];
+  const fields = getSubmissionFields(block.data);
   const summary = fields.length > 0
-    ? fields.map(({ key, value }) => `${key}: ${value}`).join(", ")
+    ? fields.slice(0, 2).map(({ key, value }) => `${key}: ${value}`).join(", ")
     : formatSubmissionValue(block.data) || null;
+  const fieldCount = fields.length;
+  const hiddenFieldCount = Math.max(fieldCount - MAX_SUBMISSION_FIELDS, 0);
 
   return {
     title,
     summary,
-    fields,
+    fields: fields.slice(0, MAX_SUBMISSION_FIELDS),
+    fieldCount,
+    hiddenFieldCount,
     submittedAt: block.submitted_at,
   };
 }

@@ -1,10 +1,14 @@
 ---
 id: improve-adaptive-card-submission-rendering
 title: Improve rendering of Adaptive Card submissions in the web timeline
-status: next
+status: done
 priority: medium
 created: 2026-03-16
-updated: 2026-03-16
+updated: 2026-03-17
+completed: 2026-03-17
+target_release: next
+estimate: S
+risk: low
 tags:
   - work-item
   - kanban
@@ -19,12 +23,16 @@ owner: pi
 
 ## Summary
 
-Adaptive Card submissions currently work functionally, but the resulting timeline
-rendering is not as readable or polished as it should be.
+Adaptive Card submissions now render as a compact, human-readable receipt in the
+web timeline so the key decision values are visible without exposing verbose
+payload noise.
 
-This ticket is to improve how submitted card actions appear after a user presses
-an `Action.Submit` button, so the timeline preserves the important decision/data
-clearly without exposing awkward raw payload structure or low-signal boilerplate.
+This work adds a structured summary section to submission posts that:
+
+- highlights the selected action title at a glance,
+- renders key/value fields as compact readable chips,
+- preserves compatibility with existing submission payloads,
+- keeps detailed fallback compatibility for existing persisted rows.
 
 ## Problem Statement
 
@@ -63,35 +71,42 @@ web timeline, even when the underlying workflow behaves correctly.
 
 ## Acceptance Criteria
 
-- [ ] Adaptive Card submissions are rendered in a more human-readable form than the current baseline
-- [ ] The main user decision/selection is visible at a glance
-- [ ] Low-value metadata is reduced, hidden, or visually deprioritized
-- [ ] Rendering remains compatible with the existing persisted submission payloads
-- [ ] Failed/invalid card submissions still surface enough detail for troubleshooting
-- [ ] Regression coverage or fixture coverage exists for the chosen rendering behavior
+- [x] Adaptive Card submissions are rendered in a more human-readable form than the current baseline
+- [x] The main user decision/selection is visible at a glance
+- [x] Low-value metadata is reduced, hidden, or visually deprioritized
+- [x] Rendering remains compatible with the existing persisted submission payloads
+- [x] Failed/invalid card submissions still surface enough detail for troubleshooting
+- [x] Regression coverage or fixture coverage exists for the chosen rendering behavior
 
 ## Investigation Notes
 
-Areas likely involved:
+Areas involved:
 
-- `web/src/ui/adaptive-card-renderer.ts`
-- timeline/post rendering pipeline for `content_blocks`
-- message/submission persistence shape for adaptive card submissions
-- any submission-specific host config or rendering helpers
+- `web/src/ui/adaptive-card-submission.ts`
+- `web/src/components/post.ts`
+- `web/src/static/css/styles.css`
+- `test/web/adaptive-card-submission.test.ts`
 
 ## Updates
 
-### 2026-03-16
-- Created from user request after using the kanban triage card and noticing that submission rendering should be improved.
+### 2026-03-17
+- Updated helper shape to provide stable compact field summaries and hidden-field count.
+- Reworked submission receipt rendering in timeline posts to show:
+  - a compact “Submitted” header,
+  - action title,
+  - top fields as pill-style key/value values,
+  - concise fallback summaries.
+- Added/expanded regression coverage in `test/web/adaptive-card-submission.test.ts`.
 
 ## Notes
 
 - This is a rendering/UX ticket, not a request to redesign Adaptive Card action semantics.
-- Prefer improving the existing submission display path before introducing a new parallel submission message type.
-- Keep markdown fallback quality in mind if summary text is also reused outside the web-only card surface.
+- Kept payload shape unchanged; compatibility with existing stored `adaptive_card_submission`
+  blocks is preserved.
 
 ## Links
 
 - `kanban/50-done/adaptive-cards-and-btw-side-conversations.md`
-- `piclaw/web/src/ui/adaptive-card-renderer.ts`
-- `piclaw/src/channels/web/adaptive-card-actions.ts`
+- `piclaw/web/src/ui/adaptive-card-submission.ts`
+- `piclaw/web/src/components/post.ts`
+- `piclaw/test/web/adaptive-card-submission.test.ts`

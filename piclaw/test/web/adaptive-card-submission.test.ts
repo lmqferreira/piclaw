@@ -44,6 +44,27 @@ describe("adaptive card submission helpers", () => {
     })).toBe("Card submission: Approve — env: prod, dryRun: no");
   });
 
+  test("surfaces field counts for submission receipts", () => {
+    const meta = describeAdaptiveCardSubmission({
+      type: "adaptive_card_submission",
+      card_id: "card-2",
+      source_post_id: 43,
+      submitted_at: "2026-03-15T12:01:00.000Z",
+      action_type: "Action.Submit",
+      title: "Complex",
+      data: {
+        one: 1,
+        two: 2,
+        three: 3,
+        four: 4,
+        five: 5,
+      },
+    });
+    expect(meta.fieldCount).toBe(5);
+    expect(meta.hiddenFieldCount).toBe(1);
+    expect(meta.fields).toHaveLength(4);
+  });
+
   test("describes submission receipts compactly", () => {
     const meta = describeAdaptiveCardSubmission({
       type: "adaptive_card_submission",
@@ -61,5 +82,7 @@ describe("adaptive card submission helpers", () => {
       { key: "priority", value: "high" },
       { key: "targets", value: "docs, tests" },
     ]);
+    expect(meta.fieldCount).toBe(2);
+    expect(meta.hiddenFieldCount).toBe(0);
   });
 });
