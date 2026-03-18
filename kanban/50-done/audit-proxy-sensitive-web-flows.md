@@ -1,10 +1,11 @@
 ---
 id: audit-proxy-sensitive-web-flows
 title: Audit remaining proxy-sensitive web flows
-status: doing
+status: done
 priority: medium
 created: 2026-03-10
 updated: 2026-03-18
+completed: 2026-03-18
 target_release: next
 tags:
   - work-item
@@ -67,15 +68,62 @@ Use **Path A** now, with selective helper extraction from **Path B** only where 
 
 ## Definition of Done
 
-- [ ] All acceptance criteria satisfied and verified
-- [ ] Route inventory and findings recorded in `## Updates`
-- [ ] Regression tests added for any uncovered proxy-sensitive flows
-- [ ] Docs updated if operator behavior changes
-- [ ] Quality score ≥ 9 recorded in final update
-- [ ] Ticket front matter updated (`status`, `updated`, `completed`)
-- [ ] Ticket moved to `50-done/`
+- [x] All acceptance criteria satisfied and verified
+- [x] Route inventory and findings recorded in `## Updates`
+- [x] Regression tests added for any uncovered proxy-sensitive flows
+- [x] Docs updated if operator behavior changes
+- [x] Quality score ≥ 9 recorded in final update
+- [x] Ticket front matter updated (`status`, `updated`, `completed`)
+- [x] Ticket moved to `50-done/`
 
 ## Updates
+
+### 2026-03-18 — Proxy-sensitive audit completed
+
+**Method:** Path A — endpoint-by-endpoint audit + regression tests.
+
+#### Proxy-sensitive route inventory
+
+Enumerated all origin/host/proto-dependent paths:
+
+| Flow | Origin source | Proxy-safe | Notes |
+|------|--------------|------------|-------|
+| **CSRF origin check** | `Origin` header vs `getRequestOriginParts(req)` | ✅ | Compares both direct and forwarded candidates; TLS-offload fallback for same-host |
+| **WebAuthn RP resolution** | `Origin` header (primary), `getRequestOriginParts(req)` (fallback) | ✅ | Browsers always send Origin on POST; fallback uses TRUST_PROXY config |
+| **rememberWebOrigin** | `getRequestOriginParts(req)` on every request via request-router | ✅ | Cached per chat JID; used for passkey enrol link generation |
+| **Passkey enrol links** | `getWebOrigin(chatJid)` | ✅ | Uses remembered origin from above |
+| **Link preview fetching** | Server-to-server (no proxy sensitivity) | ✅ | SSRF-protected with hostname/IP blocklist |
+| **Client key (rate limiting)** | `x-forwarded-for` / `x-real-ip` when TRUST_PROXY | ✅ | Falls to "unknown" when proxy not trusted |
+| **Terminal WebSocket upgrade** | `checkCsrfOrigin(req)` | ✅ | Same CSRF check as all mutating endpoints |
+
+#### Trust model summary
+
+- `TRUST_PROXY` (config: `web.trustProxy` / `PICLAW_TRUST_PROXY`) is the single gate for all forwarded-header trust
+- When false: only direct request URL/Host used — safe from header injection
+- When true: `x-forwarded-host`, `x-forwarded-proto`, `x-forwarded-port`, `Forwarded` header are trusted
+- `getRequestOriginParts()` is the centralized helper (Path B extraction already done in prior work)
+
+#### Edge cases documented
+
+1. **origin=null**: Explicitly blocked in CSRF checks. WebAuthn RP fallback uses direct/forwarded host.
+2. **Missing Origin on POST**: Allowed by CSRF (non-browser clients). WebAuthn fallback uses forwarded headers when TRUST_PROXY is on.
+3. **Port mismatch**: Non-standard forwarded ports correctly appended. Standard ports (80/443) omitted.
+4. **TLS-offload**: `https` browser origin allowed against `http` backend when hostname matches (same-host only).
+
+#### Regression tests added
+
+New test file: `test/channels/web/proxy-sensitive-flows.test.ts` — 17 tests covering:
+- Origin resolution with/without proxy trust (3 tests)
+- CSRF behind proxy: allow, block, null, TLS-offload, different hosts (6 tests)
+- WebAuthn RP: Origin header, forwarded fallback, direct fallback, null origin (4 tests)
+- Workspace write, media upload CSRF behind proxy (3 tests)
+- SSE GET immunity to CSRF (1 test)
+
+#### Findings
+
+**No bugs found.** The proxy-sensitive surface is well-centralized through `getRequestOriginParts` and `checkCsrfOrigin`. All flows correctly respect `TRUST_PROXY`.
+
+Quality: ★★★★★ 10/10 (problem: 2, scope: 2, test: 2, deps: 2, risk: 2)
 
 ### 2026-03-18
 - Lane change: `10-next` → `20-doing` from triage (`intent: triage-next-lane`, `audit-proxy-sensitive-web-flows: doing`).
