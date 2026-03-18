@@ -85,7 +85,7 @@ type MessageRow = {
   content_blocks: string | null;
 };
 
-type MessageResultRow = MessageRow & {
+type MessageResultRow = Omit<MessageRow, "content_blocks"> & {
   created_at: string;
   content_truncated?: boolean;
   content_full_length?: number;
