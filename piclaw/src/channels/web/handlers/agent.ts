@@ -436,7 +436,11 @@ export async function handleAgentMessage(
           return queueResponse;
         }
       } else {
-        await channel.sendMessage(chatJid, formatted, interaction.id);
+        const sendOptions: Record<string, unknown> = { threadId: interaction.id };
+        if (result.contentBlocks?.length) {
+          sendOptions.contentBlocks = result.contentBlocks;
+        }
+        await channel.sendMessage(chatJid, formatted, sendOptions);
       }
     }
 

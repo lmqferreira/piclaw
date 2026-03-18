@@ -339,7 +339,11 @@ export async function handleAgentMessage(channel, req, pathname, chatJid, defaul
                 }
             }
             else {
-                await channel.sendMessage(chatJid, formatted, interaction.id);
+                const sendOptions = { threadId: interaction.id };
+                if (result.contentBlocks?.length) {
+                    sendOptions.contentBlocks = result.contentBlocks;
+                }
+                await channel.sendMessage(chatJid, formatted, sendOptions);
             }
         }
         // Broadcast model changes so the UI hint updates immediately

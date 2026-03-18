@@ -250,4 +250,6 @@ export interface AgentControlResult {
   queued_steer?: boolean;
   model_label?: string | null;
   thinking_level?: string | null;
+  /** Optional adaptive card content blocks to include with the response message. */
+  contentBlocks?: unknown[];
 }

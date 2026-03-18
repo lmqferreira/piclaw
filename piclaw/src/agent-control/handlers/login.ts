@@ -1,15 +1,15 @@
 /**
  * agent-control/handlers/login.ts – Provider authentication via /login and /logout.
  *
- * Handles OAuth login flows and API key entry for AI model providers.
- * Works without a running model — all UI is hardcoded adaptive cards
- * posted via the internal message route.
+ * Card-driven authentication flow for AI model providers.
+ * Works without a running model — all UI is hardcoded adaptive cards.
  *
- * Commands:
- *   /login            – show provider picker card
- *   /login <provider> – start login for a specific provider
- *   /logout           – show logged-in providers for logout
- *   /logout <provider> – logout from a specific provider
+ * Flow:
+ *   /login  → posts a provider status card with login/logout actions
+ *   /logout → same card, focused on logged-in providers
+ *
+ * Card submissions trigger OAuth flows or API key storage via the
+ * adaptive card action handler in web.ts.
  */
 
 import type { AgentSession, ModelRegistry } from "@mariozechner/pi-coding-agent";
@@ -35,7 +35,7 @@ interface AuthStorageLike {
 }
 
 /** Known providers that support direct API key authentication. */
-const API_KEY_PROVIDERS = [
+const API_KEY_PROVIDERS: Array<{ id: string; name: string; envVar: string }> = [
   { id: "anthropic", name: "Anthropic", envVar: "ANTHROPIC_API_KEY" },
   { id: "openai", name: "OpenAI", envVar: "OPENAI_API_KEY" },
   { id: "google", name: "Google AI", envVar: "GOOGLE_API_KEY" },
@@ -47,20 +47,19 @@ function getAuthStorage(session: AgentSession, modelRegistry: ModelRegistry): Au
   return (registry as unknown as { authStorage?: AuthStorageLike })?.authStorage ?? null;
 }
 
-function getProviderStatus(authStorage: AuthStorageLike): Array<{
+interface ProviderInfo {
   id: string;
   name: string;
-  type: "oauth" | "api_key" | "none";
+  authType: "oauth" | "api_key" | "none";
   hasOAuth: boolean;
   hasApiKey: boolean;
-}> {
-  const oauthProviders = authStorage.getOAuthProviders();
-  const oauthIds = new Set(oauthProviders.map((p) => p.id));
-  const apiKeyIds = new Set(API_KEY_PROVIDERS.map((p) => p.id));
+}
 
-  // Merge OAuth + API key providers into unified list
+function getProviderStatus(authStorage: AuthStorageLike): ProviderInfo[] {
+  const oauthProviders = authStorage.getOAuthProviders();
+  const apiKeyIds = new Set(API_KEY_PROVIDERS.map((p) => p.id));
   const seen = new Set<string>();
-  const result: Array<{ id: string; name: string; type: "oauth" | "api_key" | "none"; hasOAuth: boolean; hasApiKey: boolean }> = [];
+  const result: ProviderInfo[] = [];
 
   for (const p of oauthProviders) {
     seen.add(p.id);
@@ -68,7 +67,7 @@ function getProviderStatus(authStorage: AuthStorageLike): Array<{
     result.push({
       id: p.id,
       name: p.name,
-      type: cred?.type === "oauth" ? "oauth" : cred?.type === "api_key" ? "api_key" : "none",
+      authType: cred?.type === "oauth" ? "oauth" : cred?.type === "api_key" ? "api_key" : "none",
       hasOAuth: true,
       hasApiKey: apiKeyIds.has(p.id),
     });
@@ -81,7 +80,7 @@ function getProviderStatus(authStorage: AuthStorageLike): Array<{
     result.push({
       id: p.id,
       name: p.name,
-      type: cred?.type === "api_key" ? "api_key" : cred?.type === "oauth" ? "oauth" : "none",
+      authType: cred?.type === "api_key" ? "api_key" : cred?.type === "oauth" ? "oauth" : "none",
       hasOAuth: false,
       hasApiKey: true,
     });
@@ -90,11 +89,129 @@ function getProviderStatus(authStorage: AuthStorageLike): Array<{
   return result;
 }
 
-/** Handle /login — show provider picker or start login for a specific provider. */
+function buildStatusEmoji(info: ProviderInfo): string {
+  if (info.authType === "oauth") return "✓ OAuth";
+  if (info.authType === "api_key") return "✓ API key";
+  return "—";
+}
+
+function buildProviderCardPayload(providers: ProviderInfo[]): Record<string, unknown> {
+  const body: unknown[] = [
+    {
+      type: "TextBlock",
+      text: "Provider Authentication",
+      weight: "Bolder",
+      size: "Medium",
+    },
+    {
+      type: "TextBlock",
+      text: "Select a provider, choose an auth method, and submit.",
+      wrap: true,
+    },
+  ];
+
+  // Provider facts showing current status
+  const facts = providers.map((p) => ({
+    title: p.name,
+    value: buildStatusEmoji(p),
+  }));
+  body.push({
+    type: "FactSet",
+    facts,
+    spacing: "medium",
+  });
+
+  // Provider picker
+  const providerChoices = providers.map((p) => ({
+    title: `${p.name}${p.authType !== "none" ? ` (${buildStatusEmoji(p)})` : ""}`,
+    value: p.id,
+  }));
+  body.push(
+    {
+      type: "TextBlock",
+      text: "Provider",
+      weight: "Bolder",
+      spacing: "medium",
+    },
+    {
+      type: "Input.ChoiceSet",
+      id: "provider",
+      style: "compact",
+      choices: providerChoices,
+      value: providers[0]?.id || "",
+    },
+  );
+
+  // Action picker
+  const actionChoices: Array<{ title: string; value: string }> = [
+    { title: "Login with OAuth", value: "oauth" },
+    { title: "Enter API key", value: "api_key" },
+    { title: "Logout", value: "logout" },
+  ];
+  body.push(
+    {
+      type: "TextBlock",
+      text: "Action",
+      weight: "Bolder",
+      spacing: "medium",
+    },
+    {
+      type: "Input.ChoiceSet",
+      id: "action",
+      style: "compact",
+      choices: actionChoices,
+      value: "api_key",
+    },
+  );
+
+  // API key input (masked)
+  body.push(
+    {
+      type: "TextBlock",
+      text: "API Key (only needed for \"Enter API key\" action)",
+      spacing: "medium",
+      isSubtle: true,
+      wrap: true,
+    },
+    {
+      type: "Input.Text",
+      id: "api_key",
+      placeholder: "sk-...",
+      style: "password",
+    },
+  );
+
+  return {
+    type: "AdaptiveCard",
+    version: "1.5",
+    body,
+    actions: [
+      {
+        type: "Action.Submit",
+        title: "Submit",
+        data: { intent: "provider-auth" },
+      },
+    ],
+  };
+}
+
+/** Build the adaptive_card content block for the provider auth card. */
+function buildProviderAuthCard(providers: ProviderInfo[]): Record<string, unknown> {
+  return {
+    type: "adaptive_card",
+    card_id: `provider-auth-${Date.now()}`,
+    schema_version: "1.5",
+    state: "active",
+    fallback_text: "Provider authentication card.",
+    payload: buildProviderCardPayload(providers),
+  };
+}
+
+/** Handle /login — post provider auth card. */
 export async function handleLogin(
   session: AgentSession,
   modelRegistry: ModelRegistry,
-  command: LoginCommand,
+  _command: LoginCommand,
 ): Promise<AgentControlResult> {
   const authStorage = getAuthStorage(session, modelRegistry);
   if (!authStorage) {
@@ -106,58 +223,98 @@ export async function handleLogin(
     return { status: "error", message: "No authentication providers available." };
   }
 
-  // Build provider summary
-  const lines = ["**Available providers:**", ""];
-  for (const p of providers) {
-    const status = p.type === "none" ? "not logged in" : `✓ ${p.type}`;
-    const methods: string[] = [];
-    if (p.hasOAuth) methods.push("OAuth");
-    if (p.hasApiKey) methods.push("API key");
-    lines.push(`• **${p.name}** (${p.id}) — ${status} — supports: ${methods.join(", ")}`);
-  }
-  lines.push("");
-  lines.push("Use `/login <provider>` to authenticate, or enter an API key with `/login <provider> key:<your-key>`.");
+  const card = buildProviderAuthCard(providers);
 
-  // If a specific provider was given, try to start login
-  if (command.provider) {
-    const providerArg = command.provider.trim();
+  return {
+    status: "success",
+    message: "Provider authentication",
+    contentBlocks: [card],
+  };
+}
 
-    // Check for key:<value> syntax: /login anthropic key:sk-ant-...
-    const keyMatch = providerArg.match(/^(\S+)\s+key:(.+)$/i);
-    if (keyMatch) {
-      const providerId = keyMatch[1].toLowerCase();
-      const apiKey = keyMatch[2].trim();
-      if (!apiKey) {
-        return { status: "error", message: "API key cannot be empty. Usage: `/login <provider> key:<your-key>`" };
-      }
-      authStorage.set(providerId, { type: "api_key", key: apiKey });
-      authStorage.reload();
-      return { status: "success", message: `✓ API key stored for **${providerId}**. Use \`/model\` to select a model from this provider.` };
-    }
-
-    // Check if provider supports OAuth
-    const providerId = providerArg.toLowerCase();
-    const provider = providers.find((p) => p.id === providerId);
-    if (!provider) {
-      return {
-        status: "error",
-        message: `Unknown provider "${providerArg}". Available: ${providers.map((p) => p.id).join(", ")}`,
-      };
-    }
-
-    if (provider.hasOAuth) {
-      // Start OAuth flow with manual-paste callbacks
-      return await runOAuthLogin(authStorage, providerId, provider.name);
-    }
-
-    // API-key-only provider without a key
-    return {
-      status: "error",
-      message: `**${provider.name}** only supports API key auth. Use: \`/login ${providerId} key:<your-api-key>\``,
-    };
+/** Handle /logout — same card, but message hints at logout. */
+export async function handleLogout(
+  session: AgentSession,
+  modelRegistry: ModelRegistry,
+  _command: LogoutCommand,
+): Promise<AgentControlResult> {
+  const authStorage = getAuthStorage(session, modelRegistry);
+  if (!authStorage) {
+    return { status: "error", message: "Auth storage is not available." };
   }
 
-  return { status: "success", message: lines.join("\n") };
+  const providers = getProviderStatus(authStorage);
+  const loggedIn = providers.filter((p) => p.authType !== "none");
+  if (loggedIn.length === 0) {
+    return { status: "success", message: "No providers are currently logged in." };
+  }
+
+  const card = buildProviderAuthCard(providers);
+
+  return {
+    status: "success",
+    message: "Provider authentication — select a provider and choose Logout",
+    contentBlocks: [card],
+  };
+}
+
+/**
+ * Process a provider-auth card submission.
+ *
+ * Called from the adaptive card action handler when a card with
+ * `intent: "provider-auth"` is submitted.
+ *
+ * Returns a result message to post back to the timeline.
+ */
+export async function processProviderAuthSubmission(
+  session: AgentSession,
+  modelRegistry: ModelRegistry,
+  data: Record<string, unknown>,
+): Promise<{ status: "success" | "error"; message: string }> {
+  const authStorage = getAuthStorage(session, modelRegistry);
+  if (!authStorage) {
+    return { status: "error", message: "Auth storage is not available." };
+  }
+
+  const providerId = String(data.provider || "").trim();
+  const action = String(data.action || "").trim();
+  const apiKey = String(data.api_key || "").trim();
+
+  if (!providerId) {
+    return { status: "error", message: "No provider selected." };
+  }
+
+  const providers = getProviderStatus(authStorage);
+  const provider = providers.find((p) => p.id === providerId);
+  const providerName = provider?.name || providerId;
+
+  if (action === "logout") {
+    const cred = authStorage.get(providerId);
+    if (!cred) {
+      return { status: "error", message: `**${providerName}** is not logged in.` };
+    }
+    authStorage.set(providerId, undefined as unknown as Record<string, unknown>);
+    authStorage.reload();
+    return { status: "success", message: `✓ Logged out from **${providerName}**.` };
+  }
+
+  if (action === "api_key") {
+    if (!apiKey) {
+      return { status: "error", message: "API key cannot be empty." };
+    }
+    authStorage.set(providerId, { type: "api_key", key: apiKey });
+    authStorage.reload();
+    return { status: "success", message: `✓ API key stored for **${providerName}**. Use \`/model\` to select a model.` };
+  }
+
+  if (action === "oauth") {
+    if (!provider?.hasOAuth) {
+      return { status: "error", message: `**${providerName}** does not support OAuth. Use API key instead.` };
+    }
+    return await runOAuthLogin(authStorage, providerId, providerName);
+  }
+
+  return { status: "error", message: `Unknown action: ${action}` };
 }
 
 /** Run the OAuth login flow with manual-paste callbacks. */
@@ -165,35 +322,29 @@ async function runOAuthLogin(
   authStorage: AuthStorageLike,
   providerId: string,
   providerName: string,
-): Promise<AgentControlResult> {
+): Promise<{ status: "success" | "error"; message: string }> {
   let authUrl = "";
   let authInstructions = "";
-  let resolveManualCode: ((code: string) => void) | null = null;
-  let rejectManualCode: ((err: Error) => void) | null = null;
-  const progressMessages: string[] = [];
 
   try {
-    await authStorage.login(providerId, {
+    const loginPromise = authStorage.login(providerId, {
       onAuth: (info) => {
         authUrl = info.url;
         authInstructions = info.instructions || "";
       },
-      onProgress: (message) => {
-        progressMessages.push(message);
-      },
-      onPrompt: async (prompt) => {
-        // For now, we can't do interactive prompts in this flow.
-        // Return empty to let the provider handle it or fail gracefully.
-        return "";
-      },
+      onProgress: () => {},
+      onPrompt: async () => "",
       onManualCodeInput: () => {
-        return new Promise<string>((resolve, reject) => {
-          resolveManualCode = resolve;
-          rejectManualCode = reject;
+        // The callback server won't work for remote browsers.
+        // We can't do interactive paste in this flow yet, so we let
+        // the callback server try and fail gracefully.
+        return new Promise<string>((_resolve, reject) => {
+          setTimeout(() => reject(new Error("Manual code input not supported in web flow yet")), 120_000);
         });
       },
     });
 
+    await loginPromise;
     authStorage.reload();
     return {
       status: "success",
@@ -201,63 +352,20 @@ async function runOAuthLogin(
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-
-    // If we got an auth URL but the callback failed, show the URL for manual flow
     if (authUrl) {
       const lines = [
-        `OAuth login for **${providerName}** needs manual completion:`,
+        `OAuth for **${providerName}** needs manual completion:`,
         "",
-        `1. Open this URL in your browser:`,
-        `   ${authUrl}`,
+        `1. Open this URL: ${authUrl}`,
         authInstructions ? `   ${authInstructions}` : "",
-        `2. Complete the login in the browser`,
-        `3. Copy the redirect URL from your browser's address bar`,
-        `4. Run: \`/login ${providerId} key:<paste-redirect-url-or-token>\``,
+        `2. Complete login in your browser`,
+        `3. If the callback didn't work, copy the redirect URL and use:`,
+        `   \`/login ${providerId}\` then try OAuth again after setting up a tunnel`,
         "",
-        progressMessages.length > 0 ? `Progress: ${progressMessages.join("; ")}` : "",
         `Error: ${msg}`,
       ].filter(Boolean);
       return { status: "error", message: lines.join("\n") };
     }
-
     return { status: "error", message: `Failed to login to **${providerName}**: ${msg}` };
   }
-}
-
-/** Handle /logout — remove credentials for a provider. */
-export async function handleLogout(
-  session: AgentSession,
-  modelRegistry: ModelRegistry,
-  command: LogoutCommand,
-): Promise<AgentControlResult> {
-  const authStorage = getAuthStorage(session, modelRegistry);
-  if (!authStorage) {
-    return { status: "error", message: "Auth storage is not available." };
-  }
-
-  if (!command.provider) {
-    // List logged-in providers
-    const providers = getProviderStatus(authStorage);
-    const loggedIn = providers.filter((p) => p.type !== "none");
-    if (loggedIn.length === 0) {
-      return { status: "success", message: "No providers are currently logged in." };
-    }
-    const lines = ["**Logged in providers:**", ""];
-    for (const p of loggedIn) {
-      lines.push(`• **${p.name}** (${p.id}) — ${p.type}`);
-    }
-    lines.push("");
-    lines.push("Use `/logout <provider>` to remove credentials.");
-    return { status: "success", message: lines.join("\n") };
-  }
-
-  const providerId = command.provider.trim().toLowerCase();
-  const cred = authStorage.get(providerId);
-  if (!cred) {
-    return { status: "error", message: `No credentials found for "${providerId}".` };
-  }
-
-  authStorage.set(providerId, undefined as unknown as Record<string, unknown>);
-  authStorage.reload();
-  return { status: "success", message: `✓ Logged out from **${providerId}**.` };
 }

@@ -1231,6 +1231,60 @@ export class WebChannel implements WebChannelLike {
       submittedAt,
     });
 
+    // ── Provider-auth card: handle without agent ──────────────
+    const submissionData = sanitizedSubmissionData as Record<string, unknown> | null;
+    if (submissionData && submissionData.intent === "provider-auth") {
+      // Store the user submission message
+      const userInteraction = this.storeMessage(chatJid, submissionText, false, [], {
+        threadId,
+        contentBlocks: [submissionBlock],
+      });
+      if (userInteraction) {
+        this.interactionBroadcaster.broadcastInteractionUpdated(userInteraction);
+      }
+
+      // Update the source card to completed state
+      const updatedCardInteraction = submitBehavior === "keep_active"
+        ? null
+        : replaceMessageContent(chatJid, normalized.postId, sourceInteraction.data?.content || "", {
+            contentBlocks: updatedCardBlocks,
+            linkPreviews: Array.isArray(sourceInteraction.data?.link_previews) ? sourceInteraction.data.link_previews : undefined,
+            mediaIds: Array.isArray(sourceInteraction.data?.media_ids) ? sourceInteraction.data.media_ids : undefined,
+          });
+      if (updatedCardInteraction) {
+        this.interactionBroadcaster.broadcastInteractionUpdated(updatedCardInteraction);
+      }
+
+      // Route through the command system which has access to modelRegistry/authStorage
+      const action = String(submissionData.action || "").trim();
+      const providerId = String(submissionData.provider || "").trim();
+      const apiKey = String(submissionData.api_key || "").trim();
+
+      let commandRaw: string;
+      if (action === "logout") {
+        commandRaw = `/logout ${providerId}`;
+      } else if (action === "api_key" && apiKey) {
+        commandRaw = `/login ${providerId} key:${apiKey}`;
+      } else if (action === "oauth") {
+        commandRaw = `/login ${providerId}`;
+      } else {
+        this.sendMessage(chatJid, "Unknown action. Please select a provider and action.", { threadId });
+        return this.json({ status: "ok", card_updated: Boolean(updatedCardInteraction) }, 200);
+      }
+
+      const authResult = await this.agentPool.applySlashCommand(chatJid, commandRaw);
+      this.sendMessage(chatJid, authResult.message, { threadId });
+
+      return this.json({
+        status: "ok",
+        card_updated: Boolean(updatedCardInteraction),
+        source_post_id: normalized.postId,
+        card_id: normalized.cardId,
+        submitted_at: submittedAt,
+        auth_result: authResult.status,
+      }, 200);
+    }
+
     const forwardReq = new Request(`http://internal/agent/${DEFAULT_AGENT_ID}/message`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
