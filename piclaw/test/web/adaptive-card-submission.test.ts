@@ -66,6 +66,27 @@ describe("adaptive card submission helpers", () => {
     expect(meta.hiddenFields).toEqual([{ key: "five", value: "5" }]);
   });
 
+  test("submission fallback text includes every explicit field", () => {
+    const rendered = buildAdaptiveCardSubmissionFallbackText({
+      type: "adaptive_card_submission",
+      card_id: "card-7",
+      source_post_id: 47,
+      submitted_at: "2026-03-15T12:05:00.000Z",
+      action_type: "Action.Submit",
+      title: "Full payload",
+      data: {
+        one: 1,
+        two: 2,
+        three: 3,
+        four: 4,
+        five: 5,
+        six: 6,
+      },
+    });
+    expect(rendered).toContain("one: 1");
+    expect(rendered).toContain("six: 6");
+  });
+
   test("describes submission receipts compactly", () => {
     const meta = describeAdaptiveCardSubmission({
       type: "adaptive_card_submission",

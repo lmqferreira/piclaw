@@ -120,6 +120,26 @@ describe("messages tool extension", () => {
     expect(result.details.results[0].content).toContain("sunny");
   });
 
+  test("search/get include persisted content_blocks payloads", async () => {
+    insertMessage("Message with blocks", { content_blocks: [{ type: "adaptive_card", card_id: "ticket" }] });
+
+    const { tool } = await getTool();
+    const search = await runWithContext(tool, { action: "search", query: "Message with blocks" });
+    expect(search.details.count).toBe(1);
+    expect(Array.isArray(search.details.results[0].content_blocks)).toBe(true);
+    expect(search.details.results[0].content_blocks).toEqual([
+      { type: "adaptive_card", card_id: "ticket" },
+    ]);
+
+    const rowId = search.details.results[0].rowid;
+    const get = await runWithContext(tool, { action: "get", row_ids: [rowId] });
+    expect(get.details.count).toBe(1);
+    expect(Array.isArray(get.details.messages[0].message.content_blocks)).toBe(true);
+    expect(get.details.messages[0].message.content_blocks).toEqual([
+      { type: "adaptive_card", card_id: "ticket" },
+    ]);
+  });
+
   test("search supports wildcard all-rows query", async () => {
     insertMessage("alpha message");
     insertMessage("beta message");

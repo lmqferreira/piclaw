@@ -1,11 +1,12 @@
 ---
 id: workspace-preview-pop-into-editor-tab-button
 title: Add an "Open in editor tab" button to the workspace preview pane
-status: blocked
+status: done
 priority: medium
 created: 2026-03-15
-updated: 2026-03-17
-target_release: next
+updated: 2026-03-18
+completed: 2026-03-18
+target_release: v1.5.5
 estimate: S
 risk: low
 tags:
@@ -81,6 +82,17 @@ Why it is not preferred for v1:
 - [ ] Update history captures implementation and validation evidence.
 
 ## Updates
+
+### 2026-03-18
+- Lane change: `30-blocked` → `50-done` as a deliberate closure-by-supersession rather than by implementing a preview-pane-local CTA.
+- The current workspace/editor UX already covers the underlying need through the explorer-header/menu `Open in editor` affordance and existing editor-tab reuse behaviour; the separate audit ticket for specialized preview panes explicitly chose to keep the generic workspace preview surface free of duplicate pane-body promotion chrome.
+- In other words: the issue is closed, but the chosen resolution is **not** “add another button to the preview pane” — it is “keep one editor-opening path and avoid duplicating affordances in the generic preview body”.
+- Evidence:
+  - `piclaw/piclaw/web/src/components/workspace-explorer.ts`
+  - `piclaw/piclaw/web/src/panes/workspace-preview-pane.ts`
+  - `piclaw/piclaw/test/web/workspace-preview-pane.test.ts`
+  - `kanban/50-done/specialized-preview-pane-open-in-tab-affordance-audit.md`
+- Quality: ★★★★☆ 8/10 (problem: 2, scope: 2, test: 1, deps: 1, risk: 2)
 
 ### 2026-03-17
 - Lane change: `inbox` → `blocked` via triage submission (`action: triage_radio_apply`, `workspace_preview_pop_into_editor_tab_button_decision_2: defer`).

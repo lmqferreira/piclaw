@@ -60,7 +60,7 @@ export function buildAdaptiveCardSubmissionFallbackText(block: AdaptiveCardSubmi
   }
   if (typeof data === "object") {
     const fields = getSubmissionFields(data);
-    const entries = fields.slice(0, MAX_SUBMISSION_FIELDS).map(({ key, value }) => `${key}: ${value}`);
+    const entries = fields.map(({ key, value }) => `${key}: ${value}`);
     return entries.length > 0
       ? `Card submission: ${label} — ${entries.join(", ")}`
       : `Card submission: ${label}`;

@@ -77,6 +77,10 @@ Use **Path A** now, with selective helper extraction from **Path B** only where 
 
 ## Updates
 
+### 2026-03-18
+- Lane change: `10-next` → `20-doing` from triage (`intent: triage-next-lane`, `audit-proxy-sensitive-web-flows: doing`).
+- Next step: complete route inventory for proxy-sensitive web flows and implement any hardening slices behind trusted-proxy conditions.
+
 ### 2026-03-12
 - Board quality review: added explicit test plan and DoD checklist.
 - Quality: ★★★★☆ 7/10 (problem: 2, scope: 2, test: 1, deps: 1, risk: 1)

@@ -100,11 +100,9 @@ export function buildAdaptiveCardSubmissionText(title: string, cardId: string, d
     const entries = Object.entries(sanitizedData as Record<string, unknown>)
       .map(([key, value]) => ({ key, value: formatAdaptiveCardValue(value) }))
       .filter((entry) => entry.value)
-      .slice(0, 4)
       .map(({ key, value }) => `${key}: ${value}`);
-    return entries.length > 0
-      ? `Card submission: ${label} — ${entries.join(", ")}`
-      : `Card submission: ${label}`;
+    if (entries.length === 0) return `Card submission: ${label}`;
+    return `Card submission: ${label} — ${entries.join(", ")}`;
   }
   return `Card submission: ${label}`;
 }

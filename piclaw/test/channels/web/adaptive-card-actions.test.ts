@@ -34,6 +34,21 @@ describe("adaptive card action helpers", () => {
     expect(buildAdaptiveCardSubmissionText("", "card-1", "yes")).toBe("Card submission: card-1 — yes");
   });
 
+  test("keeps all explicit submission fields in fallback text", () => {
+    const rendered = buildAdaptiveCardSubmissionText("Batch move", "triage-next-lane", {
+      auditProxy: "done",
+      voiceInput: "blocked",
+      branchRename: "keeping",
+      btwAgent: "next",
+      composeDnd: "done",
+    });
+    expect(rendered).toContain("auditProxy: done");
+    expect(rendered).toContain("voiceInput: blocked");
+    expect(rendered).toContain("branchRename: keeping");
+    expect(rendered).toContain("btwAgent: next");
+    expect(rendered).toContain("composeDnd: done");
+  });
+
   test("formats multi-choice and toggle-style values cleanly", () => {
     expect(buildAdaptiveCardSubmissionText("Submit choices", "card-1", {
       priority: "high",

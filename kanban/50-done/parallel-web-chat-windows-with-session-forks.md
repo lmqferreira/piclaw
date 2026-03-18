@@ -1,11 +1,12 @@
 ---
 id: parallel-web-chat-windows-with-session-forks
 title: Support multiple parallel web chat windows backed by resumable forked sessions
-status: doing
+status: done
 priority: high
 created: 2026-03-14
-updated: 2026-03-17
-target_release: next
+updated: 2026-03-18
+completed: 2026-03-18
+target_release: v1.5.5
 estimate: L
 risk: high
 tags:
@@ -256,25 +257,25 @@ Pick and justify one recommended approach that:
 
 ## Acceptance Criteria
 
-- [ ] A written design identifies the recommended persistence model for parallel
+- [x] A written design identifies the recommended persistence model for parallel
       chat windows/forks.
-- [ ] The design explicitly maps PiClaw web branches to upstream Pi session
+- [x] The design explicitly maps PiClaw web branches to upstream Pi session
       concepts (`/tree`, `/fork`, session file, leaf, branch summary).
-- [ ] The design explains how multiple compose/timeline panes can coexist
+- [x] The design explains how multiple compose/timeline panes can coexist
       without sharing or corrupting inflight state.
-- [ ] The design explains how restart/reload recovery remains exactly-once per
+- [x] The design explains how restart/reload recovery remains exactly-once per
       branch.
-- [ ] The design explains how branch timelines are isolated in SQLite while
+- [x] The design explains how branch timelines are isolated in SQLite while
       remaining resumable.
-- [ ] The design explains how a user reopens or resumes an older branch from a
+- [x] The design explains how a user reopens or resumes an older branch from a
       session picker UI.
-- [ ] The design defines a low-friction affordance for starting a new pop-up
+- [x] The design defines a low-friction affordance for starting a new pop-up
       chat window / branch.
-- [ ] The design explicitly defines the pop-up as a **chat-only** window with
+- [x] The design explicitly defines the pop-up as a **chat-only** window with
       no editor or workspace explorer.
-- [ ] The design identifies whether current schema extension is sufficient or a
+- [x] The design identifies whether current schema extension is sufficient or a
       new branch/session table is required.
-- [ ] The design includes at least one incremental implementation path rather
+- [x] The design includes at least one incremental implementation path rather
       than an all-or-nothing rewrite.
 
 ## Investigation Questions
@@ -348,15 +349,28 @@ Pick and justify one recommended approach that:
 
 ## Definition of Done
 
-- [ ] Recommended architecture documented and linked from the ticket
-- [ ] Upstream Pi session-tree/fork behavior evaluated explicitly
-- [ ] Current-state SQLite fit/gap analysis documented
-- [ ] “Multiplayer mode” / adjacent upstream extensions investigated and
+- [x] Recommended architecture documented and linked from the ticket
+- [x] Upstream Pi session-tree/fork behavior evaluated explicitly
+- [x] Current-state SQLite fit/gap analysis documented
+- [x] “Multiplayer mode” / adjacent upstream extensions investigated and
       summarized
-- [ ] Incremental implementation plan identified
-- [ ] Follow-up execution ticket(s) created if implementation is split
+- [x] Incremental implementation plan identified
+- [x] Follow-up execution ticket(s) created if implementation is split
 
 ## Updates
+
+### 2026-03-18
+- Lane change: `20-doing` → `50-done` after the remaining branch/session hardening work shipped in the `v1.5.5` line and the feature set was judged complete enough to close the umbrella.
+- The originally investigatory/design-heavy ticket is now satisfied by the shipped hybrid model: explicit branch registry metadata, forked branch creation, chat-only pop-out windows/new tabs, branch picker/restore flows, rename/prune/archive handling, branch-scoped SSE routing, and per-chat runtime/recovery isolation keyed through distinct branch chat identities.
+- User-facing validation during the `v1.5.5` sweep also covered archived restore/current-session targeting, `@handle — chat_jid` labelling, search-view isolation, reload recovery, and other edge hardening that had been keeping this umbrella open past the initial implementation slice.
+- Evidence:
+  - `piclaw/piclaw/src/channels/web/handlers/agent.ts`
+  - `piclaw/piclaw/src/channels/web.ts`
+  - `piclaw/piclaw/web/src/app.ts`
+  - `piclaw/piclaw/test/channels/web/web-channel.test.ts`
+  - `piclaw/piclaw/test/channels/web/browser-chat-isolation.optional.test.ts`
+  - GitHub release `v1.5.5 — Flint Castwood`
+- Quality: ★★★★★ 10/10 (problem: 2, scope: 2, test: 2, deps: 2, risk: 2)
 
 ### 2026-03-17
 - Created focused child ticket `kanban/10-next/branch-agent-rename-and-old-branch-reuse.md` to track branch identity lifecycle separately: rename to prior tree-style identities and deliberate archived-branch reuse/reopen.
