@@ -1766,6 +1766,102 @@ body {
     background: var(--accent-soft, var(--bg-hover));
 }
 
+/* ── Zen mode toggle button ── */
+.tab-strip-zen-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin: 2px 4px;
+    border: none;
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    flex-shrink: 0;
+    padding: 0;
+    transition: background-color var(--ui-transition-fast), color var(--ui-transition-fast);
+}
+
+.tab-strip-zen-toggle > svg,
+.tab-strip-zen-toggle > svg * {
+    pointer-events: none;
+}
+
+.tab-strip-zen-toggle:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.tab-strip-zen-toggle.active {
+    color: var(--accent-color);
+}
+
+/* ── Zen mode layout ── */
+.app-shell.zen-mode > .workspace-sidebar,
+.app-shell.zen-mode > .workspace-toggle-tab,
+.app-shell.zen-mode > .workspace-splitter,
+.app-shell.zen-mode > .editor-splitter,
+.app-shell.zen-mode > .container {
+    display: none !important;
+}
+
+.app-shell.zen-mode > .editor-pane-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+}
+
+/* Tab strip: hidden until hover near top in zen mode */
+.app-shell.zen-mode .tab-strip {
+    opacity: 0;
+    pointer-events: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
+    transition: opacity 150ms ease;
+}
+
+/* Hover-reveal zone at top of screen */
+.app-shell.zen-mode .editor-pane-container {
+    position: relative;
+}
+
+.app-shell.zen-mode .editor-pane-container::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 12px;
+    z-index: 101;
+}
+
+.app-shell.zen-mode .editor-pane-container:hover > .tab-strip,
+.app-shell.zen-mode .tab-strip:hover {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Terminal dock hidden in zen mode (auto-close handled in JS, this is CSS safety) */
+.app-shell.zen-mode .dock-panel,
+.app-shell.zen-mode .dock-splitter {
+    display: none !important;
+}
+
+/* Zen mode transitions: respect prefers-reduced-motion */
+@media (prefers-reduced-motion: no-preference) {
+    .app-shell.zen-mode > .editor-pane-container {
+        transition: width 250ms ease, max-width 250ms ease;
+    }
+}
+
 /* ── CodeMirror syntax highlighting (classHighlighter) ── */
 /* Light mode */
 .tok-keyword { color: #a626a4; }

@@ -270,6 +270,38 @@ function MainApp({ locationParams }) {
     }, [openEditor]);
     const showEditorPaneContainer = !chatOnlyMode && (editorOpen || (hasDockPanes && dockVisible));
 
+    // ── Zen mode ────────────────────────────────────────────────
+    const [zenMode, setZenMode] = useState(false);
+    const zenDockWasVisibleRef = useRef(false);
+
+    const enterZenMode = useCallback(() => {
+        if (!editorOpen || chatOnlyMode) return;
+        // Remember dock state and auto-close
+        zenDockWasVisibleRef.current = dockVisible;
+        if (dockVisible) setDockVisible(false);
+        setZenMode(true);
+    }, [editorOpen, chatOnlyMode, dockVisible]);
+
+    const exitZenMode = useCallback(() => {
+        if (!zenMode) return;
+        setZenMode(false);
+        // Restore dock if it was open before zen
+        if (zenDockWasVisibleRef.current) {
+            setDockVisible(true);
+            zenDockWasVisibleRef.current = false;
+        }
+    }, [zenMode]);
+
+    const toggleZenMode = useCallback(() => {
+        if (zenMode) exitZenMode();
+        else enterZenMode();
+    }, [zenMode, enterZenMode, exitZenMode]);
+
+    // Exit zen mode when the last editor tab closes
+    useEffect(() => {
+        if (zenMode && !editorOpen) exitZenMode();
+    }, [zenMode, editorOpen, exitZenMode]);
+
     // Mount/dispose editor extension instance when active tab changes
     useEffect(() => {
         const container = editorContainerRef.current;
@@ -2592,6 +2624,24 @@ function MainApp({ locationParams }) {
         return () => document.removeEventListener('keydown', onKeyDown);
     }, [toggleDock, hasDockPanes, chatOnlyMode]);
 
+    // Keyboard shortcuts: Ctrl+Shift+Z to toggle zen mode, Esc to exit zen
+    useEffect(() => {
+        if (chatOnlyMode) return;
+        const onKeyDown = (e) => {
+            if (e.ctrlKey && e.shiftKey && (e.key === 'Z' || e.key === 'z')) {
+                e.preventDefault();
+                toggleZenMode();
+                return;
+            }
+            if (e.key === 'Escape' && zenMode) {
+                e.preventDefault();
+                exitZenMode();
+            }
+        };
+        document.addEventListener('keydown', onKeyDown);
+        return () => document.removeEventListener('keydown', onKeyDown);
+    }, [toggleZenMode, exitZenMode, zenMode, chatOnlyMode]);
+
     const steerQueued = Boolean(steerQueuedTurnId && (steerQueuedTurnId === (agentStatus?.turn_id || currentTurnId)));
 
     if (branchLoaderMode) {
@@ -2610,7 +2660,7 @@ function MainApp({ locationParams }) {
     }
 
     return html`
-        <div class=${`app-shell${workspaceOpen ? '' : ' workspace-collapsed'}${editorOpen ? ' editor-open' : ''}${chatOnlyMode ? ' chat-only' : ''}`} ref=${appShellRef}>
+        <div class=${`app-shell${workspaceOpen ? '' : ' workspace-collapsed'}${editorOpen ? ' editor-open' : ''}${chatOnlyMode ? ' chat-only' : ''}${zenMode ? ' zen-mode' : ''}`} ref=${appShellRef}>
             ${!chatOnlyMode && html`
                 <${WorkspaceExplorer}
                     onFileSelect=${addFileRef}
@@ -2648,6 +2698,8 @@ function MainApp({ locationParams }) {
                             previewTabs=${previewTabs}
                             onToggleDock=${hasDockPanes ? toggleDock : undefined}
                             dockVisible=${hasDockPanes && dockVisible}
+                            onToggleZen=${toggleZenMode}
+                            zenMode=${zenMode}
                         />
                     `}
                     ${editorOpen && html`<div class="editor-pane-host" ref=${editorContainerRef}></div>`}

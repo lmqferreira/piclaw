@@ -35,7 +35,7 @@ const PDF_EXTENSIONS = /\.pdf$/i;
 const IMAGE_EXTENSIONS = /\.(png|jpe?g|gif|webp|bmp|ico|svg)$/i;
 const DRAWIO_EXTENSIONS = /\.drawio(\.xml|\.svg|\.png)?$/i;
 
-export function TabStrip({ tabs, activeId, onActivate, onClose, onCloseOthers, onCloseAll, onTogglePin, onTogglePreview, previewTabs, onToggleDock, dockVisible }) {
+export function TabStrip({ tabs, activeId, onActivate, onClose, onCloseOthers, onCloseAll, onTogglePin, onTogglePreview, previewTabs, onToggleDock, dockVisible, onToggleZen, zenMode }) {
     const [contextMenu, setContextMenu] = useState(null);
     const stripRef = useRef(null);
 
@@ -179,6 +179,22 @@ export function TabStrip({ tabs, activeId, onActivate, onClose, onCloseOthers, o
                         <rect x="1.75" y="2.25" width="12.5" height="11.5" rx="2"/>
                         <polyline points="4.5 5.25 7 7.75 4.5 10.25"/>
                         <line x1="8.5" y1="10.25" x2="11.5" y2="10.25"/>
+                    </svg>
+                </button>
+            `}
+            ${onToggleZen && html`
+                <button
+                    class=${`tab-strip-zen-toggle${zenMode ? ' active' : ''}`}
+                    onClick=${onToggleZen}
+                    title=${`${zenMode ? 'Exit' : 'Enter'} zen mode (Ctrl+Shift+Z)`}
+                    aria-label=${`${zenMode ? 'Exit' : 'Enter'} zen mode`}
+                    aria-pressed=${zenMode ? 'true' : 'false'}
+                >
+                    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        ${zenMode
+                            ? html`<polyline points="4 8 1.5 8 1.5 1.5 14.5 1.5 14.5 8 12 8"/><polyline points="4 8 1.5 8 1.5 14.5 14.5 14.5 14.5 8 12 8"/>`
+                            : html`<polyline points="5.5 1.5 1.5 1.5 1.5 5.5"/><polyline points="10.5 1.5 14.5 1.5 14.5 5.5"/><polyline points="5.5 14.5 1.5 14.5 1.5 10.5"/><polyline points="10.5 14.5 14.5 14.5 14.5 10.5"/>`
+                        }
                     </svg>
                 </button>
             `}
