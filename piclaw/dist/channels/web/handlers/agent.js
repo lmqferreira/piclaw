@@ -210,6 +210,17 @@ export async function handleAgentMessage(channel, req, pathname, chatJid, defaul
         if (themeCommand.payload) {
             channel.broadcastEvent("ui_theme", { chat_jid: chatJid, ...themeCommand.payload });
         }
+        const formattedThemeMessage = formatOutbound(themeCommand.message, "web");
+        if (formattedThemeMessage) {
+            try {
+                // Keep /theme purely UI-scope but still surface the command output to the
+                // timeline so users can see the theme list/output immediately.
+                await channel.sendMessage(chatJid, formattedThemeMessage, { forceRoot: true });
+            }
+            catch (error) {
+                console.error("[web] Failed to send /theme response:", error);
+            }
+        }
         return channel.json({ thread_id: null, command: themeCommand, ui_only: true }, 200);
     }
     // Model/thinking commands: execute without writing to the timeline.

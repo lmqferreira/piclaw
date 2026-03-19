@@ -43,7 +43,7 @@ export function handleUiThemeCommand(rawText: string): UiThemeCommandResult | nu
   const commandLower = command.toLowerCase();
 
   if (commandLower === "/theme") {
-    if (!args || args.toLowerCase() === "list") {
+    if (!args) {
       return { status: "success", message: formatThemeList() };
     }
 
@@ -51,7 +51,7 @@ export function handleUiThemeCommand(rawText: string): UiThemeCommandResult | nu
     if (!theme) {
       return {
         status: "error",
-        message: `Unknown theme: ${args}. Use /theme or /theme list for options.`,
+        message: `Unknown theme: ${args}. Omit the name to show available themes.`,
       };
     }
 

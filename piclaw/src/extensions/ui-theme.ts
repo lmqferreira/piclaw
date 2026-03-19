@@ -1,7 +1,7 @@
 /**
  * ui-theme – registers /theme and /tint commands for the web UI.
  *
- * /theme <name>   → switch to a named theme (use /theme list)
+ * /theme <name>   → switch to a named theme
  * /tint <#hex>    → tint the default light/dark theme
  * /tint off       → clear tint and restore default light/dark
  */
@@ -46,7 +46,7 @@ function setWebUiTheme(ctx: { ui: unknown }, payload: WebUiThemePayload): { succ
 /** Extension factory that exposes `/theme` command and UI theme controls. */
 export const uiThemeExtension: ExtensionFactory = (pi: ExtensionAPI) => {
   pi.registerCommand("theme", {
-    description: "Set UI theme (usage: /theme <name> or /theme list)",
+    description: "Set UI theme (usage: /theme <name>)",
     handler: async (args, ctx) => {
       if (!ctx?.hasUI) {
         sendThemeMessage(pi, "UI theme controls are only available in the web UI.");
@@ -54,14 +54,14 @@ export const uiThemeExtension: ExtensionFactory = (pi: ExtensionAPI) => {
       }
 
       const trimmed = (args || "").trim();
-      if (!trimmed || trimmed.toLowerCase() === "list") {
+      if (!trimmed) {
         sendThemeMessage(pi, formatThemeList());
         return;
       }
 
       const theme = normalizeTheme(trimmed);
       if (!theme) {
-        sendThemeMessage(pi, `Unknown theme: ${trimmed}. Use /theme or /theme list for options.`);
+        sendThemeMessage(pi, `Unknown theme: ${trimmed}. Omit the name to show available themes.`);
         return;
       }
 

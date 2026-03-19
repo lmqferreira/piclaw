@@ -4,10 +4,10 @@ import { initDatabase } from "../../../src/db.js";
 import { handleAgentMessage } from "../../../src/channels/web/handlers/agent.ts";
 
 describe("web agent message handler", () => {
-  test("handles /theme as a pure UI command without queueing, timeline writes, or replies", async () => {
+  test("handles /theme as a UI-only command while still returning command output as an assistant message", async () => {
     const queuedFollowups: Array<{ chatJid: string; content: string }> = [];
     const broadcasts: Array<{ event: string; payload: unknown }> = [];
-    const sentMessages: Array<{ chatJid: string; content: string; threadId: number | null }> = [];
+    const sentMessages: Array<{ chatJid: string; content: string; options: unknown }> = [];
     let storeMessageCalls = 0;
 
     const channel = {
@@ -31,8 +31,8 @@ describe("web agent message handler", () => {
         storeMessageCalls += 1;
         return null;
       },
-      sendMessage: async (chatJid: string, content: string, threadId: number | null) => {
-        sentMessages.push({ chatJid, content, threadId });
+      sendMessage: async (chatJid: string, content: string, options: unknown) => {
+        sentMessages.push({ chatJid, content, options });
       },
     } as any;
 
@@ -53,10 +53,12 @@ describe("web agent message handler", () => {
     expect(storeMessageCalls).toBe(0);
     expect(broadcasts.some((entry) => entry.event === "ui_theme")).toBe(true);
     expect(broadcasts.some((entry) => entry.event === "new_post")).toBe(false);
-    expect(sentMessages).toHaveLength(0);
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages[0].content).toBe(body.command.message);
+    expect((sentMessages[0].options as { forceRoot?: boolean })?.forceRoot).toBe(true);
   });
 
-  test("shows the themed /theme list table when command is used without a theme name", async () => {
+  test("shows the themed /theme table when command is used without a theme name", async () => {
     const queuedFollowups: Array<{ chatJid: string; content: string }> = [];
     const broadcasts: Array<{ event: string; payload: unknown }> = [];
 
@@ -93,7 +95,7 @@ describe("web agent message handler", () => {
     const body = await response.json();
     expect(body.ui_only).toBe(true);
     expect(body.command?.status).toBe("success");
-    expect(body.command?.message).toContain("| Theme | Mode | bgPrimary");
+    expect(body.command?.message).toContain("| Theme | Mode | Swatches |");
     expect(body.command?.message).toContain("data:image/svg+xml;base64,");
     expect(queuedFollowups).toHaveLength(0);
   });

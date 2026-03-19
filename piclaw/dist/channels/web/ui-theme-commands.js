@@ -3,56 +3,8 @@
  *
  * Avoids routing UI theme changes through the agent/LLM pipeline.
  */
-const THEME_PRESETS = [
-    { name: "default", label: "Default" },
-    { name: "tango", label: "Tango" },
-    { name: "xterm", label: "XTerm" },
-    { name: "monokai", label: "Monokai" },
-    { name: "monokai-pro", label: "Monokai Pro" },
-    { name: "ristretto", label: "Ristretto" },
-    { name: "dracula", label: "Dracula" },
-    { name: "catppuccin", label: "Catppuccin" },
-    { name: "nord", label: "Nord" },
-    { name: "gruvbox", label: "Gruvbox" },
-    { name: "solarized", label: "Solarized" },
-    { name: "tokyo", label: "Tokyo" },
-    { name: "miasma", label: "Miasma" },
-    { name: "github", label: "GitHub" },
-    { name: "gotham", label: "Gotham" },
-];
-const THEME_ALIASES = new Map([
-    ["default", "default"],
-    ["auto", "default"],
-    ["tango", "tango"],
-    ["xterm", "xterm"],
-    ["monokai", "monokai"],
-    ["monokai-pro", "monokai-pro"],
-    ["ristretto", "ristretto"],
-    ["drac", "dracula"],
-    ["dracula", "dracula"],
-    ["catpp", "catppuccin"],
-    ["catppuccin", "catppuccin"],
-    ["nord", "nord"],
-    ["gruv", "gruvbox"],
-    ["gruvbox", "gruvbox"],
-    ["solarized", "solarized"],
-    ["solarized-dark", "solarized"],
-    ["solarized-light", "solarized"],
-    ["tokyo", "tokyo"],
-    ["tokyo-night", "tokyo"],
-    ["miasma", "miasma"],
-    ["github", "github"],
-    ["github-dark", "github"],
-    ["github-light", "github"],
-    ["gotham", "gotham"],
-]);
+import { formatThemeList, labelForTheme, normalizeTheme } from "./ui-theme-data.js";
 const CLEAR_VALUES = new Set(["off", "clear", "none", "reset", "default"]);
-function normalizeTheme(input) {
-    const raw = input.trim().toLowerCase();
-    if (!raw)
-        return null;
-    return THEME_ALIASES.get(raw) ?? null;
-}
 function normalizeHex(input) {
     const raw = input.trim();
     if (!raw)
@@ -74,13 +26,6 @@ function normalizeTint(input) {
         return named;
     return null;
 }
-function formatThemeList() {
-    const items = THEME_PRESETS.map((theme) => `• ${theme.name} — ${theme.label}`);
-    return ["Available themes:", ...items, "", "Usage: /theme <name>"].join("\n");
-}
-function labelForTheme(theme) {
-    return THEME_PRESETS.find((item) => item.name === theme)?.label || theme;
-}
 export function handleUiThemeCommand(rawText) {
     const trimmed = rawText.trim();
     if (!trimmed.startsWith("/"))
@@ -89,14 +34,14 @@ export function handleUiThemeCommand(rawText) {
     const args = rest.join(" ").trim();
     const commandLower = command.toLowerCase();
     if (commandLower === "/theme") {
-        if (!args || args.toLowerCase() === "list") {
+        if (!args) {
             return { status: "success", message: formatThemeList() };
         }
         const theme = normalizeTheme(args);
         if (!theme) {
             return {
                 status: "error",
-                message: `Unknown theme: ${args}. Use /theme list for options.`,
+                message: `Unknown theme: ${args}. Omit the name to show available themes.`,
             };
         }
         return {

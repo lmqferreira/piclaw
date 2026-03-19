@@ -371,8 +371,8 @@ function base64(value: string): string {
 
 function makeSwatch(color: string): string {
   const safe = normalizeThemeColor(color) || "#000000";
-  const size = 12;
-  const radius = 2;
+  const size = 20;
+  const radius = 3;
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-hidden="true">
       <rect x="0.5" y="0.5" width="${size - 1}" height="${size - 1}" rx="${radius}" ry="${radius}" fill="${safe}" />
@@ -381,8 +381,8 @@ function makeSwatch(color: string): string {
   return `data:image/svg+xml;base64,${base64(svg)}`;
 }
 
-function colorCell(label: string, color: string): string {
-  return `![${label}](${makeSwatch(color)}) ${color}`;
+function colorCell(_label: string, color: string): string {
+  return `![](${makeSwatch(color)})`;
 }
 
 function resolvePalette(preset: UiThemePreset): Record<string, string> {
@@ -414,24 +414,21 @@ export function labelForTheme(theme: string): string {
 
 export function formatThemeList(): string {
   const header = [
-    "| Theme | Mode | bgPrimary | bgSecondary | textPrimary | textSecondary | borderColor | accent | danger | success |",
-    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    "| Theme | Mode | Swatches |",
+    "| --- | --- | --- |",
   ];
 
   const rows = THEME_PRESETS.map((preset) => {
     const palette = resolvePalette(preset);
     const modeLabel = preset.mode === "auto" ? "auto (light)" : preset.mode;
+    const swatches = THEME_LIST_COLOR_KEYS
+      .map((key) => colorCell(key, palette[key]))
+      .join(" ");
+
     return [
       `| ${preset.label} (${preset.name}) `,
       `| ${modeLabel} `,
-      `| ${colorCell("bgPrimary", palette.bgPrimary)} `,
-      `| ${colorCell("bgSecondary", palette.bgSecondary)} `,
-      `| ${colorCell("textPrimary", palette.textPrimary)} `,
-      `| ${colorCell("textSecondary", palette.textSecondary)} `,
-      `| ${colorCell("borderColor", palette.borderColor)} `,
-      `| ${colorCell("accent", palette.accent)} `,
-      `| ${colorCell("danger", palette.danger)} `,
-      `| ${colorCell("success", palette.success)} |`,
+      `| ${swatches} |`,
     ].join("");
   });
 
