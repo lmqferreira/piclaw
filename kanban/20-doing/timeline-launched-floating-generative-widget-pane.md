@@ -353,6 +353,7 @@ add focused coverage for:
   - no unrestricted arbitrary third-party script execution in the main DOM
 - The timeline item should remain the canonical receipt / launch point even when the floating pane is closed.
 - Adaptive Cards are still the preferred path for compact structured in-chat decisions; this ticket is specifically for richer visual widgets that benefit from a separate transient surface.
+- Consider YAML as an alternative streaming payload format for live widget updates if it simplifies stanza framing/parsing compared to the current ad hoc HTML/JSON-oriented flow.
 
 ## Links
 
