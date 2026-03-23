@@ -467,15 +467,19 @@ class VncPaneInstance implements PaneInstance {
 
     private updateCanvasScale() {
         if (!this.canvas || !this.displayStageEl || !this.canvas.width || !this.canvas.height) return;
-        const bounds = this.displayStageEl.getBoundingClientRect?.();
-        const availableWidth = Math.max(1, Math.floor(bounds?.width || this.displayStageEl.clientWidth || 0) - 32);
-        const availableHeight = Math.max(1, Math.floor(bounds?.height || this.displayStageEl.clientHeight || 0) - 32);
-        if (!availableWidth || !availableHeight) return;
-        const scale = computeContainedRemoteDisplayScale(availableWidth, availableHeight, this.canvas.width, this.canvas.height);
-        this.displayScale = scale;
-        this.canvas.style.width = `${Math.max(1, Math.round(this.canvas.width * scale))}px`;
-        this.canvas.style.height = `${Math.max(1, Math.round(this.canvas.height * scale))}px`;
-        this.updateDisplayMeta();
+        // Defer to next frame so the layout is stable after reveal/resize
+        requestAnimationFrame(() => {
+            if (!this.canvas || !this.displayStageEl) return;
+            const bounds = this.displayStageEl.getBoundingClientRect?.();
+            const availableWidth = Math.max(1, Math.floor(bounds?.width || this.displayStageEl.clientWidth || 0) - 32);
+            const availableHeight = Math.max(1, Math.floor(bounds?.height || this.displayStageEl.clientHeight || 0) - 32);
+            if (!availableWidth || !availableHeight) return;
+            const scale = computeContainedRemoteDisplayScale(availableWidth, availableHeight, this.canvas.width, this.canvas.height);
+            this.displayScale = scale;
+            this.canvas.style.width = `${Math.max(1, Math.round(this.canvas.width * scale))}px`;
+            this.canvas.style.height = `${Math.max(1, Math.round(this.canvas.height * scale))}px`;
+            this.updateDisplayMeta();
+        });
     }
 
     private getFramebufferPointFromEvent(event) {
@@ -791,6 +795,17 @@ class VncPaneInstance implements PaneInstance {
         this.protocol = new VncRemoteDisplayProtocol(protocolOptions);
         this.hasRenderedFrame = false;
         this.frameTimeoutId = null;
+
+        // Hide stale framebuffer from a previous connection until the first
+        // frame arrives. Without this the old canvas stays visible during
+        // the handshake, often at the wrong scale.
+        if (this.canvas) {
+            this.canvas.style.display = 'none';
+        }
+        if (this.displayPlaceholderEl) {
+            this.displayPlaceholderEl.style.display = '';
+        }
+
         this.socketBoundary = new WebSocketRemoteDisplayBoundary({
             url: buildVncWebSocketUrl(this.targetId),
             binaryType: 'arraybuffer',
