@@ -371,7 +371,7 @@ class VncPaneInstance implements PaneInstance {
                     </div>
                 </div>
                 <div data-display-stage style="min-height:0;height:100%;border:1px solid var(--border-color);border-radius:16px;background:#0a0a0a;display:flex;align-items:center;justify-content:center;padding:12px;position:relative;overflow:hidden;">
-                    <canvas data-display-canvas tabindex="0" style="display:none;max-width:100%;max-height:100%;width:auto;height:auto;image-rendering:pixelated;box-shadow:0 12px 36px rgba(0,0,0,.35);border-radius:8px;background:#000;"></canvas>
+                    <canvas data-display-canvas tabindex="0" style="display:none;max-width:100%;max-height:100%;width:auto;height:auto;image-rendering:auto;box-shadow:0 12px 36px rgba(0,0,0,.35);border-radius:8px;background:#000;"></canvas>
                     <div data-display-placeholder style="max-width:520px;text-align:center;color:#d7d7d7;line-height:1.6;">
                         <div style="font-weight:700;font-size:18px;margin-bottom:8px;">${esc(targetLabel)}</div>
                         <div style="font-size:13px;color:#b7b7b7;">Waiting for the VNC/RFB handshake and first framebuffer update…</div>
@@ -389,7 +389,8 @@ class VncPaneInstance implements PaneInstance {
         this.displayMetaEl = this.bodyEl.querySelector('[data-display-meta]');
         this.canvasCtx = this.canvas?.getContext?.('2d', { alpha: false }) || null;
         if (this.canvasCtx) {
-            this.canvasCtx.imageSmoothingEnabled = false;
+            this.canvasCtx.imageSmoothingEnabled = true;
+            this.canvasCtx.imageSmoothingQuality = 'high';
         }
         this.updateDisplayInfo('Waiting for VNC protocol negotiation…');
         this.updateDisplayMeta();
