@@ -38,7 +38,7 @@ import {
 import { streamSimple, type AssistantMessageEvent, type AssistantMessageEventStream, type Model, type Api, type Usage } from "@mariozechner/pi-ai";
 
 import { applyControlCommand, type AgentControlCommand, type AgentControlResult } from "./agent-control/index.js";
-import { AGENT_TIMEOUT, SESSION_AUTO_ROTATE, SESSION_MAX_SIZE_BYTES, SESSIONS_DIR, WORKSPACE_DIR } from "./core/config.js";
+import { AGENT_TIMEOUT, ASSISTANT_NAME, SESSION_AUTO_ROTATE, SESSION_MAX_SIZE_BYTES, SESSIONS_DIR, WORKSPACE_DIR } from "./core/config.js";
 import { detectChannel } from "./router.js";
 import { createTrackedBashOperations } from "./tools/tracked-bash.js";
 import { getAttachmentRegistry, type AttachmentInfo } from "./agent-pool/attachments.js";
@@ -198,7 +198,15 @@ function deriveAgentHandle(chatJid: string, sessionName?: string | null): string
   const sessionHandle = sessionName ? normalizeAgentHandlePart(sessionName) : "";
   if (sessionHandle) return sessionHandle;
 
-  const jidHandle = normalizeAgentHandlePart(chatJid.split(/[:/]/).filter(Boolean).pop() || chatJid);
+  const jidTail = chatJid.split(/[:/]/).filter(Boolean).pop() || chatJid;
+  // Use configured assistant name for the root "default" branch
+  // instead of the generic "default" derived from web:default.
+  if (jidTail === "default") {
+    const configHandle = normalizeAgentHandlePart(ASSISTANT_NAME || "");
+    if (configHandle) return configHandle;
+  }
+
+  const jidHandle = normalizeAgentHandlePart(jidTail);
   if (jidHandle) return jidHandle;
 
   return "agent";
