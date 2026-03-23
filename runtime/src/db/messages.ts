@@ -127,7 +127,6 @@ export function storeChatMetadata(chatJid: string, timestamp: string, name?: str
 
   ensureChatBranch({
     chat_jid: chatJid,
-    display_name: typeof name === "string" && name.trim() ? name.trim() : null,
   });
 }
 

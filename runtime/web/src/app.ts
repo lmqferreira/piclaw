@@ -2651,29 +2651,26 @@ function MainApp({ locationParams, navigate }) {
         setIsRenamingBranch(true);
 
         try {
-            const currentDisplayName = currentBranchRecord.display_name || currentBranchRecord.agent_name || '';
-            const nextName = window.prompt('Agent name', currentDisplayName);
+            const currentHandle = currentBranchRecord.agent_name || '';
+            const nextName = window.prompt('Agent handle (@name)', currentHandle);
             if (nextName === null) return;
 
             const trimmed = nextName.trim();
-            // Derive the agent handle from the display name (same logic as backend normalizeAgentHandlePart)
             const nextAgentName = trimmed
                 .toLowerCase()
                 .replace(/[^a-z0-9_-]+/g, '-')
                 .replace(/^-+|-+$/g, '')
-                .replace(/-{2,}/g, '-') || currentBranchRecord.agent_name || '';
+                .replace(/-{2,}/g, '-') || currentHandle;
 
             const response = await renameChatBranch(currentBranchRecord.chat_jid, {
-                displayName: trimmed,
                 agentName: nextAgentName,
             });
             await Promise.allSettled([
                 refreshActiveChatAgents(),
                 refreshCurrentChatBranches(),
             ]);
-            const savedHandle = response?.branch?.agent_name || nextAgentName || currentBranchRecord.agent_name || '';
-            const savedDisplay = response?.branch?.display_name || trimmed || savedHandle;
-            showIntentToast('Branch renamed', `${savedDisplay} (@${savedHandle})`, 'info', 3500);
+            const savedHandle = response?.branch?.agent_name || nextAgentName || currentHandle;
+            showIntentToast('Branch renamed', `@${savedHandle}`, 'info', 3500);
         } catch (error) {
             const rawMessage = error instanceof Error ? error.message : String(error || 'Could not rename branch.');
             const message = /already in use/i.test(rawMessage || '')

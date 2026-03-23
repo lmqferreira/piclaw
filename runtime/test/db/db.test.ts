@@ -50,14 +50,12 @@ test("chat branch registry creates first-class branch rows with unique agent han
     root_chat_jid: rootChatJid,
     parent_branch_id: root?.branch_id ?? null,
     agent_name: root?.agent_name,
-    display_name: "Research",
   });
   const childB = db.ensureChatBranch({
     chat_jid: `${rootChatJid}:branch:b`,
     root_chat_jid: rootChatJid,
     parent_branch_id: root?.branch_id ?? null,
     agent_name: root?.agent_name,
-    display_name: "Builder",
   });
 
   expect(childA.root_chat_jid).toBe(rootChatJid);
@@ -76,23 +74,20 @@ test("chat branch registry supports deliberate branch renames", () => {
     chat_jid: `${rootChatJid}:branch:rename`,
     root_chat_jid: rootChatJid,
     agent_name: "draft-agent",
-    display_name: "Draft Agent",
   });
   const other = db.ensureChatBranch({
     chat_jid: `${rootChatJid}:branch:other`,
     root_chat_jid: rootChatJid,
     agent_name: "taken-name",
-    display_name: "Other",
   });
 
   const renamed = db.renameChatBranchIdentity({
     chat_jid: branch.chat_jid,
     agent_name: "research-lead",
-    display_name: "Research Lead",
   });
 
   expect(renamed.agent_name).toBe("research-lead");
-  expect(renamed.display_name).toBe("Research Lead");
+  expect(renamed.display_name).toBeNull();
   expect(db.getChatBranchByAgentName("research-lead")?.chat_jid).toBe(branch.chat_jid);
   expect(() => db.renameChatBranchIdentity({ chat_jid: branch.chat_jid, agent_name: other.agent_name })).toThrow(
     `Agent handle is already in use: @${other.agent_name}`,
@@ -108,7 +103,6 @@ test("chat branch registry supports pruning non-root branches", () => {
     root_chat_jid: rootChatJid,
     parent_branch_id: root?.branch_id ?? null,
     agent_name: "prunable",
-    display_name: "Prunable",
   });
 
   const archived = db.archiveChatBranch(branch.chat_jid);
@@ -127,7 +121,6 @@ test("chat branch registry lets pruned agent handles be reused", () => {
     root_chat_jid: rootChatJid,
     parent_branch_id: root?.branch_id ?? null,
     agent_name: "reusable-handle",
-    display_name: "Archived Branch",
   });
   db.archiveChatBranch(archived.chat_jid);
 
@@ -136,7 +129,6 @@ test("chat branch registry lets pruned agent handles be reused", () => {
     root_chat_jid: rootChatJid,
     parent_branch_id: root?.branch_id ?? null,
     agent_name: "reusable-handle",
-    display_name: "Replacement Branch",
   });
   expect(reused.agent_name).toBe("reusable-handle");
   expect(db.getChatBranchByAgentName("reusable-handle")?.chat_jid).toBe(reused.chat_jid);
@@ -158,7 +150,6 @@ test("chat branch registry can list archived branches and restore with collision
     root_chat_jid: rootChatJid,
     parent_branch_id: root?.branch_id ?? null,
     agent_name: "release",
-    display_name: "Release Archived",
   });
   db.archiveChatBranch(archived.chat_jid);
 
@@ -168,7 +159,6 @@ test("chat branch registry can list archived branches and restore with collision
     root_chat_jid: rootChatJid,
     parent_branch_id: root?.branch_id ?? null,
     agent_name: "release",
-    display_name: "Release Active",
   });
 
   const activeOnly = db.listChatBranches(rootChatJid).map((branch) => branch.chat_jid);

@@ -191,7 +191,6 @@ export async function renameChatBranch(chatJid, options = {}) {
         body: JSON.stringify({
             chat_jid: chatJid,
             ...(options && Object.prototype.hasOwnProperty.call(options, 'agentName') ? { agent_name: options.agentName } : {}),
-            ...(options && Object.prototype.hasOwnProperty.call(options, 'displayName') ? { display_name: options.displayName } : {}),
         }),
     });
 }
@@ -215,7 +214,6 @@ export async function restoreChatBranch(chatJid, options = {}) {
         body: JSON.stringify({
             chat_jid: chatJid,
             ...(options && Object.prototype.hasOwnProperty.call(options, 'agentName') ? { agent_name: options.agentName } : {}),
-            ...(options && Object.prototype.hasOwnProperty.call(options, 'displayName') ? { display_name: options.displayName } : {}),
         }),
     });
 }

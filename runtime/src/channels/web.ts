@@ -1056,7 +1056,7 @@ export class WebChannel implements WebChannelLike {
 
   /** POST /agent/branch-fork — create a first-class forked branch with its own session identity. */
   async handleAgentBranchFork(req: Request): Promise<Response> {
-    let payload: { source_chat_jid?: string; agent_name?: string; display_name?: string };
+    let payload: { source_chat_jid?: string; agent_name?: string };
     try {
       payload = await req.json();
     } catch {
@@ -1067,14 +1067,12 @@ export class WebChannel implements WebChannelLike {
       ? payload.source_chat_jid.trim()
       : DEFAULT_CHAT_JID;
     const agentName = typeof payload?.agent_name === "string" ? payload.agent_name.trim() : "";
-    const displayName = typeof payload?.display_name === "string" ? payload.display_name.trim() : "";
 
     try {
       const branch = await (this.agentPool as AgentPool & {
-        createForkedChatBranch?: (chatJid: string, options?: { agentName?: string | null; displayName?: string | null }) => Promise<unknown>;
+        createForkedChatBranch?: (chatJid: string, options?: { agentName?: string | null }) => Promise<unknown>;
       }).createForkedChatBranch?.(sourceChatJid, {
         agentName: agentName || null,
-        displayName: displayName || null,
       });
       if (!branch) {
         return this.json({ error: "Branch forking is not available." }, 501);
@@ -1088,7 +1086,7 @@ export class WebChannel implements WebChannelLike {
 
   /** POST /agent/branch-rename — rename a registry-backed branch agent/display identity. */
   async handleAgentBranchRename(req: Request): Promise<Response> {
-    let payload: { chat_jid?: string; agent_name?: string; display_name?: string };
+    let payload: { chat_jid?: string; agent_name?: string };
     try {
       payload = await req.json();
     } catch {
@@ -1099,17 +1097,15 @@ export class WebChannel implements WebChannelLike {
       ? payload.chat_jid.trim()
       : DEFAULT_CHAT_JID;
     const hasAgentName = typeof payload?.agent_name === "string";
-    const hasDisplayName = typeof payload?.display_name === "string";
-    if (!hasAgentName && !hasDisplayName) {
-      return this.json({ error: "Missing agent_name or display_name" }, 400);
+    if (!hasAgentName) {
+      return this.json({ error: "Missing agent_name" }, 400);
     }
 
     try {
       const branch = await (this.agentPool as AgentPool & {
-        renameChatBranch?: (chatJid: string, options?: { agentName?: string | null; displayName?: string | null }) => Promise<unknown>;
+        renameChatBranch?: (chatJid: string, options?: { agentName?: string | null }) => Promise<unknown>;
       }).renameChatBranch?.(chatJid, {
-        ...(hasAgentName ? { agentName: payload.agent_name ?? null } : {}),
-        ...(hasDisplayName ? { displayName: payload.display_name ?? null } : {}),
+        agentName: payload.agent_name ?? null,
       });
       if (!branch) {
         return this.json({ error: "Branch renaming is not available." }, 501);
@@ -1153,7 +1149,7 @@ export class WebChannel implements WebChannelLike {
 
   /** POST /agent/branch-restore — restore an archived branch agent back into active discovery. */
   async handleAgentBranchRestore(req: Request): Promise<Response> {
-    let payload: { chat_jid?: string; agent_name?: string; display_name?: string };
+    let payload: { chat_jid?: string; agent_name?: string };
     try {
       payload = await req.json();
     } catch {
@@ -1169,10 +1165,9 @@ export class WebChannel implements WebChannelLike {
 
     try {
       const branch = await (this.agentPool as AgentPool & {
-        restoreChatBranch?: (chatJid: string, options?: { agentName?: string | null; displayName?: string | null }) => Promise<unknown>;
+        restoreChatBranch?: (chatJid: string, options?: { agentName?: string | null }) => Promise<unknown>;
       }).restoreChatBranch?.(chatJid, {
         ...(typeof payload?.agent_name === "string" ? { agentName: payload.agent_name } : {}),
-        ...(typeof payload?.display_name === "string" ? { displayName: payload.display_name } : {}),
       });
       if (!branch) {
         return this.json({ error: "Branch restore is not available." }, 501);

@@ -216,7 +216,7 @@ function createVolatileBranchRecord(chatJid: string, session?: AgentSession | nu
     root_chat_jid: chatJid,
     parent_branch_id: null,
     agent_name: deriveAgentHandle(chatJid, session?.sessionName?.trim() || null),
-    display_name: session?.sessionName?.trim() || null,
+    display_name: null,
     created_at: new Date(0).toISOString(),
     updated_at: new Date(0).toISOString(),
     archived_at: null,
@@ -799,7 +799,6 @@ export class AgentPool {
       storeChatMetadata(chatJid, new Date().toISOString(), session?.sessionName?.trim() || chatJid);
       return ensureChatBranch({
         chat_jid: chatJid,
-        display_name: session?.sessionName?.trim() || null,
         agent_name: deriveAgentHandle(chatJid, session?.sessionName?.trim() || null),
       });
     } catch {
@@ -809,21 +808,19 @@ export class AgentPool {
 
   async renameChatBranch(
     chatJid: string,
-    options: { agentName?: string | null; displayName?: string | null } = {},
+    options: { agentName?: string | null } = {},
   ): Promise<ChatBranchRecord> {
     const session = this.pool.get(chatJid)?.session ?? null;
-    const existing = this.ensureBranchRegistration(chatJid, session);
-    const nextDisplayName = options.displayName !== undefined ? options.displayName : existing.display_name;
-    const nextAgentName = options.agentName !== undefined ? options.agentName : existing.agent_name;
+    this.ensureBranchRegistration(chatJid, session);
+    const nextAgentName = options.agentName !== undefined ? options.agentName : undefined;
     const renamed = renameChatBranchIdentity({
       chat_jid: chatJid,
       agent_name: nextAgentName,
-      display_name: nextDisplayName,
     });
 
-    if (session && nextDisplayName !== undefined) {
+    if (session) {
       try {
-        session.setSessionName(renamed.display_name || renamed.agent_name);
+        session.setSessionName(renamed.agent_name);
       } catch {}
     }
 
@@ -862,12 +859,11 @@ export class AgentPool {
 
   async restoreChatBranch(
     chatJid: string,
-    options: { agentName?: string | null; displayName?: string | null } = {},
+    options: { agentName?: string | null } = {},
   ): Promise<ChatBranchRecord> {
     const restored = restoreChatBranchIdentity({
       chat_jid: chatJid,
       ...(options.agentName !== undefined ? { agent_name: options.agentName } : {}),
-      ...(options.displayName !== undefined ? { display_name: options.displayName } : {}),
     });
 
     // Warm session registration for restored branches so switching is immediate.
@@ -882,7 +878,7 @@ export class AgentPool {
 
   async createForkedChatBranch(
     sourceChatJid: string,
-    options: { agentName?: string | null; displayName?: string | null } = {},
+    options: { agentName?: string | null } = {},
   ): Promise<ChatBranchRecord> {
     const sourceSession = await this.getOrCreate(sourceChatJid);
     const sourceIsActive = Boolean(
@@ -897,19 +893,15 @@ export class AgentPool {
 
     const sourceBranch = this.ensureBranchRegistration(sourceChatJid, sourceSession);
     const nextChatJid = buildForkedChatJid(sourceChatJid);
-    const requestedDisplayName = typeof options.displayName === "string" && options.displayName.trim()
-      ? options.displayName.trim()
-      : null;
     const requestedAgentName = typeof options.agentName === "string" && options.agentName.trim()
       ? options.agentName.trim()
       : sourceBranch.agent_name;
-    storeChatMetadata(nextChatJid, new Date().toISOString(), requestedDisplayName || sourceBranch.display_name || sourceSession.sessionName?.trim() || nextChatJid);
+    storeChatMetadata(nextChatJid, new Date().toISOString(), requestedAgentName || sourceSession.sessionName?.trim() || nextChatJid);
     const nextBranch = ensureChatBranch({
       chat_jid: nextChatJid,
       root_chat_jid: sourceBranch.root_chat_jid || sourceBranch.chat_jid,
       parent_branch_id: sourceBranch.branch_id,
       agent_name: requestedAgentName,
-      display_name: requestedDisplayName || sourceBranch.display_name || sourceSession.sessionName?.trim() || null,
     });
 
     const targetSession = await this.getOrCreate(nextChatJid);
@@ -918,7 +910,7 @@ export class AgentPool {
       : null;
     const sourceContext = sourceSession.sessionManager.buildSessionContext();
     const parentSession = sourceSession.sessionFile?.trim() || undefined;
-    const setupName = nextBranch.display_name || nextBranch.agent_name;
+    const setupName = nextBranch.agent_name;
     const sourceModel = stableSeed?.model || sourceContext.model || (sourceSession.model
       ? { provider: sourceSession.model.provider, modelId: sourceSession.model.id }
       : null);
@@ -961,7 +953,6 @@ export class AgentPool {
       root_chat_jid: nextBranch.root_chat_jid,
       parent_branch_id: nextBranch.parent_branch_id,
       agent_name: nextBranch.agent_name,
-      display_name: setupName,
     });
   }
 
@@ -978,7 +969,7 @@ export class AgentPool {
           root_chat_jid: branch.root_chat_jid,
           parent_branch_id: branch.parent_branch_id,
           agent_name: branch.agent_name,
-          display_name: branch.display_name || entry.session.sessionName?.trim() || null,
+          display_name: null,
           archived_at: branch.archived_at ?? null,
           session_id: entry.session.sessionId,
           session_name: entry.session.sessionName?.trim() || null,
@@ -1011,7 +1002,7 @@ export class AgentPool {
             root_chat_jid: branch.root_chat_jid,
             parent_branch_id: branch.parent_branch_id,
             agent_name: branch.agent_name,
-            display_name: branch.display_name || active?.display_name || null,
+            display_name: null,
             archived_at: branch.archived_at ?? null,
             session_id: active?.session_id ?? null,
             session_name: active?.session_name ?? null,

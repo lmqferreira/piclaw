@@ -123,6 +123,7 @@ export interface ChatBranchRecord {
   root_chat_jid: string;
   parent_branch_id: string | null;
   agent_name: string;
+  /** @deprecated Legacy field — always null in new records. Identity is agent_name only. */
   display_name: string | null;
   created_at: string;
   updated_at: string;

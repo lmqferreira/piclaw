@@ -177,7 +177,6 @@ test("web channel relays peer messages into another active chat", async () => {
     {
       chat_jid: "web:source",
       agent_name: "source",
-      display_name: "Source",
       session_id: "s-source",
       session_name: null,
       model: null,
@@ -187,7 +186,6 @@ test("web channel relays peer messages into another active chat", async () => {
     {
       chat_jid: "web:target",
       agent_name: "target",
-      display_name: "Target",
       session_id: "s-target",
       session_name: null,
       model: null,
@@ -252,7 +250,6 @@ test("web channel lists known chat branches for a root chat", async () => {
     root_chat_jid: "web:default",
     parent_branch_id: root?.branch_id ?? null,
     agent_name: "research",
-    display_name: "Research",
   });
 
   const webMod = await import("../../../src/channels/web.js");
@@ -266,7 +263,7 @@ test("web channel lists known chat branches for a root chat", async () => {
         root_chat_jid: branch.root_chat_jid,
         parent_branch_id: branch.parent_branch_id,
         agent_name: branch.agent_name,
-        display_name: branch.display_name,
+        
         session_id: null,
         session_name: null,
         model: null,
@@ -298,7 +295,6 @@ test("web channel includes archived branches when requested", async () => {
     chat_jid: "web:default:branch:1",
     root_chat_jid: "web:default",
     agent_name: "research",
-    display_name: "Research",
   });
   db.archiveChatBranch("web:default:branch:1");
 
@@ -313,7 +309,7 @@ test("web channel includes archived branches when requested", async () => {
         root_chat_jid: branch.root_chat_jid,
         parent_branch_id: branch.parent_branch_id,
         agent_name: branch.agent_name,
-        display_name: branch.display_name,
+        
         archived_at: branch.archived_at,
         session_id: null,
         session_name: null,
@@ -349,7 +345,6 @@ test("web channel renames a registry-backed chat branch", async () => {
     chat_jid: "web:default:branch:1",
     root_chat_jid: "web:default",
     agent_name: "research",
-    display_name: "Research",
   });
 
   const webMod = await import("../../../src/channels/web.js");
@@ -357,10 +352,9 @@ test("web channel renames a registry-backed chat branch", async () => {
     queue: { enqueue: () => {} },
     agentPool: {
       listActiveChats: () => [],
-      renameChatBranch: async (chatJid: string, options: { agentName?: string | null; displayName?: string | null }) => db.renameChatBranchIdentity({
+      renameChatBranch: async (chatJid: string, options: { agentName?: string | null }) => db.renameChatBranchIdentity({
         chat_jid: chatJid,
         ...(options.agentName !== undefined ? { agent_name: options.agentName } : {}),
-        ...(options.displayName !== undefined ? { display_name: options.displayName } : {}),
       }),
       getContextUsageForChat: async () => null,
     },
@@ -372,7 +366,6 @@ test("web channel renames a registry-backed chat branch", async () => {
     body: JSON.stringify({
       chat_jid: "web:default:branch:1",
       agent_name: "research-lead",
-      display_name: "Research Lead",
     }),
   });
 
@@ -381,7 +374,7 @@ test("web channel renames a registry-backed chat branch", async () => {
   const json = await res.json();
   expect(json.status).toBe("ok");
   expect(json.branch.agent_name).toBe("research-lead");
-  expect(json.branch.display_name).toBe("Research Lead");
+  expect(json.branch.display_name).toBeNull();
   expect(db.getChatBranchByAgentName("research-lead")?.chat_jid).toBe("web:default:branch:1");
 });
 
@@ -398,7 +391,6 @@ test("web channel prunes a registry-backed chat branch", async () => {
     chat_jid: "web:default:branch:1",
     root_chat_jid: "web:default",
     agent_name: "research",
-    display_name: "Research",
   });
 
   const webMod = await import("../../../src/channels/web.js");
@@ -439,7 +431,6 @@ test("web channel restores a previously pruned branch", async () => {
     chat_jid: "web:default:branch:1",
     root_chat_jid: "web:default",
     agent_name: "release",
-    display_name: "Release",
   });
   db.archiveChatBranch("web:default:branch:1");
 
@@ -448,10 +439,9 @@ test("web channel restores a previously pruned branch", async () => {
     queue: { enqueue: () => {} },
     agentPool: {
       listActiveChats: () => [],
-      restoreChatBranch: async (chatJid: string, options: { agentName?: string | null; displayName?: string | null }) => db.restoreChatBranchIdentity({
+      restoreChatBranch: async (chatJid: string, options: { agentName?: string | null }) => db.restoreChatBranchIdentity({
         chat_jid: chatJid,
         ...(options.agentName !== undefined ? { agent_name: options.agentName } : {}),
-        ...(options.displayName !== undefined ? { display_name: options.displayName } : {}),
       }),
       getContextUsageForChat: async () => null,
     },
@@ -488,7 +478,6 @@ test("web channel resolves peer relay by target agent name", async () => {
     {
       chat_jid: "web:source",
       agent_name: "source",
-      display_name: "Source",
       session_id: "s-source",
       session_name: null,
       model: null,
@@ -498,7 +487,6 @@ test("web channel resolves peer relay by target agent name", async () => {
     {
       chat_jid: "web:target",
       agent_name: "research",
-      display_name: "Research",
       session_id: "s-target",
       session_name: "Research",
       model: null,
@@ -560,7 +548,6 @@ test("web channel routes leading @agent mentions into the target chat", async ()
     {
       chat_jid: "web:source",
       agent_name: "source",
-      display_name: "Source",
       session_id: "s-source",
       session_name: null,
       model: null,
@@ -570,7 +557,6 @@ test("web channel routes leading @agent mentions into the target chat", async ()
     {
       chat_jid: "web:target",
       agent_name: "research",
-      display_name: "Research",
       session_id: "s-target",
       session_name: "Research",
       model: null,
