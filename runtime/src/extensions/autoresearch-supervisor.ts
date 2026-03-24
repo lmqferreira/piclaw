@@ -403,14 +403,17 @@ function buildModelPickerCard(
     card_id: `autoresearch-model-pick-${Date.now()}`,
     schema_version: "1.5",
     state: "active",
-    fallback_text: "Select a model for the autoresearch sub-agent.",
+    fallback_text: "Configure and launch the autoresearch experiment.",
     payload: {
       type: "AdaptiveCard",
       version: "1.5",
       body: [
-        { type: "TextBlock", text: "🔬 Autoresearch — Select Model", weight: "Bolder", size: "Medium" },
-        { type: "TextBlock", text: "Choose which model the sub-agent should use for the experiment loop.", wrap: true, isSubtle: true },
+        { type: "TextBlock", text: "🔬 Autoresearch — Launch Experiment", weight: "Bolder", size: "Medium" },
+        { type: "TextBlock", text: "Model", weight: "Bolder", spacing: "Medium" },
         { type: "Input.ChoiceSet", id: "model", style: "compact", choices, value: defaultValue },
+        { type: "TextBlock", text: "Isolation", weight: "Bolder", spacing: "Medium" },
+        { type: "Input.Toggle", id: "sandbox", title: "Run in a copied sandbox (safer, uses more disk)", value: "true" },
+        { type: "TextBlock", text: "When off, runs directly in the repo on a new git branch. Requires an existing git repository.", wrap: true, isSubtle: true, size: "Small" },
       ],
       actions: [
         { type: "Action.Submit", title: "Launch Experiment →", data: { intent: "autoresearch-launch" } },
@@ -476,8 +479,10 @@ async function startAutoresearch(
     workDir = sandboxDir;
   } else {
     // Direct mode — run on a new branch in the existing repo
+    if (!existsSync(join(projectDir, ".git"))) {
+      return buildResult(`❌ Direct mode requires an existing git repository in ${projectDir}. Initialize one first or enable sandbox mode.`);
+    }
     mkdirSync(sessionDir, { recursive: true });
-    ensureGitRepo(projectDir);
     branchName = `autoresearch/${id}`;
     try {
       execSync(`git checkout -b ${JSON.stringify(branchName)}`, { cwd: projectDir, stdio: "ignore" });

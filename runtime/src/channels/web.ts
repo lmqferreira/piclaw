@@ -1426,6 +1426,8 @@ export class WebChannel implements WebChannelLike {
       );
 
       const selectedModel = typeof rawSubmissionData.model === "string" ? rawSubmissionData.model.trim() : "";
+      const sandboxToggle = rawSubmissionData.sandbox;
+      const useSandbox = sandboxToggle === "true" || sandboxToggle === true;
       if (!selectedModel) {
         await this.sendMessage(chatJid, "No model selected.", { threadId });
         return this.json({ status: "ok", card_updated: true, source_post_id: sourcePostId, card_id: normalized.cardId }, 200);
@@ -1448,6 +1450,7 @@ export class WebChannel implements WebChannelLike {
           project_dir: pending.project_dir,
           prompt: pending.prompt,
           model: selectedModel,
+          sandbox: useSandbox,
           max_iterations: pending.max_iterations,
           chat_jid: pending.chat_jid || chatJid,
         });
