@@ -130,13 +130,24 @@ install_bun_release() {
     return 1
   fi
 
-  if [ ! -f "$temp_dir/extract/$bun_target/bun" ]; then
+  # Bun archives use a "bun-<target>" directory inside the zip.
+  # Support both "bun-<target>/bun" and bare "<target>/bun" layouts.
+  local bun_binary=""
+  for candidate in "$temp_dir/extract/bun-${bun_target}/bun" "$temp_dir/extract/${bun_target}/bun"; do
+    if [ -f "$candidate" ]; then
+      bun_binary="$candidate"
+      break
+    fi
+  done
+
+  if [ -z "$bun_binary" ]; then
     echo "Unexpected Bun archive layout for $bun_target" >&2
+    ls -la "$temp_dir/extract/" >&2
     return 1
   fi
 
   sudo mkdir -p "$BUN_INSTALL/bin"
-  sudo cp "$temp_dir/extract/$bun_target/bun" "$BUN_INSTALL/bin/bun"
+  sudo cp "$bun_binary" "$BUN_INSTALL/bin/bun"
   sudo chmod 755 "$BUN_INSTALL/bin/bun"
 }
 
