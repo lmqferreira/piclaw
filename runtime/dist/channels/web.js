@@ -1164,21 +1164,20 @@ export class WebChannel {
             if (!verifyTotp(parsedTotp.state.secret, confirmationCode, WEB_TOTP_WINDOW)) {
                 return await sendTotpFeedback("TOTP validation failed: the code did not match the secret shown in the card. No changes were made.", "active");
             }
-            let feedback = "TOTP confirmed.";
-            if (parsedTotp.state.flow === "setup") {
-                setWebTotpSecret(parsedTotp.state.secret);
-                this.authGateway.setTotpSecret(parsedTotp.state.secret);
-                feedback = "TOTP setup confirmed. Secret saved. This browser is now TOTP-authenticated.";
-            }
-            else if (parsedTotp.state.flow === "reset") {
-                setWebTotpSecret(parsedTotp.state.secret);
-                this.authGateway.setTotpSecret(parsedTotp.state.secret);
-                deleteAllWebSessions();
-                feedback = "TOTP reset confirmed. New secret saved. Existing web sessions were invalidated. This browser is now TOTP-authenticated.";
-            }
-            else {
-                feedback = "TOTP device validation succeeded. Existing secret unchanged. This browser is now TOTP-authenticated.";
-            }
+            const feedback = parsedTotp.state.flow === "setup"
+                ? (() => {
+                    setWebTotpSecret(parsedTotp.state.secret);
+                    this.authGateway.setTotpSecret(parsedTotp.state.secret);
+                    return "TOTP setup confirmed. Secret saved. This browser is now TOTP-authenticated.";
+                })()
+                : parsedTotp.state.flow === "reset"
+                    ? (() => {
+                        setWebTotpSecret(parsedTotp.state.secret);
+                        this.authGateway.setTotpSecret(parsedTotp.state.secret);
+                        deleteAllWebSessions();
+                        return "TOTP reset confirmed. New secret saved. Existing web sessions were invalidated. This browser is now TOTP-authenticated.";
+                    })()
+                    : "TOTP device validation succeeded. Existing secret unchanged. This browser is now TOTP-authenticated.";
             completeTotpCard("completed");
             const sessionToken = randomSessionToken();
             createWebSession(sessionToken, DEFAULT_WEB_USER_ID, getWebSessionTtlSeconds(), "totp");

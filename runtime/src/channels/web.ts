@@ -1478,19 +1478,20 @@ export class WebChannel implements WebChannelLike {
         );
       }
 
-      let feedback = "TOTP confirmed.";
-      if (parsedTotp.state.flow === "setup") {
-        setWebTotpSecret(parsedTotp.state.secret);
-        this.authGateway.setTotpSecret(parsedTotp.state.secret);
-        feedback = "TOTP setup confirmed. Secret saved. This browser is now TOTP-authenticated.";
-      } else if (parsedTotp.state.flow === "reset") {
-        setWebTotpSecret(parsedTotp.state.secret);
-        this.authGateway.setTotpSecret(parsedTotp.state.secret);
-        deleteAllWebSessions();
-        feedback = "TOTP reset confirmed. New secret saved. Existing web sessions were invalidated. This browser is now TOTP-authenticated.";
-      } else {
-        feedback = "TOTP device validation succeeded. Existing secret unchanged. This browser is now TOTP-authenticated.";
-      }
+      const feedback = parsedTotp.state.flow === "setup"
+        ? (() => {
+            setWebTotpSecret(parsedTotp.state.secret);
+            this.authGateway.setTotpSecret(parsedTotp.state.secret);
+            return "TOTP setup confirmed. Secret saved. This browser is now TOTP-authenticated.";
+          })()
+        : parsedTotp.state.flow === "reset"
+          ? (() => {
+              setWebTotpSecret(parsedTotp.state.secret);
+              this.authGateway.setTotpSecret(parsedTotp.state.secret);
+              deleteAllWebSessions();
+              return "TOTP reset confirmed. New secret saved. Existing web sessions were invalidated. This browser is now TOTP-authenticated.";
+            })()
+          : "TOTP device validation succeeded. Existing secret unchanged. This browser is now TOTP-authenticated.";
 
       completeTotpCard("completed");
       const sessionToken = randomSessionToken();

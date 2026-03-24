@@ -58,24 +58,28 @@ export function parseDirectVncTargetReference(input) {
     const text = String(input || "").trim();
     if (!text)
         return null;
-    let host = "";
-    let displayHost = "";
-    let portText = "";
     const ipv6Match = /^\[([^\]]+)\]:(\d+)$/.exec(text);
-    if (ipv6Match) {
-        host = sanitizeDirectHost(ipv6Match[1]) || "";
-        displayHost = `[${ipv6Match[1]}]`;
-        portText = ipv6Match[2];
-    }
-    else {
-        const firstColon = text.indexOf(":");
-        const lastColon = text.lastIndexOf(":");
-        if (firstColon <= 0 || firstColon !== lastColon)
-            return null;
-        host = sanitizeDirectHost(text.slice(0, lastColon)) || "";
-        displayHost = host;
-        portText = text.slice(lastColon + 1);
-    }
+    const parsed = ipv6Match
+        ? {
+            host: sanitizeDirectHost(ipv6Match[1]) || "",
+            displayHost: `[${ipv6Match[1]}]`,
+            portText: ipv6Match[2],
+        }
+        : (() => {
+            const firstColon = text.indexOf(":");
+            const lastColon = text.lastIndexOf(":");
+            if (firstColon <= 0 || firstColon !== lastColon)
+                return null;
+            const host = sanitizeDirectHost(text.slice(0, lastColon)) || "";
+            return {
+                host,
+                displayHost: host,
+                portText: text.slice(lastColon + 1),
+            };
+        })();
+    if (!parsed)
+        return null;
+    const { host, displayHost, portText } = parsed;
     const port = toPort(portText);
     if (!host || !displayHost || port === null)
         return null;
