@@ -71,21 +71,22 @@ import { installStandaloneMobileViewportFix } from './ui/mobile-viewport.js';
 import { resolveOptionalApi } from './ui/optional-api.js';
 import { dispatchExtensionUiBrowserEvent, isExtensionUiEventType } from './ui/extension-ui-events.js';
 import { watchReturnToApp, watchStandaloneWebAppMode } from './ui/app-resume.js';
+import { describeBranchRestoreResult, formatBranchPickerLabel, getBranchHandleDraftState } from './ui/branch-lifecycle.js';
 
 const BTW_SESSION_KEY = 'piclaw_btw_session';
 
-const RENAME_BRANCH_PROMPT_GUARD_MS = 900;
-const RENAME_BRANCH_PROMPT_LOCK_KEY = '__piclawRenameBranchPromptLock__';
+const RENAME_BRANCH_FORM_GUARD_MS = 900;
+const RENAME_BRANCH_FORM_LOCK_KEY = '__piclawRenameBranchFormLock__';
 
 /**
- * Shared lock object kept on `window` so duplicate prompts are blocked even if
- * this module gets re-evaluated (HMR/reload) or invoked via a different app
+ * Shared lock object kept on `window` so duplicate rename forms/submits are blocked
+ * even if this module gets re-evaluated (HMR/reload) or invoked via a different app
  * instance in the same page lifecycle.
  */
-const getRenameBranchPromptLock = () => {
+const getRenameBranchFormLock = () => {
     if (typeof window === 'undefined') return null;
     const win = window;
-    const key = RENAME_BRANCH_PROMPT_LOCK_KEY;
+    const key = RENAME_BRANCH_FORM_LOCK_KEY;
     const existing = (win as any)[key];
     if (existing && typeof existing === 'object') {
         return existing;
@@ -498,6 +499,10 @@ function MainApp({ locationParams, navigate }) {
     const renameBranchLockUntilRef = useRef(0);
     const [isRenameBranchFormOpen, setIsRenameBranchFormOpen] = useState(false);
     const [renameBranchNameDraft, setRenameBranchNameDraft] = useState('');
+    const renameBranchDraftState = useMemo(
+        () => getBranchHandleDraftState(renameBranchNameDraft, currentBranchRecord?.agent_name || ''),
+        [currentBranchRecord?.agent_name, renameBranchNameDraft],
+    );
     const renameBranchNameInputRef = useRef(null);
 
     const clearIntentToast = useCallback(() => {
@@ -2647,14 +2652,14 @@ function MainApp({ locationParams, navigate }) {
         if (typeof window === 'undefined' || !currentBranchRecord?.chat_jid) return;
 
         const now = Date.now();
-        const promptLock = getRenameBranchPromptLock();
-        if (!promptLock) return;
+        const formLock = getRenameBranchFormLock();
+        if (!formLock) return;
 
         if (
             renameBranchInFlightRef.current
             || now < renameBranchLockUntilRef.current
-            || promptLock.inFlight
-            || now < promptLock.cooldownUntil
+            || formLock.inFlight
+            || now < formLock.cooldownUntil
         ) {
             return;
         }
@@ -2677,26 +2682,30 @@ function MainApp({ locationParams, navigate }) {
         }
 
         const now = Date.now();
-        const promptLock = getRenameBranchPromptLock();
-        if (!promptLock) return;
+        const formLock = getRenameBranchFormLock();
+        if (!formLock) return;
 
         if (
             renameBranchInFlightRef.current
             || now < renameBranchLockUntilRef.current
-            || promptLock.inFlight
-            || now < promptLock.cooldownUntil
+            || formLock.inFlight
+            || now < formLock.cooldownUntil
         ) {
             return;
         }
 
         renameBranchInFlightRef.current = true;
-        promptLock.inFlight = true;
+        formLock.inFlight = true;
         setIsRenamingBranch(true);
 
         try {
             const currentHandle = currentBranchRecord.agent_name || '';
-            const trimmed = nextName.trim();
-            const nextAgentName = trimmed || currentHandle;
+            const draftState = getBranchHandleDraftState(nextName, currentHandle);
+            if (!draftState.canSubmit) {
+                showIntentToast('Could not rename branch', draftState.message || 'Enter a valid branch handle.', 'warning', 4000);
+                return;
+            }
+            const nextAgentName = draftState.normalized || currentHandle;
 
             const response = await renameChatBranch(currentBranchRecord.chat_jid, {
                 agentName: nextAgentName,
@@ -2717,12 +2726,12 @@ function MainApp({ locationParams, navigate }) {
         } finally {
             renameBranchInFlightRef.current = false;
             setIsRenamingBranch(false);
-            const unlockedAt = Date.now() + RENAME_BRANCH_PROMPT_GUARD_MS;
+            const unlockedAt = Date.now() + RENAME_BRANCH_FORM_GUARD_MS;
             renameBranchLockUntilRef.current = unlockedAt;
-            const promptLockRef = getRenameBranchPromptLock();
-            if (promptLockRef) {
-                promptLockRef.inFlight = false;
-                promptLockRef.cooldownUntil = unlockedAt;
+            const formLockRef = getRenameBranchFormLock();
+            if (formLockRef) {
+                formLockRef.inFlight = false;
+                formLockRef.cooldownUntil = unlockedAt;
             }
         }
     }, [closeRenameCurrentBranchForm, currentBranchRecord, refreshActiveChatAgents, refreshCurrentChatBranches, openRenameCurrentBranchForm, setIsRenamingBranch, showIntentToast]);
@@ -2778,6 +2787,7 @@ function MainApp({ locationParams, navigate }) {
         if (!normalized || typeof restoreChatBranch !== 'function') return;
 
         try {
+            const previousBranch = currentChatBranches.find((item) => item?.chat_jid === normalized) || null;
             const response = await restoreChatBranch(normalized);
             await Promise.allSettled([
                 refreshActiveChatAgents(),
@@ -2787,17 +2797,15 @@ function MainApp({ locationParams, navigate }) {
             const nextChatJid = typeof branch?.chat_jid === 'string' && branch.chat_jid.trim()
                 ? branch.chat_jid.trim()
                 : normalized;
-            const resolvedHandle = typeof branch?.agent_name === 'string' && branch.agent_name.trim()
-                ? `@${branch.agent_name.trim()}`
-                : nextChatJid;
-            showIntentToast('Branch restored', `Restored ${resolvedHandle}.`, 'info', 3200);
+            const restoreDetail = describeBranchRestoreResult(previousBranch?.agent_name, branch?.agent_name, nextChatJid);
+            showIntentToast('Branch restored', restoreDetail, 'info', 4200);
             const nextUrl = buildChatWindowUrl(window.location.href, nextChatJid, { chatOnly: chatOnlyMode });
             navigate?.(nextUrl);
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error || 'Could not restore branch.');
             showIntentToast('Could not restore branch', message || 'Could not restore branch.', 'warning', 5000);
         }
-    }, [chatOnlyMode, navigate, refreshActiveChatAgents, refreshCurrentChatBranches, showIntentToast]);
+    }, [chatOnlyMode, currentChatBranches, navigate, refreshActiveChatAgents, refreshCurrentChatBranches, showIntentToast]);
 
     useEffect(() => {
         if (!branchLoaderMode || typeof window === 'undefined') return;
@@ -3357,8 +3365,11 @@ function MainApp({ locationParams, navigate }) {
                             autocomplete="off"
                             placeholder="Handle (letters, numbers, - and _ only)"
                         />
+                        <div class=${`rename-branch-help ${renameBranchDraftState.kind || 'info'}`}>
+                            ${renameBranchDraftState.message}
+                        </div>
                         <div class="rename-branch-actions">
-                            <button type="submit" class="compose-model-popup-btn primary" disabled=${isRenamingBranch}>
+                            <button type="submit" class="compose-model-popup-btn primary" disabled=${isRenamingBranch || !renameBranchDraftState.canSubmit}>
                                 ${isRenamingBranch ? 'Renaming…' : 'Save'}
                             </button>
                             <button
@@ -3473,7 +3484,7 @@ function MainApp({ locationParams, navigate }) {
                                     >
                                         ${currentChatBranches.map((branch) => html`
                                             <option key=${branch.chat_jid} value=${branch.chat_jid}>
-                                                ${`@${branch.agent_name} — ${branch.chat_jid}${branch.is_active ? ' • active' : ''}`}
+                                                ${formatBranchPickerLabel(branch, { currentChatJid })}
                                             </option>
                                         `)}
                                     </select>

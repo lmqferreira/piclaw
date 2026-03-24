@@ -7,6 +7,7 @@
 
 import Database from "bun:sqlite";
 import { spawnSync } from "node:child_process";
+import { resolve } from "node:path";
 import { beforeAll, expect, test } from "bun:test";
 import { createTempWorkspace, getTestWorkspace, setEnv } from "../helpers.js";
 
@@ -288,7 +289,7 @@ test("initDatabase migrates legacy chat branch uniqueness so pruned handles can 
       }));
     `;
     const result = spawnSync(process.execPath, ["-e", script], {
-      cwd: process.cwd(),
+      cwd: resolve(import.meta.dir, "..", ".."),
       env: {
         ...process.env,
         PICLAW_WORKSPACE: ws.workspace,

@@ -1,10 +1,11 @@
 ---
 id: branch-handle-lifecycle-and-tests
 title: Complete branch handle lifecycle and remove surplus display names
-status: doing
+status: done
 priority: high
 created: 2026-03-17
-updated: 2026-03-21
+updated: 2026-03-24
+completed: 2026-03-24
 target_release: next
 estimate: M
 risk: medium
@@ -185,16 +186,16 @@ We should explicitly define and ship answers to these:
 
 ## Acceptance Criteria
 
-- [ ] Remove or explicitly deprecate surplus branch `display_name` usage.
-- [ ] Define a handle-only branch identity contract.
-- [ ] Replace the prompt-based rename flow with a proper handle edit UI.
-- [ ] Make archived-branch restore/reuse a clear handle-first workflow.
-- [ ] Document and surface handle-collision rules in the UI and implementation.
-- [ ] Make lifecycle state obvious in the session/branch picker surfaces.
-- [ ] Add DB tests covering rename/archive/restore/collision rules.
-- [ ] Add API/handler tests for branch lifecycle endpoints.
-- [ ] Add web/UI tests for rename/prune/restore flows.
-- [ ] Confirm no regressions in `@agent` routing, branch switching, or queue/session behavior.
+- [x] Remove or explicitly deprecate surplus branch `display_name` usage.
+- [x] Define a handle-only branch identity contract.
+- [x] Replace the prompt-based rename flow with a proper handle edit UI.
+- [x] Make archived-branch restore/reuse a clear handle-first workflow.
+- [x] Document and surface handle-collision rules in the UI and implementation.
+- [x] Make lifecycle state obvious in the session/branch picker surfaces.
+- [x] Add DB tests covering rename/archive/restore/collision rules.
+- [x] Add API/handler tests for branch lifecycle endpoints.
+- [x] Add web/UI tests for rename/prune/restore flows.
+- [x] Confirm no regressions in `@agent` routing, branch switching, or queue/session behavior.
 
 ## Implementation notes
 
@@ -229,32 +230,40 @@ Treat this as a completion/simplification ticket, not a foundational architectur
 
 ## Test Plan
 
-- [ ] Add DB coverage for:
+- [x] Add DB coverage for:
   - rename with unique handle
   - rename collision against active handle
   - archive + restore preserving branch identity
   - restore with handle collision causing deterministic suffixing
   - legacy compatibility if `display_name` fields remain during migration
-- [ ] Add endpoint coverage for:
+- [x] Add endpoint coverage for:
   - `/agent/branch-rename`
   - `/agent/branch-prune`
   - `/agent/branch-restore`
-- [ ] Add web tests for:
+- [x] Add web tests for:
   - rename current branch handle
   - prune current branch
   - restore archived branch from session manager
   - session list labeling for archived/active/current branches
-- [ ] Run `cd /workspace/piclaw && bun run quality`
+- [x] Run `cd /workspace/piclaw && bun run quality`
 
 ## Definition of Done
 
-- [ ] Branch lifecycle is coherent around handles only.
-- [ ] Surplus branch `display_name` usage is removed or explicitly legacy-only.
-- [ ] Rename/reuse/restore behavior is explicitly defined.
-- [ ] Archived-handle reuse is discoverable and deterministic.
-- [ ] Automated tests exist for the behavior we rely on.
+- [x] Branch lifecycle is coherent around handles only.
+- [x] Surplus branch `display_name` usage is removed or explicitly legacy-only.
+- [x] Rename/reuse/restore behavior is explicitly defined.
+- [x] Archived-handle reuse is discoverable and deterministic.
+- [x] Automated tests exist for the behavior we rely on.
 
 ## Updates
+
+### 2026-03-24
+- Lane change: doing → done after landing the handle-only lifecycle cleanup and verification.
+- Replaced the old prompt-based rename flow with an in-app handle form that validates drafts before submit and explains normalization.
+- Centralized lifecycle labels/restore messaging in `runtime/web/src/ui/branch-lifecycle.ts` and reused them in the session manager + chat window branch picker.
+- Removed surplus fork API `display_name` plumbing, kept branch records legacy-compatible with `display_name: null`, and refreshed DB migration coverage.
+- Evidence: `bun test runtime/test/web/branch-lifecycle.test.ts runtime/test/web/compose-session-switcher.test.ts runtime/test/db/db.test.ts runtime/test/channels/web/web-channel.test.ts runtime/test/channels/web/http-dispatch-agent.test.ts` (97 pass, 0 fail); `bun run quality` (pass).
+- Quality: ★★★★★ 10/10 (problem: 2, scope: 2, test: 2, deps: 2, risk: 2)
 
 ### 2026-03-21
 - Re-scoped from the older branch identity ticket to reflect current product direction.

@@ -177,7 +177,6 @@ export async function forkChatBranch(sourceChatJid, options = {}) {
         body: JSON.stringify({
             source_chat_jid: sourceChatJid,
             ...(options?.agentName ? { agent_name: options.agentName } : {}),
-            ...(options?.displayName ? { display_name: options.displayName } : {}),
         }),
     });
 }

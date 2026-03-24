@@ -3070,6 +3070,20 @@ body {
     outline-offset: 1px;
 }
 
+.rename-branch-help {
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--text-secondary);
+}
+
+.rename-branch-help.error {
+    color: var(--danger-color, #ef4444);
+}
+
+.rename-branch-help.success {
+    color: var(--success-color, #22c55e);
+}
+
 .rename-branch-actions {
     display: flex;
     gap: 8px;

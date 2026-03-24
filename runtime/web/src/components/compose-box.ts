@@ -6,6 +6,7 @@ import { getLocalStorageItem, setLocalStorageItem } from '../utils/storage.js';
 import { buildMentionValue, filterMentionAgents, getVisibleMentionAgents, parseMentionAutocompleteQuery } from '../ui/agent-mentions.js';
 import { shouldShowComposeAgentAffordance } from '../ui/compose-layout.js';
 import { shouldOpenSessionSwitcherFromBlankCompose } from '../ui/compose-session-switcher.js';
+import { formatBranchPickerLabel, formatCurrentBranchLabel } from '../ui/branch-lifecycle.js';
 import { FilePill } from './file-pill.js';
 
 /**
@@ -1629,13 +1630,7 @@ export function ComposeBox({
                                 ${html`
                                     <div class="compose-model-popup-item current" role="note" aria-live="polite">
                                         ${(() => {
-                                            const currentHandle = typeof currentSessionAgent?.agent_name === 'string' && currentSessionAgent.agent_name.trim()
-                                                ? `@${currentSessionAgent.agent_name.trim()}`
-                                                : currentChatJid;
-                                            const currentId = typeof currentSessionAgent?.chat_jid === 'string' && currentSessionAgent.chat_jid.trim()
-                                                ? currentSessionAgent.chat_jid.trim()
-                                                : currentChatJid;
-                                            return `${currentHandle} — ${currentId} • current`;
+                                            return formatCurrentBranchLabel(currentSessionAgent, currentChatJid);
                                         })()}
                                     </div>
                                 `}
@@ -1646,7 +1641,7 @@ export function ComposeBox({
                                     const archived = Boolean(chat.archived_at);
                                     const isRoot = chat.chat_jid === (chat.root_chat_jid || chat.chat_jid);
                                     const canPrune = !isRoot && !chat.is_active && !archived && typeof onDeleteSession === 'function';
-                                    const label = `@${chat.agent_name} — ${chat.chat_jid}${chat.is_active ? ' • active' : ''}${archived ? ' • archived' : ''}`;
+                                    const label = formatBranchPickerLabel(chat, { currentChatJid });
                                     return html`
                                         <div key=${chat.chat_jid} class=${`compose-model-popup-item-row${archived ? ' archived' : ''}`}>
                                             <button
@@ -1661,7 +1656,7 @@ export function ComposeBox({
                                                     handleSessionSwitch(chat.chat_jid);
                                                 }}
                                                 disabled=${archived ? !canRestoreSession : !canSwitchSession}
-                                                title=${archived ? 'Restore this archived branch' : 'Switch to this session'}
+                                                title=${archived ? `Restore archived ${`@${chat.agent_name}`}` : `Switch to ${`@${chat.agent_name}`}`}
                                             >
                                                 ${label}
                                             </button>
@@ -1704,7 +1699,7 @@ export function ComposeBox({
                                             type="button"
                                             class=${`compose-model-popup-btn${sessionPopupEntries.findIndex((entry) => entry.key === 'action:rename') === sessionPopupIndex ? ' active' : ''}`}
                                             onClick=${(e) => { void handleRenameSession(e); }}
-                                            title="Rename current branch name and agent handle"
+                                            title="Rename the current branch handle"
                                             disabled=${renameInProgress}
                                         >
                                             Rename current…
