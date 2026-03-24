@@ -1,10 +1,11 @@
 ---
 id: single-card-totp-enrolment-confirmation-and-safe-reset
 title: Single-card TOTP enrolment/confirmation and safe reset flow
-status: next
+status: done
 priority: high
 created: 2026-03-24
 updated: 2026-03-24
+completed: 2026-03-24
 target_release: next
 estimate: L
 risk: medium
@@ -53,19 +54,19 @@ Explicit non-goals for this ticket:
 
 ## Acceptance Criteria
 
-- [ ] `/totp` with no existing secret returns a single Adaptive Card with QR, manual entry code, confirmation input, and submit action.
-- [ ] Every TOTP card submission returns explicit user-visible feedback describing validation outcome and resulting state changes.
-- [ ] Submitting a valid confirmation code for first setup commits the generated secret and establishes a usable TOTP-authenticated session for the current browser.
-- [ ] Submitting an invalid confirmation code for first setup leaves `WEB_TOTP_SECRET` unchanged and does not enable TOTP, and the user is told that no changes were made.
-- [ ] `/totp` with an existing secret returns the same single-card flow using the current secret for secondary-device setup.
-- [ ] Secondary-device confirmation success does not rotate or otherwise change the active secret, and the user is told that device validation succeeded with no secret change.
-- [ ] `/totp reset <current-code>` rejects immediately when the current code is missing or invalid.
-- [ ] `/totp reset <current-code>` with a valid current code returns a single Adaptive Card showing a **new** QR/manual code plus confirmation input.
-- [ ] Reset confirmation success commits the new secret, invalidates old web sessions, keeps the current browser able to continue/re-login without being stranded mid-flow, and clearly reports those changes back to the user.
-- [ ] Reset confirmation failure leaves the old secret and current sessions intact, and the user is told that validation failed and nothing changed.
-- [ ] Existing `/passkey enrol` gating still requires a TOTP-authenticated session after the new flow lands.
-- [ ] `/commands` and `/totp` help text accurately describe first setup, secondary-device setup, and reset semantics.
-- [ ] Focused tests cover command parsing, handler behaviour, adaptive-card submission handling, and web auth/session consequences.
+- [x] `/totp` with no existing secret returns a single Adaptive Card with QR, manual entry code, confirmation input, and submit action.
+- [x] Every TOTP card submission returns explicit user-visible feedback describing validation outcome and resulting state changes.
+- [x] Submitting a valid confirmation code for first setup commits the generated secret and establishes a usable TOTP-authenticated session for the current browser.
+- [x] Submitting an invalid confirmation code for first setup leaves `WEB_TOTP_SECRET` unchanged and does not enable TOTP, and the user is told that no changes were made.
+- [x] `/totp` with an existing secret returns the same single-card flow using the current secret for secondary-device setup.
+- [x] Secondary-device confirmation success does not rotate or otherwise change the active secret, and the user is told that device validation succeeded with no secret change.
+- [x] `/totp reset <current-code>` rejects immediately when the current code is missing or invalid.
+- [x] `/totp reset <current-code>` with a valid current code returns a single Adaptive Card showing a **new** QR/manual code plus confirmation input.
+- [x] Reset confirmation success commits the new secret, invalidates old web sessions, keeps the current browser able to continue/re-login without being stranded mid-flow, and clearly reports those changes back to the user.
+- [x] Reset confirmation failure leaves the old secret and current sessions intact, and the user is told that validation failed and nothing changed.
+- [x] Existing `/passkey enrol` gating still requires a TOTP-authenticated session after the new flow lands.
+- [x] `/commands` and `/totp` help text accurately describe first setup, secondary-device setup, and reset semantics.
+- [x] Focused tests cover command parsing, handler behaviour, adaptive-card submission handling, and web auth/session consequences.
 
 ## Implementation Paths
 
@@ -161,18 +162,25 @@ Choose **Path A** because it satisfies the single-card UX while avoiding both a 
 
 ## Definition of Done
 
-- [ ] All acceptance criteria satisfied and verified
-- [ ] Tests added or updated — passing locally (`bun run test`)
-- [ ] Type check clean (`bun run typecheck`)
-- [ ] Docs and notes updated with links to ticket
-- [ ] Operational impact assessed (config changes, migrations, restarts)
-- [ ] Follow-up tickets created for deferred scope
-- [ ] Update history complete with evidence
-- [ ] Quality score ≥ 9 recorded in final update
-- [ ] Ticket front matter updated (`status`, `updated`, `completed`)
-- [ ] Ticket moved to `50-done/`
+- [x] All acceptance criteria satisfied and verified
+- [x] Tests added or updated — passing locally (`bun run test`)
+- [x] Type check clean (`bun run typecheck`)
+- [x] Docs and notes updated with links to ticket
+- [x] Operational impact assessed (config changes, migrations, restarts)
+- [x] Follow-up tickets created for deferred scope
+- [x] Update history complete with evidence
+- [x] Quality score ≥ 9 recorded in final update
+- [x] Ticket front matter updated (`status`, `updated`, `completed`)
+- [x] Ticket moved to `50-done/`
 
 ## Updates
+
+### 2026-03-24 (completion)
+- Lane change: next → done.
+- Implementation landed across commits `1cb9125`, `672cdfb`, `3a6772a`, and `b1f3f20`.
+- Single-card TOTP setup/reset flow with signed card tokens, 160×160 QR, and safe commit-on-success semantics.
+- Tests: `runtime/test/channels/web/web-channel.test.ts` (TOTP setup, reset, invalid confirmation), `runtime/test/channels/web/totp-card.test.ts`, `runtime/test/agent-control/parser.test.ts`.
+- Quality: ★★★★★ 10/10 (problem: 2, scope: 2, test: 2, deps: 2, risk: 2)
 
 ### 2026-03-24
 - Created in `10-next` as an implementation-ready auth ticket.
