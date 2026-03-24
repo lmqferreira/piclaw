@@ -34,11 +34,13 @@ interface ActiveExperiment {
   projectDir: string;
   jsonlPath: string;
   model: string | null;
+  maxIterations: number | null;
   startedAt: string;
-  /** Interval handle for JSONL polling. */
   pollInterval: ReturnType<typeof setInterval> | null;
   lastJsonlOffset: number;
   lastBroadcastedRun: number;
+  /** Timestamp of the last new JSONL entry — used for idle detection. */
+  lastActivityAt: number;
 }
 
 let activeExperiment: ActiveExperiment | null = null;
@@ -519,10 +521,12 @@ async function startAutoresearch(
     projectDir: workDir,
     jsonlPath,
     model: model || null,
+    maxIterations: params.max_iterations ?? null,
     startedAt: new Date().toISOString(),
     pollInterval: null,
     lastJsonlOffset: existsSync(jsonlPath) ? readFileSync(jsonlPath, "utf-8").length : 0,
     lastBroadcastedRun: 0,
+    lastActivityAt: Date.now(),
   };
 
   // Start JSONL polling
@@ -551,8 +555,33 @@ async function startAutoresearch(
       activeExperiment.jsonlPath,
       activeExperiment.lastJsonlOffset,
     );
-    if (entries.length === 0) return;
+
+    if (entries.length === 0) {
+      // Idle detection: if max_iterations reached and no new entries for 60s, experiment is done
+      const IDLE_TIMEOUT_MS = 60_000;
+      if (activeExperiment.maxIterations !== null) {
+        const allEntries = parseJsonlFile(activeExperiment.jsonlPath);
+        const runCount = allEntries.filter((e) => e.type !== "config").length;
+        if (runCount >= activeExperiment.maxIterations && Date.now() - activeExperiment.lastActivityAt > IDLE_TIMEOUT_MS) {
+          const expId = activeExperiment.id;
+          const tmux = activeExperiment.tmuxSession;
+          stopPolling();
+          const summary = buildExperimentSummary(allEntries);
+          postStatusCard(expId, summary, "completed");
+          // Kill the idle tmux session
+          spawnSync("tmux", ["send-keys", "-t", tmux, "C-c", ""], { stdio: "ignore" });
+          setTimeout(() => spawnSync("tmux", ["kill-session", "-t", tmux], { stdio: "ignore" }), 2000);
+          broadcastEvent("autoresearch_stopped", { experiment_id: expId, reason: "max_iterations_idle" });
+          console.log(`[autoresearch] Experiment ${expId} completed (${runCount} runs, idle ${IDLE_TIMEOUT_MS / 1000}s after max iterations)`);
+          activeExperiment = null;
+          return;
+        }
+      }
+      return;
+    }
+
     activeExperiment.lastJsonlOffset = newOffset;
+    activeExperiment.lastActivityAt = Date.now();
 
     // Broadcast each new entry
     for (const entry of entries) {
@@ -852,10 +881,12 @@ export const autoresearchSupervisor: ExtensionFactory = (pi: ExtensionAPI) => {
         projectDir,
         jsonlPath,
         model: null,
+        maxIterations: (() => { try { const c = JSON.parse(readFileSync(join(projectDir, "autoresearch.config.json"), "utf-8")); return typeof c.maxIterations === "number" ? c.maxIterations : null; } catch { return null; } })(),
         startedAt: new Date().toISOString(),
         pollInterval: null,
         lastJsonlOffset: existsSync(jsonlPath) ? readFileSync(jsonlPath, "utf-8").length : 0,
         lastBroadcastedRun: 0,
+        lastActivityAt: Date.now(),
       };
 
       // Resume polling
