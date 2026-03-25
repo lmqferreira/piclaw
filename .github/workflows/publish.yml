@@ -92,7 +92,7 @@ jobs:
       - name: Smoke test AMD64 image
         run: |
           IMAGE_REF="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
-          timeout 120 docker run --rm --platform linux/amd64 "$IMAGE_REF" sh -c '
+          timeout 120 docker run --rm --entrypoint sh --platform linux/amd64 "$IMAGE_REF" -c '
             set -e
             echo "=== Bun ===" && bun --version
             echo "=== Restic ===" && restic version
@@ -150,7 +150,7 @@ jobs:
       - name: Smoke test ARM64 image
         run: |
           IMAGE_REF="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
-          timeout 120 docker run --rm --platform linux/arm64 "$IMAGE_REF" sh -c '
+          timeout 120 docker run --rm --entrypoint sh --platform linux/arm64 "$IMAGE_REF" -c '
             set -e
             echo "=== Bun ===" && bun --version
             echo "=== Restic ===" && restic version
