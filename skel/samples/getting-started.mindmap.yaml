@@ -1,0 +1,19 @@
+title: Getting Started
+children:
+  - title: Install
+    children:
+      - title: Docker
+      - title: Bun (experimental)
+      - title: Windows (brave)
+  - title: Configure
+    children:
+      - title: Models
+      - title: Authentication
+      - title: Workspace
+  - title: Explore
+    children:
+      - title: Chat
+      - title: Editor
+      - title: Terminal
+      - title: Kanban
+      - title: Mindmap

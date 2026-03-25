@@ -15,8 +15,8 @@ Inspired by [agentbox](https://github.com/rcarmo/agentbox) and [nanoclaw](https:
 - **Streaming web UI** — real-time chat with Markdown, KaTeX, Mermaid, and Adaptive Cards
 - **Persistent agent state** — SQLite-backed messages, media, tasks, token usage, and encrypted keychain
 - **Workspace-native workflow** — browse files, preview documents, upload attachments, edit code, and reference files in prompts
-- **Built-in tools** — editor, Office viewer, draw.io, CSV/TSV, PDF, image, and video viewers
-- **Agent control features** — steering, queued follow-ups, threading, side prompts, and scheduled tasks
+- **Built-in tools** — Ghostty-based terminal, code editor, Office/PDF/CSV/image/video viewers, draw.io, kanban board and mindmap editors, VNC client
+- **Agent control features** — steering, queued follow-ups, threading, side prompts, autoresearch experiment loops, and scheduled tasks
 - **Optional auth and channels** — passkeys/TOTP for the web UI, plus optional WhatsApp integration
 
 ## Quick start
@@ -239,6 +239,9 @@ Open the built-in editor from a text-file preview.
 - **PDF** — inline viewer
 - **Images** — inline image viewer
 - **Video** — dedicated tab-based viewer
+- **Kanban boards** — `*.kanban.md` files open in a drag-and-drop board editor (Obsidian Kanban compatible)
+- **Mindmaps** — `*.mindmap.yaml` files open in a D3/SVG visual editor
+- **VNC remote display** — connect to remote machines from a tab (experimental)
 
 ## Volumes
 
