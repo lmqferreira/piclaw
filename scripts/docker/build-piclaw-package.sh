@@ -22,8 +22,10 @@ export PATH="$BUN_INSTALL/bin:/home/linuxbrew/.linuxbrew/bin:$PATH"
 
 cd /home/agent/piclaw
 
-bun update
-bun install
+# Skip postinstall during Docker builds — it is only needed for repo-based
+# bun installs from GitHub. The build steps below handle everything.
+bun update --ignore-scripts
+bun install --ignore-scripts
 bun run build
 bun run build:web
 
