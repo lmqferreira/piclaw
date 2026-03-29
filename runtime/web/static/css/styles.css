@@ -6555,8 +6555,9 @@ body {
         font-size: var(--font-size-md);
     }
 
-    .thread-connector {
-        margin-left: 17px;
+    .post.thread-reply {
+        margin-left: calc(var(--spacing-md) + 18px);
+        padding-left: 8px;
     }
 
     .connection-status {
