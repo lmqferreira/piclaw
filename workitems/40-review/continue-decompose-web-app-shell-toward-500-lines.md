@@ -1,7 +1,7 @@
 ---
 id: continue-decompose-web-app-shell-toward-500-lines
 title: Continue decomposing the web app shell toward 500 lines
-status: doing
+status: review
 priority: high
 created: 2026-03-29
 updated: 2026-03-29
@@ -21,15 +21,15 @@ blocked-by: []
 
 ## Summary
 
-`runtime/web/src/app.ts` has now been reduced to about 2420 lines, but the long-term target is far lower: the shell should eventually become a thin coordinator of roughly 500 lines, delegating almost all domain logic to typed modules. This follow-up should optimize for dramatic size reduction through larger behavior-level extractions rather than incremental helper cleanup.
+This ticket drove `runtime/web/src/app.ts` from about `2420` lines down to a thin `493`-line coordinator by extracting typed orchestration, state, timeline, render, and pane composition seams. Review now focuses on confirming closure quality and recording that the follow-up architecture-cleanup experiment produced no compelling mergeable tranche beyond the achieved target.
 
 ## Acceptance Criteria
 
-- [ ] Extract one or more large coherent orchestration domains from `runtime/web/src/app.ts` into dedicated typed modules.
-- [ ] Reduce `runtime/web/src/app.ts` materially again from the new 2420-line baseline.
-- [ ] Preserve existing web shell behavior and payload shapes.
-- [ ] Add focused tests for each new seam.
-- [ ] Pass focused web tests, `bun run build:web`, `bun run lint`, `bun run typecheck`, and `bun run check:stale-dist`.
+- [x] Extract one or more large coherent orchestration domains from `runtime/web/src/app.ts` into dedicated typed modules.
+- [x] Reduce `runtime/web/src/app.ts` materially again from the new 2420-line baseline.
+- [x] Preserve existing web shell behavior and payload shapes.
+- [x] Add focused tests for each new seam.
+- [x] Pass focused web tests, `bun run build:web`, `bun run lint`, `bun run typecheck`, and `bun run check:stale-dist`.
 
 ## Implementation Paths
 
@@ -41,21 +41,32 @@ Split the shell into a few larger render/event/controller seams rather than many
 
 ## Test Plan
 
-- [ ] Add focused tests under `runtime/test/web/` for each newly extracted helper/module.
-- [ ] Run focused web tests covering the new seams plus the existing app-shell seam suite.
-- [ ] Run `bun run build:web`.
-- [ ] Run `bun run lint`.
-- [ ] Run `bun run typecheck`.
-- [ ] Run `bun run check:stale-dist`.
+- [x] Add focused tests under `runtime/test/web/` for each newly extracted helper/module.
+- [x] Run focused web tests covering the new seams plus the existing app-shell seam suite.
+- [x] Run `bun run build:web`.
+- [x] Run `bun run lint`.
+- [x] Run `bun run typecheck`.
+- [x] Run `bun run check:stale-dist`.
 
 ## Definition of Done
 
-- [ ] New seam(s) are landed on `main`.
-- [ ] `runtime/web/src/app.ts` is materially smaller than the 2420-line starting point.
-- [ ] Validation evidence is recorded in `## Updates`.
-- [ ] Remaining post-tranche seams are explicitly listed.
+- [x] New seam(s) are landed on `main`.
+- [x] `runtime/web/src/app.ts` is materially smaller than the 2420-line starting point.
+- [x] Validation evidence is recorded in `## Updates`.
+- [x] Remaining post-tranche seams are explicitly listed.
 
 ## Updates
+
+### 2026-03-29
+- Lane change: `20-doing` → `40-review` after the target was achieved on `main` and the immediate architecture-cleanup follow-up produced no clearly superior mergeable tranche.
+- Review evidence summary:
+  - merged commit `744a6c18` (`refactor(web): push app shell below 500 lines`)
+  - `runtime/web/src/app.ts` reduced `2420 → 493` lines across the ticket history
+  - final merge-back validation passed: focused web tests, `bun run build:web`, `bun run lint`, `bun run typecheck`, and `bun run check:stale-dist`
+- Follow-up assessment:
+  - a later architecture-quality autoresearch pass was stopped and discarded because it did not clearly improve cohesion enough to justify another merge after the 493-line milestone
+  - remaining large-file quality work is now better tracked under the umbrella ticket and follow-up component/file refactors rather than continuing to squeeze `app.ts`
+- Quality: ★★★★★ 10/10 (problem: 2, scope: 2, test: 2, deps: 2, risk: 2)
 
 ### 2026-03-29
 - Landed the final sub-500 push: extracted the surviving editor/pane bootstrap block into `runtime/web/src/ui/app-main-pane-composition.ts`, so `runtime/web/src/app.ts` now consumes grouped `pane.editorState` / `pane.paneRuntime` namespaces instead of owning `useEditorState(...)`, `usePaneRuntimeOrchestration(...)`, and the `removeFileRefRef` bridge inline.

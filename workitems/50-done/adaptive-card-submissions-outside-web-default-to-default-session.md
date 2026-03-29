@@ -1,10 +1,11 @@
 ---
 id: adaptive-card-submissions-outside-web-default-to-default-session
 title: Adaptive card submissions outside web must not fall back to the default session
-status: review
+status: done
 priority: high
 created: 2026-03-28
 updated: 2026-03-29
+completed: 2026-03-29
 target_release: next
 estimate: M
 risk: high
@@ -70,6 +71,16 @@ Likely surfaces to inspect:
 - prior autoresearch/card flows that were expected to post back to the originating chat
 
 ## Updates
+
+### 2026-03-29
+- Lane change: `40-review` → `50-done` after a final focused regression recheck confirmed the non-web routing fix still holds on `main`.
+- Revalidation evidence:
+  - `cd runtime && bun test test/channels/web/cards/adaptive-card-side-prompt-service.test.ts` → `4 pass, 0 fail`
+- Closure rationale:
+  - the authoritative source-chat recovery by post row id remains in place
+  - later web-shell / routing refactors did not reintroduce default-session fallback behavior
+  - all acceptance criteria remain satisfied without additional scope creep
+- Quality: ★★★★★ 10/10 (problem: 2, scope: 2, test: 2, deps: 2, risk: 2)
 
 ### 2026-03-29
 - Lane change: `20-doing` → `40-review` after the routing fix landed and passed focused validation.

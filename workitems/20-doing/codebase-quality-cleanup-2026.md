@@ -67,8 +67,8 @@ These are desirable but not required to close this ticket:
 | P2 | `adopt-pino-structured-logging` | Adopt structured logging and explicit error-handling guards |
 | P2 | `group-web-channel-flat-files` | Group 56 flat files into sub-directories |
 | P2 | `extract-typed-config-objects` | Extract 45 constants into typed config objects *(done — follow-up now tracked by `finish-config-injection-and-mutable-identity-cleanup`)* |
-| P3 | `continue-decompose-web-app-shell` | Continue decomposing `runtime/web/src/app.ts` after regrowth past 3.9k lines |
-| P3 | `split-web-styles-monolith` | Split `runtime/web/static/css/styles.css` into layered stylesheets |
+| P3 | `continue-decompose-web-app-shell-toward-500-lines` | Thin-shell target achieved on `main`; ticket is now in review after landing a 493-line `runtime/web/src/app.ts` |
+| P3 | `split-web-styles-monolith` | Structural split landed; final rich-content/overlay smoke verification still pending before review |
 | P3 | — | Fix `ipc.ts → MediaService` dependency direction violation |
 
 ## Completion criteria
@@ -82,6 +82,21 @@ These are desirable but not required to close this ticket:
 - [ ] Re-run quality assessment and confirm grade improvement
 
 ## Updates
+
+### 2026-03-29
+- Board reassessment after the latest refactor tranche:
+  - moved `continue-decompose-web-app-shell-toward-500-lines` from `20-doing` to `40-review` because the ticket achieved its objective on `main` (`runtime/web/src/app.ts` is now `493` lines via commit `744a6c18`)
+  - moved `adaptive-card-submissions-outside-web-default-to-default-session` from `40-review` to `50-done` after a focused regression recheck (`4 pass, 0 fail`)
+  - retained `split-web-styles-monolith` in `20-doing` because the structural split landed, but final rich-content / image-modal smoke validation is still pending
+- Remaining quality bottlenecks are now concentrated in other oversized files rather than `runtime/web/src/app.ts`, notably:
+  - `runtime/web/src/components/workspace-explorer.ts` (`2370` lines)
+  - `runtime/web/src/components/compose-box.ts` (`1912` lines)
+  - `runtime/src/extensions/autoresearch-supervisor.ts` (`1291` lines)
+  - `runtime/src/channels/web/handlers/agent.ts` (`1206` lines)
+  - `runtime/web/src/components/post.ts` (`1089` lines)
+  - VNC/API/config surfaces including `vnc-pane.ts`, `remote-display-vnc.ts`, `vnc-harness.ts`, `api.ts`, and `core/config.ts`
+- Criteria note: the remaining `src > 800 lines` gate should be interpreted carefully because vendored/embedded source like `runtime/web/src/vendor/mindmap-editor-source.ts` can distort the metric and may need explicit exclusion in the next quality-assessment refresh.
+- Quality: ★★★★☆ 8/10 (problem: 2, scope: 2, test: 1, deps: 2, risk: 1)
 
 ### 2026-03-29
 - Closed out the last two tracked P0 blocker tickets by moving `split-webchannel-god-class` and `split-agentpool-god-class` from `40-review/` to `50-done/`.

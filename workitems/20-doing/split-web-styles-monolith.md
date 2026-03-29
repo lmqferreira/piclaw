@@ -206,6 +206,16 @@ Approximate ranges are intentional; exact cut points should follow section comme
 ## Updates
 
 ### 2026-03-29
+- Board reassessment: retained in `20-doing` instead of promoting to review because the structural split is landed but one last smoke pass is still warranted for richer content/overlay surfaces.
+- Current status after reassessment:
+  - `runtime/web/static/css/styles.css` is already a thin `16`-line manifest
+  - the layered partial split is in place and validated by `bun run build:web` plus `bun run check:stale-dist`
+  - desktop/mobile/editor-open/attachment-preview smoke coverage is recorded under `generated/css-smoke/`, `generated/css-smoke-deep/`, and `generated/css-smoke-overlays/`
+- Remaining review gap before promotion:
+  - recheck a timeline with true inline image-modal click-through plus markdown/adaptive-card/link-preview-heavy content so the split can move to review with stronger visual confidence
+- Quality: ★★★★☆ 8/10 (problem: 2, scope: 2, test: 1, deps: 1, risk: 2)
+
+### 2026-03-29
 - Began the first implementation tranche on branch `feature/split-web-styles-monolith` using the ordered-manifest approach.
 - Converted `runtime/web/static/css/styles.css` into a thin ordered manifest importing:
   - `base.css`
