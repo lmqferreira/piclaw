@@ -1,10 +1,11 @@
 ---
 id: continue-decompose-web-app-shell-toward-500-lines
 title: Continue decomposing the web app shell toward 500 lines
-status: review
+status: done
 priority: high
 created: 2026-03-29
 updated: 2026-03-29
+completed: 2026-03-29
 estimate: XL
 risk: medium
 tags:
@@ -56,6 +57,16 @@ Split the shell into a few larger render/event/controller seams rather than many
 - [x] Remaining post-tranche seams are explicitly listed.
 
 ## Updates
+
+### 2026-03-29
+- Lane change: `40-review` → `50-done` after board reassessment confirmed the ticket objective was fully achieved and no follow-up tranche justified keeping it open.
+- Closure summary:
+  - `runtime/web/src/app.ts` ended at `493` lines on `main`
+  - the extracted `app-main-*` seams are landed and validated
+  - the subsequent architecture-cleanup autoresearch pass was intentionally discarded because it did not produce a clearly better maintainability outcome
+- Follow-up direction moved out of this ticket:
+  - further large-file work should now target the remaining oversized components/files under the quality umbrella rather than continuing to optimize `app.ts`
+- Quality: ★★★★★ 10/10 (problem: 2, scope: 2, test: 2, deps: 2, risk: 2)
 
 ### 2026-03-29
 - Lane change: `20-doing` → `40-review` after the target was achieved on `main` and the immediate architecture-cleanup follow-up produced no clearly superior mergeable tranche.

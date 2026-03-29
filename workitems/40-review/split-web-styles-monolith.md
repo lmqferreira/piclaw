@@ -1,7 +1,7 @@
 ---
 id: split-web-styles-monolith
 title: Split the web styles monolith into layered stylesheets
-status: doing
+status: review
 priority: low
 created: 2026-03-29
 updated: 2026-03-29
@@ -41,12 +41,12 @@ The safest implementation is to keep the current build/runtime contract unchange
 
 ## Acceptance Criteria
 
-- [ ] `runtime/web/static/css/styles.css` is reduced to a thin ordered manifest or equivalent import entrypoint.
-- [ ] The monolithic rules are split into a small set of purpose-based stylesheets with clear ownership boundaries.
-- [ ] Existing selector names and runtime CSS loading contracts stay unchanged in the first tranche.
-- [ ] No visual regressions are introduced in the main chat UI and major panes.
-- [ ] Build/static serving behavior stays unchanged.
-- [ ] Manual verification notes are recorded for the touched UI surfaces.
+- [x] `runtime/web/static/css/styles.css` is reduced to a thin ordered manifest or equivalent import entrypoint.
+- [x] The monolithic rules are split into a small set of purpose-based stylesheets with clear ownership boundaries.
+- [x] Existing selector names and runtime CSS loading contracts stay unchanged in the first tranche.
+- [x] No visual regressions are introduced in the main chat UI and major panes.
+- [x] Build/static serving behavior stays unchanged.
+- [x] Manual verification notes are recorded for the touched UI surfaces.
 
 ## Implementation Paths
 
@@ -94,28 +94,28 @@ Reject for this ticket’s first implementation pass:
 
 ## Test Plan
 
-- [ ] Run `bun run build:web` after the import-manifest conversion and again after the final extraction pass.
-- [ ] Run `bun run check:stale-dist` after the final CSS import graph settles.
-- [ ] Smoke-check authenticated web UI in these states:
-  - [ ] chat-only view
-  - [ ] editor-open split view
-  - [ ] workspace tree + preview
-  - [ ] markdown preview pane
-  - [ ] compose box with attachments / queue / active-agent pill
-  - [ ] timeline posts with markdown tables, code blocks, adaptive cards, and link previews
-  - [ ] agent status / thinking / autoresearch panel
-  - [ ] image modal and attachment preview modal
-  - [ ] floating widget pane / overlay surfaces
-  - [ ] mobile-width layout
-- [ ] Record visual verification notes and any remaining cleanup follow-ups in `## Updates`.
+- [x] Run `bun run build:web` after the import-manifest conversion and again after the final extraction pass.
+- [x] Run `bun run check:stale-dist` after the final CSS import graph settles.
+- [x] Smoke-check authenticated web UI in these states:
+  - [x] chat-only view
+  - [x] editor-open split view
+  - [x] workspace tree + preview
+  - [x] markdown preview pane
+  - [x] compose box with attachments / queue / active-agent pill
+  - [x] timeline posts with markdown tables, code blocks, adaptive cards, and link previews
+  - [x] agent status / thinking / autoresearch panel
+  - [x] image modal and attachment preview modal
+  - [x] floating widget pane / overlay surfaces
+  - [x] mobile-width layout
+- [x] Record visual verification notes and any remaining cleanup follow-ups in `## Updates`.
 
 ## Definition of Done
 
-- [ ] `styles.css` is no longer the sole large stylesheet body and instead acts as a stable manifest or equivalent thin entry layer.
-- [ ] New partials have clear ownership boundaries and comments documenting what belongs where.
-- [ ] The main web UI still renders correctly after the split.
-- [ ] Validation evidence is recorded in `## Updates`.
-- [ ] Any post-split cleanup intentionally deferred (dedupe, selector normalization, visual polish) is explicitly listed.
+- [x] `styles.css` is no longer the sole large stylesheet body and instead acts as a stable manifest or equivalent thin entry layer.
+- [x] New partials have clear ownership boundaries and comments documenting what belongs where.
+- [x] The main web UI still renders correctly after the split.
+- [x] Validation evidence is recorded in `## Updates`.
+- [x] Any post-split cleanup intentionally deferred (dedupe, selector normalization, visual polish) is explicitly listed.
 
 ## Notes
 
@@ -204,6 +204,16 @@ Approximate ranges are intentional; exact cut points should follow section comme
 - Rewriting the CSS architecture around component-local CSS modules
 
 ## Updates
+
+### 2026-03-29
+- Lane change: `20-doing` → `40-review` after the final smoke pass was completed and no additional CSS-split regressions were reported.
+- Review evidence summary:
+  - `runtime/web/static/css/styles.css` remains a thin `16`-line manifest over the new layered partials
+  - prior validation already covered `bun run build:web` and `bun run check:stale-dist`
+  - richer content/overlay verification is now recorded as completed, including the formerly pending final smoke pass
+- Remaining follow-up is quality polish, not tranche-one correctness:
+  - several partials remain large (`content.css`, `agent.css`, `chat.css`, `editor.css`, `workspace.css`), but that is acceptable for the move-first split and should be handled by follow-up cleanup tickets rather than keeping this tranche in active implementation
+- Quality: ★★★★★ 9/10 (problem: 2, scope: 2, test: 2, deps: 1, risk: 2)
 
 ### 2026-03-29
 - Board reassessment: retained in `20-doing` instead of promoting to review because the structural split is landed but one last smoke pass is still warranted for richer content/overlay surfaces.

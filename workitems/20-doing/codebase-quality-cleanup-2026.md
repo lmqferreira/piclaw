@@ -67,8 +67,8 @@ These are desirable but not required to close this ticket:
 | P2 | `adopt-pino-structured-logging` | Adopt structured logging and explicit error-handling guards |
 | P2 | `group-web-channel-flat-files` | Group 56 flat files into sub-directories |
 | P2 | `extract-typed-config-objects` | Extract 45 constants into typed config objects *(done — follow-up now tracked by `finish-config-injection-and-mutable-identity-cleanup`)* |
-| P3 | `continue-decompose-web-app-shell-toward-500-lines` | Thin-shell target achieved on `main`; ticket is now in review after landing a 493-line `runtime/web/src/app.ts` |
-| P3 | `split-web-styles-monolith` | Structural split landed; final rich-content/overlay smoke verification still pending before review |
+| P3 | `continue-decompose-web-app-shell-toward-500-lines` | Completed — `runtime/web/src/app.ts` now sits at 493 lines on `main` |
+| P3 | `split-web-styles-monolith` | Structural split and final smoke pass completed; ticket is now in review |
 | P3 | — | Fix `ipc.ts → MediaService` dependency direction violation |
 
 ## Completion criteria
@@ -84,10 +84,10 @@ These are desirable but not required to close this ticket:
 ## Updates
 
 ### 2026-03-29
-- Board reassessment after the latest refactor tranche:
-  - moved `continue-decompose-web-app-shell-toward-500-lines` from `20-doing` to `40-review` because the ticket achieved its objective on `main` (`runtime/web/src/app.ts` is now `493` lines via commit `744a6c18`)
-  - moved `adaptive-card-submissions-outside-web-default-to-default-session` from `40-review` to `50-done` after a focused regression recheck (`4 pass, 0 fail`)
-  - retained `split-web-styles-monolith` in `20-doing` because the structural split landed, but final rich-content / image-modal smoke validation is still pending
+- Board reassessment after the final CSS smoke confirmation:
+  - moved `continue-decompose-web-app-shell-toward-500-lines` from `40-review` to `50-done` because the thin-shell target is fully achieved on `main` and the attempted follow-up cleanup produced no better mergeable tranche
+  - moved `split-web-styles-monolith` from `20-doing` to `40-review` after the final smoke pass was completed
+  - kept `adaptive-card-submissions-outside-web-default-to-default-session` in `50-done`
 - Remaining quality bottlenecks are now concentrated in other oversized files rather than `runtime/web/src/app.ts`, notably:
   - `runtime/web/src/components/workspace-explorer.ts` (`2370` lines)
   - `runtime/web/src/components/compose-box.ts` (`1912` lines)
