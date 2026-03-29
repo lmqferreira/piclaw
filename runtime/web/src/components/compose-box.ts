@@ -6,6 +6,7 @@ import { getLocalStorageItem, setLocalStorageItem } from '../utils/storage.js';
 import { buildMentionValue, filterMentionAgents, parseMentionAutocompleteQuery } from '../ui/agent-mentions.js';
 import { shouldOpenSessionSwitcherFromBlankCompose } from '../ui/compose-session-switcher.js';
 import { formatBranchPickerLabel, formatCurrentBranchLabel } from '../ui/branch-lifecycle.js';
+import { buildComposeStatusDotClass } from '../ui/status-dot.js';
 import { getStatusElapsedLabel, isCompactionStatus, resolveStatusPanelTitle } from '../ui/status-duration.js';
 import { FilePill } from './file-pill.js';
 
@@ -1492,7 +1493,7 @@ export function ComposeBox({
                     title=${statusNoticeDetail || ''}
                 >
                     <div class="compose-inline-status-row">
-                        <span class="compose-inline-status-dot" aria-hidden="true"></span>
+                        <span class=${buildComposeStatusDotClass({ pulsing: statusNoticeIsCompaction })} aria-hidden="true"></span>
                         <span class="compose-inline-status-title">${statusNoticeTitle}</span>
                         ${statusNoticeElapsedLabel && html`<span class="compose-inline-status-elapsed">${statusNoticeElapsedLabel}</span>`}
                     </div>

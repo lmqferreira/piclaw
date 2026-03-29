@@ -3,6 +3,7 @@ import { html, useEffect, useState } from '../vendor/preact-htm.js';
 import { addToWhitelist, respondToAgentRequest } from '../api.js';
 import { renderThinkingMarkdown } from '../markdown.js';
 import { getTurnColor } from '../ui/agent-utils.js';
+import { buildTurnDotClass, shouldShowRunningStatusDot } from '../ui/status-dot.js';
 import { getStatusElapsedLabel, isCompactionStatus, resolveStatusPanelTitle } from '../ui/status-duration.js';
 
 const COPY_ICON_SVG = html`
@@ -98,9 +99,10 @@ export function AgentStatus({ status, draft, plan, thought, pendingRequest, inte
 
     const activeTurn = status?.turn_id || turnId;
     const turnColor = getTurnColor(activeTurn);
-    const dotClass = steerQueued ? 'turn-dot turn-dot-queued' : 'turn-dot';
+    const dotClass = buildTurnDotClass({ steerQueued });
     const panelTitle = (label) => label;
     const isLastActivity = Boolean(status?.last_activity || status?.lastActivity);
+    const showRunningStatusDot = shouldShowRunningStatusDot(status, { isLastActivity });
     const resolveIntentColor = (kind) => kind === 'warning'
         ? '#f59e0b'
         : kind === 'error'
@@ -188,6 +190,10 @@ export function AgentStatus({ status, draft, plan, thought, pendingRequest, inte
     const compactionElapsedLabel = statusIsCompaction ? getStatusElapsedLabel(status, nowMs) : null;
     const renderIntentPanel = (payload, color, elapsedLabel = null) => {
         const titleText = resolveStatusPanelTitle(payload);
+        const pulsingDotClass = buildTurnDotClass({
+            steerQueued,
+            pulsing: isCompactionStatus(payload),
+        });
 
         return html`
             <div
@@ -197,7 +203,7 @@ export function AgentStatus({ status, draft, plan, thought, pendingRequest, inte
                 title=${payload?.detail || ''}
             >
                 <div class="agent-thinking-title intent">
-                    ${color && html`<span class=${dotClass} aria-hidden="true"></span>`}
+                    ${color && html`<span class=${pulsingDotClass} aria-hidden="true"></span>`}
                     <span class="agent-thinking-title-text">${titleText}</span>
                     ${elapsedLabel && html`<span class="agent-status-elapsed">${elapsedLabel}</span>`}
                 </div>
@@ -388,6 +394,10 @@ export function AgentStatus({ status, draft, plan, thought, pendingRequest, inte
                         ? 'warning'
                         : 'info'
         );
+        const panelDotClass = buildTurnDotClass({
+            steerQueued,
+            pulsing: panel?.state === 'running',
+        });
         const detailText = typeof panel?.detail_markdown === 'string' ? panel.detail_markdown.trim() : '';
         const lastRunText = typeof panel?.last_run_text === 'string' ? panel.last_run_text.trim() : '';
         const tmuxCommand = typeof panel?.tmux_command === 'string' ? panel.tmux_command.trim() : '';
@@ -412,7 +422,7 @@ export function AgentStatus({ status, draft, plan, thought, pendingRequest, inte
                         type="button"
                         onClick=${() => (isExpandable ? toggleExpand(panelKey) : null)}
                     >
-                        ${color && html`<span class=${dotClass} aria-hidden="true"></span>`}
+                        ${color && html`<span class=${panelDotClass} aria-hidden="true"></span>`}
                         <span class="agent-thinking-title-text">${titleText}</span>
                         ${collapsedText && html`<span class="agent-thinking-title-meta">${collapsedText}</span>`}
                     </button>
@@ -549,7 +559,7 @@ export function AgentStatus({ status, draft, plan, thought, pendingRequest, inte
             })}
             ${showCorePanels && status && status?.type !== 'intent' && html`
                 <div class=${`agent-status${isLastActivity ? ' agent-status-last-activity' : ''}${status?.type === 'error' ? ' agent-status-error' : ''}`} aria-live="polite" style=${turnColor ? `--turn-color: ${turnColor};` : ''}>
-                    ${turnColor && html`<span class=${dotClass} aria-hidden="true"></span>`}
+                    ${turnColor && showRunningStatusDot && html`<span class=${dotClass} aria-hidden="true"></span>`}
                     ${status?.type === 'error' ? html`<span class="agent-status-error-icon" aria-hidden="true">⚠</span>` : (!isLastActivity && html`<div class="agent-status-spinner"></div>`)}
                     <span class="agent-status-text">${content}</span>
                 </div>

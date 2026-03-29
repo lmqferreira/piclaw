@@ -168,11 +168,43 @@
     border-radius: 999px;
     background: var(--accent-color);
     flex: 0 0 auto;
+    position: relative;
     box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.compose-inline-status-dot.compose-inline-status-dot-pulsing {
+    animation: composeStatusDotPulse 1.4s ease-out infinite;
 }
 
 .compose-inline-status.compaction .compose-inline-status-dot {
     background: var(--warning-color, #f59e0b);
+}
+
+@keyframes composeStatusDotPulse {
+    0% {
+        transform: scale(1);
+        box-shadow:
+            0 0 0 3px color-mix(in srgb, currentColor 12%, transparent),
+            0 0 0 0 color-mix(in srgb, currentColor 28%, transparent);
+    }
+    70% {
+        transform: scale(1.08);
+        box-shadow:
+            0 0 0 3px color-mix(in srgb, currentColor 12%, transparent),
+            0 0 0 8px color-mix(in srgb, currentColor 0%, transparent);
+    }
+    100% {
+        transform: scale(1);
+        box-shadow:
+            0 0 0 3px color-mix(in srgb, currentColor 12%, transparent),
+            0 0 0 0 color-mix(in srgb, currentColor 0%, transparent);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .compose-inline-status-dot.compose-inline-status-dot-pulsing {
+        animation: none;
+    }
 }
 
 .compose-inline-status-title {

@@ -34,6 +34,12 @@
     border-radius: 999px;
     background: var(--turn-color);
     box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.08);
+    flex: 0 0 auto;
+    position: relative;
+}
+
+.turn-dot.turn-dot-pulsing {
+    animation: statusDotPulse 1.4s ease-out infinite;
 }
 
 .turn-dot.turn-dot-queued {
@@ -107,6 +113,27 @@
 @keyframes fadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
+}
+
+@keyframes statusDotPulse {
+    0% {
+        transform: scale(1);
+        box-shadow:
+            0 0 0 2px color-mix(in srgb, var(--bg-secondary, var(--bg-primary)) 82%, transparent),
+            0 0 0 0 color-mix(in srgb, var(--turn-color, var(--accent-color)) 34%, transparent);
+    }
+    70% {
+        transform: scale(1.08);
+        box-shadow:
+            0 0 0 2px color-mix(in srgb, var(--bg-secondary, var(--bg-primary)) 82%, transparent),
+            0 0 0 8px color-mix(in srgb, var(--turn-color, var(--accent-color)) 0%, transparent);
+    }
+    100% {
+        transform: scale(1);
+        box-shadow:
+            0 0 0 2px color-mix(in srgb, var(--bg-secondary, var(--bg-primary)) 82%, transparent),
+            0 0 0 0 color-mix(in srgb, var(--turn-color, var(--accent-color)) 0%, transparent);
+    }
 }
 
 .agent-status-spinner {
@@ -271,6 +298,9 @@
 
 .agent-thinking-autoresearch .turn-dot {
     background: var(--turn-color, var(--accent-color));
+    box-shadow:
+        0 0 0 2px color-mix(in srgb, var(--bg-secondary, var(--bg-primary)) 82%, transparent),
+        0 0 0 4px color-mix(in srgb, var(--turn-color, var(--accent-color)) 18%, transparent);
 }
 
 .agent-thinking-autoresearch .agent-thinking-title-clickable:hover,
@@ -336,6 +366,12 @@
 
 .agent-thinking-truncation:hover {
     color: var(--text-secondary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .turn-dot.turn-dot-pulsing {
+        animation: none;
+    }
 }
 
 .agent-thinking-body p {
