@@ -369,6 +369,61 @@ async function copyCodeText(text) {
     }
 }
 
+/**
+ * Embedded stylesheet for clipboard HTML so pasted content looks styled
+ * in rich-text targets (Word, Google Docs, Outlook, etc.).
+ */
+const CLIPBOARD_STYLE = `
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #1a1a1a; }
+  h1 { font-size: 1.6em; font-weight: 700; margin: 0.6em 0 0.4em; }
+  h2 { font-size: 1.35em; font-weight: 700; margin: 0.6em 0 0.4em; }
+  h3 { font-size: 1.15em; font-weight: 700; margin: 0.5em 0 0.3em; }
+  h4, h5, h6 { font-size: 1em; font-weight: 700; margin: 0.5em 0 0.3em; }
+  p { margin: 0.5em 0; }
+  pre { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 6px; padding: 12px 16px; overflow-x: auto; margin: 0.5em 0; }
+  pre code { font-family: "Fira Code", "Cascadia Code", Consolas, "Courier New", monospace; font-size: 0.9em; background: none; padding: 0; border: none; }
+  code { font-family: "Fira Code", "Cascadia Code", Consolas, "Courier New", monospace; font-size: 0.9em; background: #f0f2f5; padding: 2px 5px; border-radius: 3px; }
+  blockquote { border-left: 3px solid #d0d7de; margin: 0.5em 0; padding-left: 12px; color: #57606a; }
+  table { border-collapse: collapse; margin: 0.5em 0; }
+  th, td { border: 1px solid #d0d7de; padding: 6px 12px; text-align: left; }
+  th { background: #f6f8fa; font-weight: 600; }
+  ul, ol { margin: 0.4em 0; padding-left: 1.8em; }
+  li { margin: 0.15em 0; }
+  a { color: #0969da; text-decoration: none; }
+  hr { border: none; border-top: 1px solid #d0d7de; margin: 1em 0; }
+  img { max-width: 100%; }
+</style>`;
+
+/**
+ * Copy message content to clipboard with both text/plain (markdown) and
+ * text/html (rendered) formats, matching ChatGPT/Gemini clipboard behavior.
+ * Falls back to plain-text-only copy if the Clipboard API doesn't support write().
+ */
+async function copyMessageRich(markdown) {
+    const value = typeof markdown === 'string' ? markdown : '';
+    if (!value) return false;
+
+    // Try rich copy with both formats
+    if (navigator.clipboard?.write && typeof ClipboardItem !== 'undefined') {
+        try {
+            const bodyHtml = renderMarkdown(value, null, { sanitize: false });
+            const html = `<html><head>${CLIPBOARD_STYLE}</head><body>${bodyHtml}</body></html>`;
+            const item = new ClipboardItem({
+                'text/plain': new Blob([value], { type: 'text/plain' }),
+                'text/html': new Blob([html], { type: 'text/html' }),
+            });
+            await navigator.clipboard.write([item]);
+            return true;
+        } catch {
+            // Fall through to plain text copy.
+        }
+    }
+
+    // Fallback: plain text only
+    return copyCodeText(value);
+}
+
 function enhanceCodeBlocks(container) {
     if (!container) return () => {};
 
@@ -692,6 +747,19 @@ export function Post({ post, onClick, onHashtagClick, onMessageRef, onScrollToMe
         onDelete?.(post);
     };
 
+    const [copyState, setCopyState] = useState('idle');
+    const copyTimerRef = useRef(null);
+    const handleCopyMessage = async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const text = data.content || '';
+        if (!text) return;
+        const ok = await copyMessageRich(text);
+        setCopyState(ok ? 'success' : 'error');
+        if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+        copyTimerRef.current = setTimeout(() => setCopyState('idle'), CODE_COPY_RESET_MS);
+    };
+
     const resolveInlineAttachments = (content, attachments) => {
         const usedIds = new Set();
         if (!content || attachments.length === 0) {
@@ -862,17 +930,35 @@ export function Post({ post, onClick, onHashtagClick, onMessageRef, onScrollToMe
                 ${avatarInfo.image ? html`<img src=${avatarInfo.image} alt=${displayName} />` : avatarInfo.letter}
             </div>
             <div class="post-body">
-                <button
-                    class="post-delete-btn"
-                    type="button"
-                    title="Delete message"
-                    aria-label="Delete message"
-                    onClick=${handleDeleteClick}
-                >
-                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                        <path d="M18 6L6 18M6 6l12 12" />
-                    </svg>
-                </button>
+                <div class="post-actions-row">
+                    ${isAgent && data.content && html`
+                        <button
+                            class="post-copy-btn ${copyState === 'success' ? 'is-success' : ''} ${copyState === 'error' ? 'is-error' : ''}"
+                            type="button"
+                            title=${copyState === 'success' ? 'Copied!' : copyState === 'error' ? 'Copy failed' : 'Copy message'}
+                            aria-label=${copyState === 'success' ? 'Copied' : 'Copy message'}
+                            onClick=${handleCopyMessage}
+                        >
+                            ${copyState === 'success'
+                                ? html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 6L9 17l-5-5"></path></svg>`
+                                : copyState === 'error'
+                                    ? html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"></circle><path d="M9 9l6 6M15 9l-6 6"></path></svg>`
+                                    : html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="9" width="10" height="10" rx="2"></rect><path d="M7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1"></path></svg>`
+                            }
+                        </button>
+                    `}
+                    <button
+                        class="post-delete-btn"
+                        type="button"
+                        title="Delete message"
+                        aria-label="Delete message"
+                        onClick=${handleDeleteClick}
+                    >
+                        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                            <path d="M18 6L6 18M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
                 <div class="post-meta">
                     <span class="post-author">${displayName}</span>
                     <a class="post-time" href=${`#msg-${post.id}`} onClick=${(e) => {
