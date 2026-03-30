@@ -202,6 +202,7 @@ export class UiBridge {
             },
             getToolsExpanded: () => false,
             setToolsExpanded: () => { },
+            setHiddenThinkingLabel: () => { },
         };
     }
     handleUiResponse(requestId, outcome, chatJid) {

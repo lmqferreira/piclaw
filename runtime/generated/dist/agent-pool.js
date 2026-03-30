@@ -65,7 +65,7 @@ export class AgentPool {
         this.createSession = options.createSession;
         this.createSideSession = options.createSideSession;
         this.authStorage = AuthStorage.create();
-        this.modelRegistry = options.modelRegistry ?? new ModelRegistry(this.authStorage);
+        this.modelRegistry = options.modelRegistry ?? ModelRegistry.create(this.authStorage);
         ({
             attachments: this.attachments,
             sessionBinder: this.sessionBinder,
