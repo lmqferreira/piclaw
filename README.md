@@ -115,29 +115,6 @@ bun run build             # recompile TypeScript (optional — Bun runs .ts dire
 See [docs/install-from-repo.md](docs/install-from-repo.md) for scope and caveats.
 
 
-### Build from source
-
-> [!NOTE]
-> Source builds are primarily for development and local testing.
-
-```bash
-make build
-make up
-```
-
-The compose stack passes `PUID` / `PGID` by default (`1000:1000`). To match the container `agent` user/group to your host user:
-
-```bash
-PUID=$(id -u) PGID=$(id -g) make up
-```
-
-The default compose container name is `pibox`:
-
-```bash
-docker exec -u agent -it pibox bash
-cd /workspace && pi
-```
-
 ## Configure models
 
 Type `/login` in the web chat to configure providers and models. The terminal (`pi /login`) is also available as a fallback.
@@ -238,29 +215,12 @@ Key environment variables:
 
 For the full list, auth setup (TOTP/passkeys), and reverse proxy configuration, see [docs/configuration.md](docs/configuration.md).
 
-## Development
-
-Run build/package commands from the **repo root**:
-
-```bash
-make build-piclaw    # full build: vendor bundle + web assets + TypeScript
-make vendor          # rebuild vendored assets
-make lint            # ESLint
-make test            # full test suite
-make local-install   # pack, install globally, restart piclaw
-```
-
-The implementation lives under `runtime/`, so direct Bun test runs should target that subtree. Sequential mode is recommended for SQLite safety:
-
-```bash
-cd runtime && bun test --max-concurrency=1
-```
-
 ## Documentation
 
 - [Configuration](docs/configuration.md)
 - [Reverse proxy / Cloudflare Tunnel](docs/reverse-proxy.md)
 - [Architecture](docs/architecture.md)
+- [Development](docs/development.md)
 - [Extension UI contract](docs/extension-ui-contract.md)
 - [Web pane extensions](docs/web-pane-extensions.md)
 - [Storage model](docs/storage.md)
