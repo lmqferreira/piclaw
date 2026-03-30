@@ -1786,28 +1786,26 @@ export function ComposeBox({
                     `}
                     <div class="compose-actions ${searchMode ? 'search-mode' : ''}">
                     ${showSessionSwitcherButton && html`
-                        ${currentSessionAgent?.agent_name && html`
-                            <button
-                                type="button"
-                                class="compose-current-agent-label active"
-                                title=${currentSessionAgent.chat_jid || currentChatJid}
-                                aria-label=${`Manage sessions for @${currentSessionAgent.agent_name}`}
-                                onClick=${toggleSessionPopup}
-                            >@${currentSessionAgent.agent_name}</button>
-                        `}
                         <button
                             ref=${sessionButtonRef}
                             type="button"
-                            class=${`icon-btn compose-mention-btn${showSessionPopup ? ' active' : ''}`}
+                            class=${`compose-session-trigger${showSessionPopup ? ' active' : ''}`}
                             onClick=${toggleSessionPopup}
-                            title=${showSessionPopup ? 'Hide session manager' : 'Manage Sessions/Agents'}
-                            aria-label="Manage Sessions/Agents"
+                            title=${currentSessionAgent?.chat_jid || currentChatJid}
+                            aria-label=${currentSessionAgent?.agent_name
+                                ? `Manage sessions for @${currentSessionAgent.agent_name}`
+                                : 'Manage Sessions/Agents'}
                             aria-expanded=${showSessionPopup ? 'true' : 'false'}
                         >
-                            <svg class="compose-mention-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-                                <circle cx="12" cy="12" r="4.25" />
-                                <path d="M16.25 7.75v5.4a2.1 2.1 0 0 0 4.2 0V12a8.45 8.45 0 1 0-4.2 7.33" />
-                            </svg>
+                            ${currentSessionAgent?.agent_name && html`
+                                <span class="compose-current-agent-label active">@${currentSessionAgent.agent_name}</span>
+                            `}
+                            <span class="compose-session-trigger-icon" aria-hidden="true">
+                                <svg class="compose-mention-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                                    <circle cx="12" cy="12" r="4.25" />
+                                    <path d="M16.25 7.75v5.4a2.1 2.1 0 0 0 4.2 0V12a8.45 8.45 0 1 0-4.2 7.33" />
+                                </svg>
+                            </span>
                         </button>
                     `}
                     ${searchMode && html`

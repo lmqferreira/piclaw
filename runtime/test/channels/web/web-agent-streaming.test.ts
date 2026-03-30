@@ -88,6 +88,8 @@ describe("web agent streaming", () => {
         (event) => event.type === "agent_status" && event.data?.type === "tool_status"
       );
       expect(toolStatus).toBeDefined();
+      expect(toolStatus?.data?.tool_name).toBe("bash");
+      expect(toolStatus?.data?.tool_args).toEqual({ command: "echo hi" });
 
       const responses = events.filter((event) => event.type === "agent_response");
       expect(responses.length).toBeGreaterThanOrEqual(2);

@@ -1,15 +1,22 @@
 // @ts-nocheck
-import { html, useEffect, useState } from '../vendor/preact-htm.js';
-import { addToWhitelist, respondToAgentRequest } from '../api.js';
+import { html, useEffect, useMemo, useState } from '../vendor/preact-htm.js';
+import { addToWhitelist, getWorkspaceBranch, respondToAgentRequest } from '../api.js';
 import { renderThinkingMarkdown } from '../markdown.js';
 import { getTurnColor } from '../ui/agent-utils.js';
 import { buildTurnDotClass, shouldShowRunningStatusDot } from '../ui/status-dot.js';
 import { getStatusElapsedLabel, isCompactionStatus, resolveStatusPanelTitle } from '../ui/status-duration.js';
+import { extractToolContextPath } from '../ui/tool-git-context.js';
 
 const COPY_ICON_SVG = html`
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <rect x="9" y="9" width="10" height="10" rx="2"></rect>
         <path d="M7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1"></path>
+    </svg>
+`;
+
+const GIT_BRANCH_ICON_SVG = html`
+    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+        <path d="M5 2.5a2 2 0 1 1-1.5 1.94V9a2.5 2.5 0 0 0 2.5 2.5h1.75a2 2 0 1 1 0 1H6A3.5 3.5 0 0 1 2.5 9V4.44A2 2 0 0 1 5 2.5Zm6 7a2 2 0 1 1-1.5 1.94V4a2.5 2.5 0 0 0-2.5-2.5H6.75a2 2 0 1 1 0-1H7A3.5 3.5 0 0 1 10.5 4v7.44A2 2 0 0 1 11 9.5Z"></path>
     </svg>
 `;
 
@@ -90,12 +97,47 @@ export function AgentStatus({ status, draft, plan, thought, pendingRequest, inte
     }, [turnId]);
 
     const statusIsCompaction = isCompactionStatus(status);
+    const toolContextPath = useMemo(
+        () => extractToolContextPath(status?.tool_name, status?.tool_args),
+        [status?.tool_name, status?.tool_args],
+    );
+    const [toolRepoContext, setToolRepoContext] = useState(null);
     useEffect(() => {
         if (!statusIsCompaction) return;
         setNowMs(Date.now());
         const timer = setInterval(() => setNowMs(Date.now()), 1000);
         return () => clearInterval(timer);
     }, [statusIsCompaction, status?.started_at, status?.startedAt]);
+
+    useEffect(() => {
+        const isToolStatus = status?.type === 'tool_call' || status?.type === 'tool_status';
+        if (!isToolStatus || !toolContextPath) {
+            setToolRepoContext(null);
+            return undefined;
+        }
+
+        let active = true;
+        getWorkspaceBranch(toolContextPath)
+            .then((payload) => {
+                if (!active) return;
+                if (payload?.branch) {
+                    setToolRepoContext({
+                        branch: payload.branch,
+                        repoPath: payload.repo_path || null,
+                        path: toolContextPath,
+                    });
+                } else {
+                    setToolRepoContext(null);
+                }
+            })
+            .catch(() => {
+                if (active) setToolRepoContext(null);
+            });
+
+        return () => {
+            active = false;
+        };
+    }, [status?.type, toolContextPath]);
 
     const activeTurn = status?.turn_id || turnId;
     const turnColor = getTurnColor(activeTurn);
@@ -131,6 +173,10 @@ export function AgentStatus({ status, draft, plan, thought, pendingRequest, inte
     if (isLastActivity) {
         content = 'Last activity just now';
     }
+
+    const toolRepoLabel = toolRepoContext
+        ? [toolRepoContext.repoPath, toolRepoContext.branch].filter(Boolean).join(' · ')
+        : '';
 
     const renderThinkingPanel = ({ panelTitle, text, fullText, totalLines, maxLines, titleClass, panelKey }) => {
         const isExpanded = expandedPanels.has(panelKey);
@@ -558,10 +604,20 @@ export function AgentStatus({ status, draft, plan, thought, pendingRequest, inte
                 panelKey: 'draft',
             })}
             ${showCorePanels && status && status?.type !== 'intent' && html`
-                <div class=${`agent-status${isLastActivity ? ' agent-status-last-activity' : ''}${status?.type === 'error' ? ' agent-status-error' : ''}`} aria-live="polite" style=${turnColor ? `--turn-color: ${turnColor};` : ''}>
+                <div class=${`agent-status${isLastActivity ? ' agent-status-last-activity' : ''}${status?.type === 'error' ? ' agent-status-error' : ''}${toolRepoLabel ? ' agent-status-multiline' : ''}`} aria-live="polite" style=${turnColor ? `--turn-color: ${turnColor};` : ''}>
                     ${turnColor && showRunningStatusDot && html`<span class=${dotClass} aria-hidden="true"></span>`}
                     ${status?.type === 'error' ? html`<span class="agent-status-error-icon" aria-hidden="true">⚠</span>` : (!isLastActivity && html`<div class="agent-status-spinner"></div>`)}
-                    <span class="agent-status-text">${content}</span>
+                    <div class="agent-status-copy">
+                        <span class="agent-status-text">${content}</span>
+                        ${toolRepoLabel && html`
+                            <span class="agent-status-git-row" title=${toolContextPath || toolRepoLabel}>
+                                <span class="agent-status-git-pill">
+                                    <span class="agent-status-git-icon">${GIT_BRANCH_ICON_SVG}</span>
+                                    <span class="agent-status-git-label">${toolRepoLabel}</span>
+                                </span>
+                            </span>
+                        `}
+                    </div>
                 </div>
             `}
         </div>

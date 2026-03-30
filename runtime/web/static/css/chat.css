@@ -1023,8 +1023,30 @@
     padding: var(--spacing-xs);
 }
 
+.compose-session-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 28px;
+    padding: 0;
+    margin: 0;
+    border: none;
+    background: transparent;
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.compose-session-trigger:hover,
+.compose-session-trigger:focus-visible {
+    outline: none;
+}
+
 .compose-current-agent-label {
-    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
     border: 1px solid transparent;
     background: transparent;
     font-family: var(--font-mono, monospace);
@@ -1032,7 +1054,6 @@
     font-weight: 600;
     line-height: 1;
     color: var(--text-secondary);
-    cursor: pointer;
     padding: 3px 8px;
     white-space: nowrap;
     overflow: hidden;
@@ -1042,6 +1063,7 @@
     box-shadow: none;
     opacity: 0.95;
     transition: background-color var(--ui-transition-fast), color var(--ui-transition-fast), border-color var(--ui-transition-fast), opacity var(--ui-transition-fast), transform var(--ui-transition-fast);
+    pointer-events: none;
 }
 
 .compose-current-agent-label.active {
@@ -1051,32 +1073,39 @@
     opacity: 1;
 }
 
-.compose-current-agent-label:hover,
-.compose-current-agent-label:focus-visible {
+.compose-session-trigger:hover .compose-current-agent-label,
+.compose-session-trigger:focus-visible .compose-current-agent-label {
     opacity: 1;
-    outline: none;
 }
 
-.compose-current-agent-label.active:hover,
-.compose-current-agent-label.active:focus-visible {
+.compose-session-trigger.active .compose-current-agent-label.active,
+.compose-session-trigger:hover .compose-current-agent-label.active,
+.compose-session-trigger:focus-visible .compose-current-agent-label.active {
     color: var(--accent-contrast-text, #0f1419);
     background: color-mix(in srgb, var(--accent-color) 90%, var(--bg-hover));
     border-color: color-mix(in srgb, var(--accent-color) 92%, black 8%);
 }
 
-.compose-mention-btn {
+.compose-session-trigger-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    min-height: 28px;
     padding: var(--spacing-xs);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-full);
     background: transparent;
+    color: var(--accent-color);
+    transition: background-color var(--ui-transition-fast), border-color var(--ui-transition-fast), color var(--ui-transition-fast);
+    pointer-events: none;
 }
 
-.compose-mention-btn:hover,
-.compose-mention-btn:focus-visible,
-.compose-mention-btn.active {
+.compose-session-trigger:hover .compose-session-trigger-icon,
+.compose-session-trigger:focus-visible .compose-session-trigger-icon,
+.compose-session-trigger.active .compose-session-trigger-icon {
     background-color: var(--accent-soft, rgba(29, 155, 240, 0.1));
     border-color: color-mix(in srgb, var(--accent-color) 42%, var(--border-color));
-    outline: none;
 }
 
 .compose-mention-icon {

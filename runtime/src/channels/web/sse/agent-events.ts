@@ -138,6 +138,7 @@ export function createStreamingEventHandler(options: StreamingEventHandlerOption
   let thoughtDeltaActive = false;
   let draftDeltaActive = false;
   const { remember, lookup, forget } = createToolTitleTracker();
+  const toolExecutionContext = new Map<string, { toolName: string; args: unknown }>();
   const widgetStreams = new Map<number, { toolCallId: string | null; widgetId: string | null }>();
 
   const base = {
@@ -309,10 +310,16 @@ export function createStreamingEventHandler(options: StreamingEventHandlerOption
             }
           }
         }
+        toolExecutionContext.set(messageEvent.toolCall.id, {
+          toolName: messageEvent.toolCall.name,
+          args: messageEvent.toolCall.arguments,
+        });
         options.emitter.status({
           ...base,
           type: "tool_call",
           title,
+          tool_name: messageEvent.toolCall.name,
+          tool_args: messageEvent.toolCall.arguments,
         });
       }
       if (messageEvent.type === "text_start") {
@@ -371,25 +378,32 @@ export function createStreamingEventHandler(options: StreamingEventHandlerOption
 
     if (event.type === "tool_execution_start") {
       const title = remember(event.toolCallId, event.toolName, event.args);
+      toolExecutionContext.set(event.toolCallId, { toolName: event.toolName, args: event.args });
       options.emitter.status({
         ...base,
         type: "tool_call",
         title,
+        tool_name: event.toolName,
+        tool_args: event.args,
       });
     }
 
     if (event.type === "tool_execution_update") {
       const title = lookup(event.toolCallId, event.toolName, event.args);
+      toolExecutionContext.set(event.toolCallId, { toolName: event.toolName, args: event.args });
       options.emitter.status({
         ...base,
         type: "tool_status",
         title,
         status: "Working...",
+        tool_name: event.toolName,
+        tool_args: event.args,
       });
     }
 
     if (event.type === "tool_execution_end") {
       const title = lookup(event.toolCallId, event.toolName);
+      const toolContext = toolExecutionContext.get(event.toolCallId) || null;
       if (event.toolName === "show_widget" && event.isError) {
         let matchedState: { toolCallId: string | null; widgetId: string | null } | null = null;
         for (const [contentIndex, state] of widgetStreams.entries()) {
@@ -417,7 +431,10 @@ export function createStreamingEventHandler(options: StreamingEventHandlerOption
         type: "tool_status",
         title,
         status: event.isError ? "Failed" : "Done",
+        tool_name: toolContext?.toolName || event.toolName,
+        tool_args: toolContext?.args,
       });
+      toolExecutionContext.delete(event.toolCallId);
     }
 
     if (event.type === "message_end") {
