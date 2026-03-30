@@ -272,27 +272,9 @@ Key environment variables:
 | `PICLAW_WEB_PASSKEY_MODE` | `totp-fallback` | `totp-fallback`, `passkey-only`, or `totp-only` |
 | `PICLAW_ASSISTANT_NAME` | `PiClaw` | Display name in the UI |
 | `PICLAW_KEYCHAIN_KEY` | _(empty)_ | Master key for encrypted secret storage |
+| `PICLAW_TRUST_PROXY` | `0` | Enable when behind a reverse proxy or tunnel |
 
-For the full list, see [docs/configuration.md](docs/configuration.md).
-
-### Auth quick notes
-
-- Run `/totp` in the web UI to initialize TOTP with a single card that shows the QR code, manual entry code, and confirmation input.
-- The secret is committed only after that same card is confirmed with a valid live TOTP code.
-- `/totp reset <current-code>` stages a new secret, then commits it only after the new code is confirmed; existing web sessions are invalidated only after that succeeds.
-- `/passkey enrol` still requires a TOTP-authenticated session.
-
-### Reverse proxies / tunnels
-
-> [!IMPORTANT]
-> If piclaw runs behind a reverse proxy or tunnel (Cloudflare Tunnel, Caddy, Nginx, etc.), enable proxy trust.
-
-```bash
-PICLAW_TRUST_PROXY=1
-```
-
-See [docs/reverse-proxy.md](docs/reverse-proxy.md) for forwarded-header requirements, examples, and troubleshooting.
-
+For the full list, auth setup (TOTP/passkeys), and reverse proxy configuration, see [docs/configuration.md](docs/configuration.md).
 
 ### Packaged operator helper scripts
 
