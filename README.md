@@ -238,21 +238,6 @@ Key environment variables:
 
 For the full list, auth setup (TOTP/passkeys), and reverse proxy configuration, see [docs/configuration.md](docs/configuration.md).
 
-### Packaged operator helper scripts
-
-The repo now includes packaged Bun helper scripts under `runtime/scripts/` for
-operator-style tasks. For example, the Proxmox helper can be invoked from the
-repo with:
-
-```bash
-bun run proxmox -- vm status --vmid 117
-bun run proxmox -- vm resume --vmid 117
-bun run proxmox -- vm restart --vmid 117
-```
-
-These scripts are included in the packaged artifact because `runtime/scripts/`
-is part of the published file set.
-
 ## Development
 
 Run build/package commands from the **repo root**:
